@@ -1,0 +1,422 @@
+/*
+ **************************************************************************
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * SPDX-License-Identifier: ISC
+ **************************************************************************
+ */
+
+/*
+ * netfn_flowmgr.c
+ *      Network function manager
+ */
+#include <linux/types.h>
+#include <linux/module.h>
+#include <linux/skbuff.h>
+#include <linux/etherdevice.h>
+#include "netfn_flowmgr_priv.h"
+#include "aes/ppe/netfn_flowmgr_ppe.h"
+
+#define NETFN_FLOWMGR_STATIC_DBG_LEVEL_STR_LEN 8
+
+uint32_t static_dbg_level = 0;
+static char static_dbg_level_str[NETFN_FLOWMGR_STATIC_DBG_LEVEL_STR_LEN];
+
+struct netfn_flowmgr netfn_flowmgr_gbl;
+
+/*
+ * netfn_flowmgr_rule_accel()
+ *	Flow acceleration to AE
+ */
+netfn_flowmgr_ret_t netfn_flowmgr_rule_accel(struct netfn_flowmgr_create_rule *original, struct netfn_flowmgr_create_rule *reply, netfn_flowmgr_accel_mode_t mode)
+{
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+	netfn_flowmgr_ret_t status = 0;
+
+	/*
+	 * Check if both original and reply direction has valid rules
+	 * Note: Currently AEs does not support single direction flow rule.
+	 */
+	if (!original && !reply) {
+		netfn_flowmgr_warn("Invalid create rule\n");
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_INVALID_RULE, 0);
+	}
+
+	/*
+	 * AE mode should either be PPE or SFE
+	 */
+	if ((mode != NETFN_FLOWMGR_ACCEL_MODE_PPE) && (mode != NETFN_FLOWMGR_ACCEL_MODE_SFE)) {
+		netfn_flowmgr_warn("Invalid accel mode\n");
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_INVALID_ACCEL_MODE, 0);
+	}
+
+	/*
+	 * Ops should be registered
+	 */
+	if (f->ae_ops[mode] == NULL) {
+		netfn_flowmgr_warn("Ops not registerd for mode = %d\n", mode);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_OPS_NOT_REGISTERED, 0);
+	}
+
+	/*
+	 * Check if create rule ops is valid
+	 */
+	if (f->ae_ops[mode]->create_rule == NULL) {
+		netfn_flowmgr_warn("create rule not registered for mode = %d\n", mode);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_OPS_NOT_REGISTERED, 0);
+	}
+
+	/*
+	 * Call create rule function registered by AEs
+	 * If status is non-zero that means rule creation is failed and it
+	 * will contain both errors (AE specific error and Netfn error)
+	 */
+	status = f->ae_ops[mode]->create_rule(original, reply);
+	if (status)
+		netfn_flowmgr_warn("Create rule failed\n");
+
+	return status;
+}
+EXPORT_SYMBOL(netfn_flowmgr_rule_accel);
+
+/*
+ * netfn_flowmgr_rule_decel()
+ *	API for flow deacceleration
+ */
+netfn_flowmgr_ret_t netfn_flowmgr_rule_decel(struct netfn_flowmgr_destroy_rule *original, struct netfn_flowmgr_destroy_rule *reply, netfn_flowmgr_accel_mode_t mode)
+{
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+	netfn_flowmgr_ret_t status = 0;
+
+	/*
+	 * Check if both original and reply direction has valid rules
+	 * Note: Currently AEs does not support single direction flow rule.
+	 */
+	if (!original && !reply) {
+		netfn_flowmgr_warn("Invalid destroy rule\n");
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_INVALID_RULE, 0);
+	}
+
+	/*
+	 * AE mode should either be PPE or SFE
+	 */
+	if ((mode != NETFN_FLOWMGR_ACCEL_MODE_PPE) && (mode != NETFN_FLOWMGR_ACCEL_MODE_SFE)) {
+		netfn_flowmgr_warn("Invalid accel mode\n");
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_INVALID_ACCEL_MODE, 0);
+	}
+
+	/*
+	 * Ops should be registered
+	 */
+	if (f->ae_ops[mode] == NULL) {
+		netfn_flowmgr_warn("Ops not registerd for mode = %d\n", mode);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_OPS_NOT_REGISTERED, 0);
+	}
+
+	/*
+	 * Check if destroy rule ops is valid
+	 */
+	if (f->ae_ops[mode]->destroy_rule == NULL) {
+		netfn_flowmgr_warn("destroy rule not registered for mode = %d\n", mode);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_OPS_NOT_REGISTERED, 0);
+	}
+
+	/*
+	 * Call destroy rule function registered by AEs.
+	 * If status is non-zero that means rule destroy is failed and it
+	 * will contain both errors (AE specific error and Netfn error)
+	 */
+	status = f->ae_ops[mode]->destroy_rule(original, reply);
+	if (status)
+		netfn_flowmgr_warn("Destroy rule failed\n");
+
+	return status;
+}
+EXPORT_SYMBOL(netfn_flowmgr_rule_decel);
+
+/*
+ * netfn_flowmgr_dscp_pri_add()
+ *	Add dscp priority acl rule
+ */
+netfn_flowmgr_ret_t netfn_flowmgr_dscp_pri_add(struct netfn_flowmgr_dscp_priority *dscpinfo, netfn_flowmgr_accel_mode_t mode)
+{
+	/*
+	 * Check if the AE is PPE or not
+	 */
+	if (mode != NETFN_FLOWMGR_ACCEL_MODE_PPE) {
+		netfn_flowmgr_warn("Invalid accel mode, it should be PPE\n");
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_INVALID_ACCEL_MODE, 0);
+	}
+
+	return netfn_flowmgr_ppe_dscp_pri_add(dscpinfo);
+}
+EXPORT_SYMBOL(netfn_flowmgr_dscp_pri_add);
+
+/*
+ * netfn_flowmgr_dscp_pri_del()
+ *	Delete the dscp priority
+ */
+netfn_flowmgr_ret_t netfn_flowmgr_dscp_pri_del(int16_t rule_id, netfn_flowmgr_accel_mode_t mode)
+{
+	/*
+	 * Check if the AE is PPE or not
+	 */
+	if (mode != NETFN_FLOWMGR_ACCEL_MODE_PPE) {
+		netfn_flowmgr_warn("Invalid accel mode, it should be PPE\n");
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_INVALID_ACCEL_MODE, 0);
+	}
+
+	return netfn_flowmgr_ppe_dscp_pri_del(rule_id);
+}
+EXPORT_SYMBOL(netfn_flowmgr_dscp_pri_del);
+
+/*
+ * netfn_flowmgr_ae_ops_unregister()
+ *	Unregister AEs create/destroy callbacks
+ */
+void netfn_flowmgr_ae_ops_unregister(netfn_flowmgr_ae_type_t ae_type)
+{
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+	struct netfn_flowmgr_ae_ops *ae_ops;
+
+	/*
+	 * Check if ops was registered or not
+	 */
+	if (!f->ae_ops[ae_type]) {
+		netfn_flowmgr_warn("AE ops for this type is not registered\n");
+		return;
+	}
+
+	ae_ops = f->ae_ops[ae_type];
+	kfree(ae_ops);
+}
+EXPORT_SYMBOL(netfn_flowmgr_ae_ops_unregister);
+
+/*
+ * netfn_flowmgr_ae_ops_register()
+ * 	Register AEs create/destroy callbacks
+ */
+bool netfn_flowmgr_ae_ops_register(netfn_flowmgr_ae_type_t ae_type, struct netfn_flowmgr_ae_ops *ops)
+{
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+	struct netfn_flowmgr_ae_ops *ae_ops;
+
+	/*
+	 * Check if create and destroy both ops are provided
+	 */
+	if (!ops->create_rule && !ops->destroy_rule) {
+		netfn_flowmgr_warn("Invalid ops passed by AE\n");
+		return false;
+	}
+
+	/*
+	 * Check if AE type is neither PPE nor SFE
+	 */
+	if ((ae_type != NETFN_FLOWMGR_AE_TYPE_PPE) && (ae_type != NETFN_FLOWMGR_AE_TYPE_SFE)) {
+		netfn_flowmgr_warn("Unsupported AE trying to register\n");
+		return false;
+	}
+
+	/*
+	 * Check if ops is already registered
+	 */
+	if (f->ae_ops[ae_type] != NULL) {
+		netfn_flowmgr_warn("AE already registered\n");
+		return false;
+	}
+
+	/*
+	 * Allocations memory for ae ops
+	 */
+	ae_ops = (struct netfn_flowmgr_ae_ops *)kzalloc(sizeof(struct netfn_flowmgr_ae_ops), GFP_KERNEL);
+	if (!ae_ops) {
+		netfn_flowmgr_warn("AE ops registration failed due to memory\n");
+		return false;
+	}
+
+	ae_ops->create_rule = ops->create_rule;
+	ae_ops->destroy_rule = ops->destroy_rule;
+
+	/*
+	 * Storing the ops in global structure pointer
+	 */
+	f->ae_ops[ae_type] = ae_ops;
+
+	netfn_flowmgr_info("AE ops registration done successfully\n");
+	return true;
+}
+EXPORT_SYMBOL(netfn_flowmgr_ae_ops_register);
+
+/*
+ * netfn_flowmgr_static_dbg_level_handler()
+ *      Set static debug level for netfn flowmgr.
+ */
+static int netfn_flowmgr_static_dbg_level_handler(struct ctl_table *table,
+		int write, void __user *buffer,
+		size_t *lenp, loff_t *ppos)
+{
+	int ret;
+	char *level_str;
+	enum netfn_flowmgr_static_dbg_level dbg_level;
+
+	/*
+	 * Find the string, return an error if not found
+	 */
+	ret = proc_dostring(table, write, buffer, lenp, ppos);
+	if (ret || !write) {
+		return ret;
+	}
+
+	level_str = static_dbg_level_str;
+	printk("dbg_level: %s", level_str);
+
+	if (!strcmp(level_str, "warn")) {
+		dbg_level = NETFN_FLOWMGR_STATIC_DBG_LEVEL_WARN;
+	} else if (!strcmp(level_str, "info")) {
+		dbg_level = NETFN_FLOWMGR_STATIC_DBG_LEVEL_INFO;
+	} else if (!strcmp(level_str, "trace")) {
+		dbg_level = NETFN_FLOWMGR_STATIC_DBG_LEVEL_TRACE;
+	} else if (!strcmp(level_str, "none")) {
+		dbg_level = NETFN_FLOWMGR_STATIC_DBG_LEVEL_NONE;
+	} else {
+		printk("Usage: echo '[warn|info|trace|none]' > /proc/sys/netfn-mgr/flowmgr/static_dbg_level\n");
+		return -EINVAL;
+	}
+
+	if (dbg_level >= NETFN_FLOWMGR_DEBUG_LEVEL) {
+		printk("debug level: %d not compiled in: %d\n", dbg_level, NETFN_FLOWMGR_DEBUG_LEVEL);
+		return -EINVAL;
+	}
+
+	static_dbg_level = dbg_level;
+	return ret;
+}
+
+/*
+ * netfn_flowmgr_sub
+ *	Netfn flowmgr sub directory
+ */
+static struct ctl_table netfn_flowmgr_sub[] = {
+	{
+		.procname       =       "static_dbg_level",
+		.data           =       &static_dbg_level_str,
+		.maxlen         =       sizeof(char) * NETFN_FLOWMGR_STATIC_DBG_LEVEL_STR_LEN,
+		.mode           =       0644,
+		.proc_handler   =       netfn_flowmgr_static_dbg_level_handler
+	},
+	{}
+};
+
+/*
+ * netfn_flowmgr_main
+ *      Netfn flowmgr main directory
+ */
+static struct ctl_table netfn_flowmgr_main[] = {
+	{
+		.procname       =       "flowmgr",
+		.mode           =       0555,
+		.child          =       netfn_flowmgr_sub,
+	},
+	{}
+};
+
+/*
+ * netfn_flowmgr_root
+ *	Netfn flowmgr root directory
+ */
+static struct ctl_table netfn_flowmgr_root[] = {
+	{
+		.procname       =       "netfn",
+		.mode           =       0555,
+		.child          =       netfn_flowmgr_main,
+	},
+	{}
+};
+
+
+/*
+ * netfn_flowmgr_ae_deinit()
+ *      Netfn flow manager AEs deinitialization
+ */
+void netfn_flowmgr_ae_deinit(void)
+{
+#ifdef NETFN_FLOWMGR_AE_PPE_ENABLE
+	netfn_flowmgr_ppe_deinit();
+#endif
+	/*
+	 * TODO: Add equivalent deinit changes for SFE.
+	 */
+}
+
+/*
+ * netfn_flowmgr_ae_init()
+ *      Netfn flow manager AEs initialization
+ */
+int netfn_flowmgr_ae_init(void) {
+	bool status;
+#ifdef NETFN_FLOWMGR_AE_PPE_ENABLE
+	status = netfn_flowmgr_ppe_init();
+	if(!status) {
+		netfn_flowmgr_warn("PPE netfn initialization failed\n");
+		return -1;
+	}
+#endif
+	/*
+	 * TODO: Add equivalent init changes for SFE.
+	 */
+
+	return 0;
+}
+
+/*
+ * netfn_flowmgr_exit_module()
+ *	Netfn flow manager exit function
+ */
+void __exit netfn_flowmgr_exit_module(void)
+{
+	/*
+	 * Unregister sysctl framework
+	 */
+	netfn_flowmgr_ae_deinit();
+
+	/*
+	 * Unregister sysctl framework
+	 */
+	unregister_sysctl_table(netfn_flowmgr_gbl.netfn_flowmgr_header);
+	netfn_flowmgr_gbl.netfn_flowmgr_header = NULL;
+	netfn_flowmgr_info("module unloaded\n");
+}
+
+/*
+ * netfn_flowmgr_init_module()
+ *	Netfn flow manager init function
+ */
+static int __init netfn_flowmgr_init_module(void)
+{
+	int ret = 0;
+
+	ret = netfn_flowmgr_ae_init();
+	if (ret) {
+		netfn_flowmgr_warn("Failed to initialize AEs, error=%d\n", ret);
+		return -EIO;
+	}
+
+	/*
+	 * Register sysctl framework
+	 * TODO: Change the sysctl regsitration as per the newer kernel.
+	 */
+	netfn_flowmgr_gbl.netfn_flowmgr_header = register_sysctl_table(netfn_flowmgr_root);
+	if (!netfn_flowmgr_gbl.netfn_flowmgr_header) {
+		netfn_flowmgr_warn("sysctl table configuration failed");
+		return -EINVAL;
+	}
+
+	netfn_flowmgr_info("Netfn flow manager module loaded\n");
+
+	return ret;
+}
+
+module_init(netfn_flowmgr_init_module);
+module_exit(netfn_flowmgr_exit_module);
+
+MODULE_LICENSE("Dual BSD/GPL");
+MODULE_DESCRIPTION("Network function manager");
