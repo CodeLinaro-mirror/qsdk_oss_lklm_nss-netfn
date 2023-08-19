@@ -20,22 +20,47 @@
 #ifndef __NETFN_CAPWAP_DEC_H
 #define __NETFN_CAPWAP_DEC_H
 
+#define NETFN_CAPWAP_DEC_STATS_STRLEN 20
+#define NETFN_CAPWAP_DEC_STATS_WIDTH 82
+
+/*
+ * netfn_capwap_dec_ctx
+ *	Reassembly context
+ */
+struct netfn_capwap_dec_ctx {
+	struct sk_buff *reasm_cache;		/* Fast reassembly buffer. */
+	struct netfn_capwap_frags reasm_table[NETFN_CAPWAP_TUN_MAX_REASM_WIN];
+						/* Slow reassembly frags queues. */
+};
+
+/*
+ * netfn_capwap_dec
+ *	Decapsulation state
+ */
+struct netfn_capwap_dec {
+	struct netfn_capwap_dec_ctx __rcu *ctx;	/* Decap reassembly context. */
+	struct netfn_capwap_dec_stats stats;	/* Decap tunnel stats. */
+
+	uint32_t max_frags;			/* Maximum number of frags expected. */
+	uint32_t max_payload_sz;		/* Maximum size of payload buffer. */
+	uint32_t features;			/* Features enabled for the tunnel. */
+};
+
 /*
  * netfn_capwap_dec_stats_read()
  *	Reads decap stats.
  */
-void netfn_capwap_dec_stats_read(struct netfn_capwap_tun_dec *dec, struct netfn_capwap_tun_stats *stats);
+void netfn_capwap_dec_stats_read(struct netfn_capwap_dec *dec, struct netfn_capwap_tun_stats *stats);
+
+/*
+ * netfn_capwap_dec_rx_skbs()
+ *	Decapsulate skbs.
+ */
+bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head *q_head);
 
 /*
  * netfn_capwap_dec_init()
  *	Initializes the decap object.
  */
-bool netfn_capwap_dec_init(struct netfn_capwap_tun_dec *dec, struct netfn_capwap_dec_cfg *cfg, struct dentry *dentry);
-
-/*
- * netfn_capwap_dec_deinit()
- *	Deinitializes the decap object.
- */
-void netfn_capwap_dec_deinit(struct netfn_capwap_tun_dec *dec);
-
+bool netfn_capwap_dec_init(struct netfn_capwap_dec *dec, struct netfn_capwap_dec_cfg *cfg, struct dentry *dentry);
 #endif /* __NETFN_CAPWAP_DEC_H */

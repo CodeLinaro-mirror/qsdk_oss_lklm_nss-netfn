@@ -2,7 +2,7 @@
  * netfn_capwap.h
  *	Network function's CAPWAP offload public APIs.
  *
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -44,9 +44,9 @@ struct netfn_capwap_enc_cfg {
  *	Decapsulation configuration
  */
 struct netfn_capwap_dec_cfg {
+	uint32_t features;		/**< Features enabled for tunnel. */
 	uint32_t max_frags;		/**< Maximum number of fragments expected. */
-	uint32_t max_payload_sz;	/**< Maximum size of the payload buffer. */
-	uint16_t reasm_window_sz;	/**< Maximum fragments array size. */
+	uint16_t max_payload_sz;	/**< Maximum size of the payload buffer. */
 };
 
 /*
@@ -65,14 +65,22 @@ struct netfn_capwap_tun_cfg {
  *	Capwap decap stats.
  */
 struct netfn_capwap_dec_stats {
-	uint64_t keepalive_pkts;		/**< Keep alive packets recieved. */
-	uint64_t num_dup_frags;			/**< Number of duplicate fragments. */
 	uint64_t num_frags;			/**< Number of fragments received. */
+	uint64_t control_pkts;			/**< Control packets. */
+	uint64_t keepalive_pkts;		/**< Keep alive packets recieved. */
+	uint64_t fast_reasm;			/**< Fast reassembly hits. */
+	uint64_t slow_reasm;			/**< Slow reassembly hits. */
+	/*
+	 * Drop stats.
+	 */
+	uint64_t drop_dup_frags;		/**< Dropped duplicate fragments. */
+	uint64_t drop_dec_failure;		/**< Failed during decapsulation. */
+	uint64_t drop_max_frags;		/**< Exceeds max fragments allowed(10). */
 	uint64_t drop_missing_frags;		/**< Drop in reassembly window because of missing fragments. */
 	uint64_t drop_large_frags;		/**< Drop because of oversize. */
 	uint64_t drop_csum_fail;		/**< Drop because of wrong checksum. */
 	uint64_t drop_malformed;		/**< Drop because of malformed packet. */
-	uint64_t drop_mem_alloc;		/**< Drop because of memory failure. */
+	uint64_t drop_linearize_fail;		/**< Drop because of linearize failure. */
 	uint64_t drop_reasm_window;		/**< Drop because of a non-sequential fragment offset. */
 };
 
@@ -81,8 +89,11 @@ struct netfn_capwap_dec_stats {
  *	Capwap encap stats.
  */
 struct netfn_capwap_enc_stats {
-	uint64_t keepalive_pkts;		/**< Keep alive packets recieved. */
 	uint64_t num_frags;			/**< Number of segments or fragments. */
+	uint64_t keepalive_pkts;		/**< Keep alive packets recieved. */
+	/*
+	 * Drop stats.
+	 */
 	uint64_t drop_queue_full;		/**< Packets dropped because the queue is full. */
 	uint64_t drop_mem_alloc;		/**< Packets dropped because of a memory failure. */
 	uint64_t drop_ver_mis;			/**< Packets dropped because of a version mismatch. */

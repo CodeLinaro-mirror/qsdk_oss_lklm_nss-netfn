@@ -2,7 +2,7 @@
  * netfn_capwap_hdr.h
  *	Network function CAPWAP header definitions.
  *
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -63,9 +63,12 @@
 #define NETFN_CAPWAP_FLAGS_UDPLITE	BIT_MASK(1)
 #define NETFN_CAPWAP_FLAGS_WINFO	BIT_MASK(2)
 
+#define NETFN_CAPWAP_TYPE_CAPWAP	0x0
+#define NETFN_CAPWAP_TYPE_DTLS		0x01
 #define NETFN_CAPWAP_VERSION		0x3
 #define NETFN_CAPWAP_CB(skb) ((struct netfn_capwap_hdr_mdata *)((skb)->cb))
-#define NETFN_CAPWAP_HDR_RESERVE	128 /* Bytes */
+#define NETFN_CAPWAP_HEADROOM_RESERVE	128 /* Bytes */
+#define NETFN_CAPWAP_TAILROOM_RESERVE	128 /* Bytes */
 #define NETFN_CAPWAP_MAX_NWIRELESS	1
 #define NETFN_CAPWAP_WIRELESS_INFO_LEN	8
 #define NETFN_CAPWAP_WLAN_QOS		2
@@ -154,8 +157,7 @@ struct netfn_capwap_hdr_mdata {
 	uint8_t keep_alive:1;		/* Is keepalive */
 	uint8_t winfo:1;		/* Inner contains wireless info */
 	uint8_t type_80211:1;		/* Inner is 802.11 */
-	uint8_t drop:1;			/* Drop the skb */
-	uint8_t exception:1;		/* Exception the skb */
+	uint8_t exception:1;		/* Indicates pkt should be exceptioned. */
 };
 
 /*
