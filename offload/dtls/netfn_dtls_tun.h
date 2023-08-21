@@ -26,6 +26,7 @@
 struct netfn_dtls_tun_stats {
 	uint64_t session_alloc;		/* Number of session allcated */
 	uint64_t session_free;		/* Number of session freed */
+	uint64_t encap_switch;		/* Number of Session switch in encap side */
 
 	/*
 	 * Tx is for encapsulation packets.
@@ -48,6 +49,13 @@ struct netfn_dtls_tun_stats {
 	uint64_t rx_fail_session;	/* session not found failure */
 };
 
+/*
+ * DTLS tunnel state for Encap & Decap session.
+ */
+struct netfn_dtls_tun_state {
+	struct netfn_dtls_session __rcu *active;	/* Current Active session */
+	struct netfn_dtls_session __rcu *pending;	/* Pending Session waiting for CCSpec */
+};
 
 /*
  * DTLS device object.
@@ -56,9 +64,9 @@ struct netfn_dtls_tun {
 	struct net_device *dev;	/* Linux netdevice representation for this device */
 	struct net_device *vp_dev;	/* VP netdevice associated with tunnel. */
 
-	struct list_head enc_list;	/* Encap list protected by RCU read lock and spinlock for modification */
-	struct list_head dec_list;	/* Decap list protected by RCU read lock and spinlock for modification */
-	spinlock_t lock;		/* Common lock for list manipulation */
+	struct netfn_dtls_tun_state enc;	/* Encap State */
+	struct netfn_dtls_tun_state dec;	/* Decap state */
+	struct mutex lock;		/* Common lock for list manipulation */
 	struct netfn_dtls_tun_stats __percpu *stats_pcpu;	/* Device statistics */
 	struct dentry *dentry;		/* Driver debugfs dentry */
 

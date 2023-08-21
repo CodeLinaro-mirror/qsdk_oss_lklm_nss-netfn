@@ -118,6 +118,6 @@ void netfn_dtls_tun_session_encap_switch(struct net_device *dev);
  * @param[in] encap	True for Encapsulation session otherwise False.
  * @param[in] epoch	Epoch value used during session addition.
  */
-void netfn_dtls_tun_session_del(struct net_device *dev, bool encap, uint16_t epoch);
+void netfn_dtls_tun_session_del(struct net_device *dev, bool encap, __be16 epoch);
 
 #endif /* __NETFN_DTLS_H */
