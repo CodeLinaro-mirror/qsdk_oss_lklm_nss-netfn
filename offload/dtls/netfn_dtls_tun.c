@@ -26,6 +26,7 @@
 #include <linux/ip.h>
 #include <linux/ipv6.h>
 #include <linux/udp.h>
+#include <linux/mutex.h>
 
 #include <ppe_vp_public.h>
 #include "netfn_dtls_priv.h"
@@ -100,6 +101,7 @@ static ssize_t netfn_dtls_tun_print_stats(struct file *fp, char __user *ubuf, si
 	len += snprintf(buf + len, max_len - len, "\tTx VP Exception: %llu\n", stats.tx_vp_exp);
 	len += snprintf(buf + len, max_len - len, "\tTx host: %llu\n", stats.tx_host);
 	len += snprintf(buf + len, max_len - len, "\tTx Error: %llu\n", stats.tx_fail);
+	len += snprintf(buf + len, max_len - len, "\tTx fail expand: %llu\n", stats.tx_fail_expand);
 	len += snprintf(buf + len, max_len - len, "\tTx Fail session: %llu\n", stats.tx_fail_session);
 
 	len += snprintf(buf + len, max_len - len, "Device Decapsulation Statistics:\n");
@@ -343,6 +345,70 @@ static void netfn_dtls_tun_destructor(struct net_device *dev)
 	pr_info("%px: DTLS device freed\n", dev);
 	free_netdev(dev);
 	netfn_dtls_drv_deref(drv);
+}
+
+/*
+ * netfn_dtls_tun_xmit()
+ *	Encapsulates plaintext packet.
+ */
+netdev_tx_t netfn_dtls_tun_xmit(struct sk_buff *skb, struct net_device *dev)
+{
+	struct netfn_dtls_tun *tun = netdev_priv(dev);
+	unsigned int hroom = dev->needed_headroom;
+	unsigned int troom = dev->needed_tailroom;
+	struct netfn_dtls_tun_stats *tun_stats;
+	struct netfn_dtls_session *ses;
+	unsigned int len;
+	bool expand_skb;
+
+	tun_stats = this_cpu_ptr(tun->stats_pcpu);
+	len = skb->len;
+
+	/*
+	 * Unshare the SKB as we will be modifying it.
+	 */
+	if (unlikely(skb_cloned(skb))) {
+		skb = skb_unshare(skb, GFP_NOWAIT | __GFP_NOWARN);
+		if (!skb) {
+			tun_stats->tx_fail++;
+			return NETDEV_TX_OK;
+		}
+	}
+
+	/*
+	 * Make sure we have enough headroom/tailroom, so we dont have to check those later.
+	 */
+	expand_skb = (skb_headroom(skb) < hroom) || (skb_tailroom(skb) < troom);
+	if (expand_skb && pskb_expand_head(skb, hroom, troom, GFP_NOWAIT | __GFP_NOWARN)) {
+		pr_debug("%px: Failed to expand SKB with headroom(%u) tailroom(%u)\n",
+				dev, skb_headroom(skb), skb_tailroom(skb));
+		tun_stats->tx_fail_expand++;
+		goto fail;
+	}
+
+	rcu_read_lock_bh();
+
+	/*
+	 * First session in the device encapsulation head is always selected.
+	 */
+	ses = rcu_dereference_bh(tun->enc.active);
+	if (!ses) {
+		pr_debug("%px: Failed to find a valid session for encapsulation\n", dev);
+		tun_stats->tx_fail_session++;
+
+		rcu_read_unlock_bh();
+		goto fail;
+	}
+
+	netfn_dtls_enc(ses, skb);
+
+	rcu_read_unlock_bh();
+	return NETDEV_TX_OK;
+
+fail:
+	tun_stats->tx_fail++;
+	consume_skb(skb);
+	return NETDEV_TX_OK;
 }
 
 /*

@@ -29,25 +29,76 @@
  */
 void netfn_dtls_enc_err(void *app_data, eip_req_t req, int err)
 {
-	BUG_ON(true);
+	struct netfn_dtls_session_stats *ses_stats;
+	struct netfn_dtls_session *ses = app_data;
+	struct sk_buff *skb = eip_req2skb(req);
+	struct netfn_dtls_tun_stats *tun_stats;
+	struct netfn_dtls_tun *tun;
+
+	pr_debug("%px: Encapsulation failed with err(%d)\n", skb, err);
+
+	tun = ses->tun;
+	tun_stats = this_cpu_ptr(tun->stats_pcpu);
+	tun_stats->tx_fail++;
+
+	/*
+	 * Update session statistics.
+	 */
+	ses_stats = this_cpu_ptr(ses->stats_pcpu);
+	ses_stats->rx_pkts++;
+	ses_stats->rx_bytes += skb->len;
+	ses_stats->fail_transform++;
+
+	consume_skb(skb);
 }
 
 /*
- * netfn_dtls_enc_done_v6()
- *	Encapsulation completion callback for IPv6.
+ * netfn_dtls_enc_done()
+ *	Encapsulation completion callback for IPv4/IPv6.
  */
-void netfn_dtls_enc_done_v6(void *app_data, eip_req_t req)
+void netfn_dtls_enc_done(void *app_data, eip_req_t req)
 {
-	BUG_ON(true);
-}
+	struct netfn_dtls_session_stats *ses_stats;
+	struct netfn_dtls_session *ses = app_data;
+	struct sk_buff *skb = eip_req2skb(req);
+	struct netfn_dtls_tun_stats *tun_stats;
+	struct netfn_dtls_tun *tun;
+	struct net_device *next;
 
-/*
- * netfn_dtls_enc_done_v4()
- *	Encapsulation completion callback for IPv4.
- */
-void netfn_dtls_enc_done_v4(void *app_data, eip_req_t req)
-{
-	BUG_ON(true);
+	tun = ses->tun;
+	next = tun->vp_dev;
+	tun_stats = this_cpu_ptr(tun->stats_pcpu);
+	ses_stats = this_cpu_ptr(ses->stats_pcpu);
+	skb_reset_mac_header(skb);
+	skb_reset_network_header(skb);
+
+	/*
+	 * Update session statistics.
+	 */
+	ses_stats->rx_pkts++;
+	ses_stats->rx_bytes += skb->len;
+
+	/*
+	 * Reset General SKB fields for further processing.
+	 * skb->protocol is already set in Driver based on IPv4/IPv6
+	 */
+	skb_dst_drop(skb);
+	nf_reset_ct(skb);
+	skb->skb_iif = tun->dev->ifindex;
+	skb->dev = next;
+
+	/*
+	 * We are sending it to VP netdevice. Which is controlled path,
+	 * and don't require unnecessary overhead of dev_queue_xmit()
+	 */
+	if (next->netdev_ops->ndo_start_xmit(skb, next) != NETDEV_TX_OK) {
+		tun_stats->tx_fail++;
+		dev_kfree_skb(skb);
+		return;
+	}
+
+	tun_stats->tx_pkts++;
+	tun_stats->tx_bytes += skb->len;
 }
 
 /*
@@ -56,8 +107,43 @@ void netfn_dtls_enc_done_v4(void *app_data, eip_req_t req)
  */
 void netfn_dtls_enc(struct netfn_dtls_session *ses, struct sk_buff *skb)
 {
+	struct netfn_dtls_tun *tun = ses->tun;
+	struct netfn_dtls_session_stats *ses_stats;
+	struct netfn_dtls_tun_stats *tun_stats;
+	unsigned int len;
+	int error;
+
+	tun_stats = this_cpu_ptr(tun->stats_pcpu);
+	ses_stats = this_cpu_ptr(ses->stats_pcpu);
+	len = skb->len;
+
+	error = eip_tr_dtls_enc(ses->tr, skb);
+	if (unlikely(error < 0)) {
+		/*
+		 * TODO: We need to reschedule packet during congestion.
+		 */
+		ses_stats->fail_enqueue++;
+		goto fail;
+	}
+
 	/*
-	 * TODO: Lookup DTLS encapsulation session and send packet to EIP Driver for encapsulation.
+	 * Update statistics.
 	 */
-	BUG_ON(true);
+	ses_stats->tx_pkts++;
+	ses_stats->tx_bytes += len;
+	return;
+fail:
+	tun_stats->tx_fail++;
+	consume_skb(skb);
+}
+
+/*
+ * netfn_dtls_enc_init()
+ *	Initialize encapsulation handler.
+ */
+void netfn_dtls_enc_init(struct netfn_dtls_session *ses, struct eip_tr_info *tr_info)
+{
+	tr_info->dtls.app_data = ses;
+	tr_info->dtls.cb = netfn_dtls_enc_done;
+	tr_info->dtls.err_cb = netfn_dtls_enc_err;
 }
