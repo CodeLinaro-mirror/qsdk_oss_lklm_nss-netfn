@@ -9,4 +9,5 @@ qca-nss-netfn-capwap-objs += netfn_capwap_dec.o
 obj ?= .
 
 ccflags-y += -DNSS_NETFN_BUILD_ID=\"'Build_ID - $(shell date +'%m/%d/%y, %H:%M:%S') SoC=$(SoC)'\"
+ccflags-y += -I$(obj)/../exports/
 ccflags-y += -Wall -Werror

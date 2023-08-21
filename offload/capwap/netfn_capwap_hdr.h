@@ -66,8 +66,7 @@
 #define NETFN_CAPWAP_VERSION		0x3
 #define NETFN_CAPWAP_CB(skb) ((struct netfn_capwap_hdr_mdata *)((skb)->cb))
 #define NETFN_CAPWAP_HDR_RESERVE	128 /* Bytes */
-#define NETFN_CAPWAP_MAX_NWIRELESS	8
-#define NETFN_CAPWAP_SNAP_HDR_LEN	6
+#define NETFN_CAPWAP_MAX_NWIRELESS	1
 #define NETFN_CAPWAP_WIRELESS_INFO_LEN	8
 #define NETFN_CAPWAP_WLAN_QOS		2
 
@@ -80,6 +79,9 @@
 #define NETFN_CAPWAP_FEATURES_OUTER_SGT		0x00000004
 #define NETFN_CAPWAP_FEATURES_WLAN_QOS		0x00000008
 
+/*
+ * TODO: This needs to move to common file once capwapmgr is up.
+ */
 #define NETFN_CAPWAP_PKT_TYPE_INVALID		-1
 #define NETFN_CAPWAP_PKT_TYPE_CTRL		0x0001
 #define NETFN_CAPWAP_PKT_TYPE_DATA		0x0002
@@ -87,6 +89,8 @@
 #define NETFN_CAPWAP_PKT_TYPE_WINFO		0x0008
 #define NETFN_CAPWAP_PKT_TYPE_80211		0x0010
 #define NETFN_CAPWAP_PKT_TYPE_8023		0x0020
+#define NETFN_CAPWAP_PKT_ENC_MASK (NETFN_CAPWAP_PKT_TYPE_WINFO \
+		| NETFN_CAPWAP_PKT_TYPE_80211 | NETFN_CAPWAP_PKT_TYPE_8023)
 
 #define NETFN_CAPWAP_DATA_PORT			5257
 #define NETFN_CAPWAP_CTRL_PORT			5256
@@ -102,6 +106,9 @@
 								/* wlan header + winfo + snap + wlan_qos - ethernet */
 #define NETFN_CAPWAP_MAX_HDR_SZ (NETFN_CAPWAP_MIN_HDR_SZ + NETFN_CAPWAP_8023_TO_80211_SZ)
 
+/*
+ * TODO: This needs to move to common file once capwapmgr is up.
+ */
 /*
  * netfn_capwap_prehdr.
  */
@@ -156,12 +163,9 @@ struct netfn_capwap_hdr_mdata {
  *     Capwap encapsulation meta data
  */
 struct netfn_capwap_enc_mdata {
-	struct netfn_capwap_prehdr *phdr;	/* Preheader from host */
+	struct netfn_capwap_prehdr phdr;	/* Preheader from host */
 	uint16_t frag_id;			/* Fragment - ID */
 	uint16_t frag_offset;			/* Fragment offset */
-	uint16_t type;				/* Type of packet */
-	uint16_t nwireless;			/* Number of wireless info sections in CAPWAP header */
-	uint8_t rid;				/* Radio Id */
 	uint8_t frag:1;				/* Is fragment or not */
 	uint8_t frag_end:1;			/* Frag end or not */
 	uint8_t first_frag:1;			/* First frag or not */
@@ -344,5 +348,23 @@ static inline void netfn_capwap_hdr_set_radio_id(union netfn_capwap_hdr_info *in
 {
 	info->fields.rid1 = (rid >> 2) & 0x7;   /* 3 bits */
 	info->fields.rid2 = rid & 0x3;          /* 2 bits only */
+}
+
+/*
+ * netfn_capwap_hdr_set_hlen()
+ *	Set the header length in capwap header.
+ */
+static inline void netfn_capwap_hdr_set_hlen(union netfn_capwap_hdr_info *info, uint8_t hlen)
+{
+	info->fields.hlen = (hlen >> 2);
+}
+
+/*
+ * netfn_capwap_hdr_set_frag_offset()
+ *	Set the fragment offset in capwap header.
+ */
+static inline void netfn_capwap_hdr_set_frag_offset(union netfn_capwap_hdr_frag *frag, uint8_t offset)
+{
+	frag->fields.offset = (offset >> 3);
 }
 #endif /* __NETFN_CAPWAP_HDR_H */

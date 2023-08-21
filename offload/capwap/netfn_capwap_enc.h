@@ -20,6 +20,9 @@
 #ifndef __NETFN_CAPWAP_ENC_H
 #define __NETFN_CAPWAP_ENC_H
 
+#define NETFN_CAPWAP_ENC_STATS_STRLEN 20
+#define NETFN_CAPWAP_ENC_STATS_WIDTH 82
+
 /*
  * netfn_capwap_enc_stats_read()
  *	Reads encap stats.
@@ -30,18 +33,12 @@ void netfn_capwap_enc_stats_read(struct netfn_capwap_tun_enc *enc, struct netfn_
  * netfn_capwap_enc_init()
  *	Encapsulation initialization.
  */
-bool netfn_capwap_enc_init(struct netfn_capwap_tun_enc *enc, struct netfn_capwap_enc_cfg *cfg);
-
-/*
- * netfn_capwap_enc_deinit()
- *	Encapsulation deinitialization.
- */
-void netfn_capwap_enc_deinit(struct netfn_capwap_tun_enc *enc);
+bool netfn_capwap_enc_init(struct netfn_capwap_tun_enc *enc, struct netfn_capwap_enc_cfg *cfg, struct dentry *dentry);
 
 /*
  * netfn_capwap_enc()
- *	Encapsulates the packet and transmits skb.
+ *	Encapsulates the packets/s.
  */
-int netfn_capwap_enc(struct netfn_capwap_tun_enc *enc, struct sk_buff *skb);
+bool netfn_capwap_enc(struct netfn_capwap_tun_enc *enc, struct sk_buff *skb, struct sk_buff_head *q_frag);
 
 #endif /* __NETFN_CAPWAP_ENC_H */

@@ -19,11 +19,10 @@
 #ifndef __NETFN_CAPWAP_TUN_H
 #define __NETFN_CAPWAP_TUN_H
 
-#define NETFN_CAPWAP_TUN_IPV4_HASH_SHIFT 	12
-#define NETFN_CAPWAP_TUN_IPV6_HASH_SHIFT	12
-#define NETFN_CAPWAP_TUN_IPV6_HASH_SIZE (1 << NETFN_CAPWAP_IPV6_HASH_SHIFT)
-#define NETFN_CAPWAP_TUN_IPV6_HASH_MASK (NETFN_CAPWAP_IPV6_HASH_SIZE - 1)
+#include "netfn_pkt_steer.h"
 
+#define NETFN_CAPWAP_TUN_RX_BUDGET 64
+#define NETFN_CAPWAP_TUN_TX_BUDGET 64
 #define NETFN_CAPWAP_TUN_STATS_INC(sptr) ((*(uint64_t *) sptr)++)
 #define NETFN_CAPWAP_TUN_STATS_ADD(sptr, value) ({ \
 		*((uint64_t *)sptr) += value; \
@@ -54,12 +53,15 @@ struct netfn_capwap_tun_enc {
 	struct netfn_capwap_enc_stats stats;	/* Encap tunnel stats. */
 
 	struct netfn_capwap_tun_enc_hdr hdr;	/* Encapsulation header per tunnel. */
-	union netfn_capwap_hdr_info info;	/* Header info. */
+	uint32_t features;			/* Features enabled for the tunnel. */
 
-	int mtu;			/* MTU considered for encap. */
-	uint16_t overhead;		/* Encapsulation overhead. */
+	int mtu;			/* MTU considered for fragmentation. */
 	uint16_t ipv4_id;		/* IPv4 ID for the tunnel. */
 	uint16_t frag_id;		/* Fragment ID per ipv4_id. */
+
+	uint16_t outer_hdr_len;		/* Outer header length for the tunnel. */
+	uint8_t snap_hdr[NETFN_CAPWAP_SNAP_HDR_LEN];
+					/* Custom snap header. */
 	uint8_t bssid;			/* Basic service set ID. */
 };
 
@@ -80,12 +82,14 @@ struct netfn_capwap_tun_dec {
 	struct sk_buff *fast_reasm;		/* Fast reassembly buffer. */
 	struct netfn_capwap_tun_dec_frags *slow_reasm;
 						/* Array of pending fragments. */
-	struct net_device *netdev;		/* Back pointer to device. */
+	struct net_device *dev;			/* Back pointer to device. */
 	struct netfn_capwap_dec_stats stats;	/* Decap tunnel stats. */
+
 
 	uint32_t max_frags;			/* Maximum number of frags expected. */
 	uint32_t max_payload_sz;		/* Maximum size of payload buffer. */
 	uint32_t reasm_window_sz;		/* Maximum fragments array size. */
+	uint32_t features;			/* Features enabled for the tunnel. */
 };
 
 /*
@@ -103,9 +107,9 @@ struct netfn_capwap_tun {
 	struct netfn_capwap_tun_dec dec;	/* Tunnel decap object. */
 	struct dentry *dentry;			/* Debug entry for the tunnel. */
 
+	netfn_pkt_steer_t tx_steer;		/* Tx packet steering handle. */
+	netfn_pkt_steer_t rx_steer;		/* Rx Packet steering handle. */
 	uint32_t flags;				/* Flags for this tunnel. */
-	uint32_t features;			/* Features enabled for the tunnel. */
-	unsigned short outer_hdr_len;		/* Outer header length for the tunnel. */
 };
 
 #endif /* __NETFN_CAPWAP_TUN_H */

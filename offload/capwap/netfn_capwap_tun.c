@@ -52,7 +52,66 @@ static rx_handler_result_t netfn_capwap_tun_rx(struct sk_buff **pskb)
  */
 static netdev_tx_t netfn_capwap_tun_tx(struct sk_buff *skb, struct net_device *dev)
 {
-	BUG_ON(1);
+	struct netfn_capwap_tun *nct = netdev_priv(dev);
+	unsigned int needed_hroom, needed_troom;
+	struct netfn_capwap_pkt_stats *stats;
+	struct netfn_capwap_prehdr *phdr;
+	bool expand_skb;
+
+	stats = &nct->stats;
+	needed_hroom = dev->needed_headroom;
+	needed_troom = dev->needed_tailroom;
+
+	/*
+	 * Check if we have sufficient headroom and tailroom.
+	 */
+	expand_skb = (skb_cloned(skb) || (skb_headroom(skb) < needed_hroom) || (skb_tailroom(skb) < needed_troom));
+	if (expand_skb && pskb_expand_head(skb, needed_hroom, needed_troom, GFP_NOWAIT | __GFP_NOWARN)) {
+		pr_warn_ratelimited("%px: Failed to expand SKB with headroom(%u) tailroom(%u)\n",
+				dev, skb_headroom(skb), skb_tailroom(skb));
+		goto fail;
+	}
+
+	phdr = (struct netfn_capwap_prehdr *)skb->data;
+
+	/*
+	 * Check for capwap version.
+	 */
+	if (unlikely(phdr->vers != NETFN_CAPWAP_VERSION)) {
+		pr_warn_ratelimited("%px: Version mismatch actual:%d, expected: %d.\n", skb,
+				phdr->vers, NETFN_CAPWAP_VERSION);
+		goto fail;
+	}
+
+	/*
+	 * Check for dtls packets.
+	 */
+	if (unlikely(phdr->type & NETFN_CAPWAP_PKT_TYPE_DTLS)) {
+		pr_warn_ratelimited("%px: We don't support DTLS packets encapsulation.\n", skb);
+		goto fail;
+	}
+
+	/*
+	 * Number of wireless sections shouldn't exceed max count.
+	 */
+	if (unlikely(phdr->nwireless > NETFN_CAPWAP_MAX_NWIRELESS)) {
+		pr_warn_ratelimited("%px: Number of wireless sections exceeds max count(%d).\n",
+				phdr, NETFN_CAPWAP_MAX_NWIRELESS);
+		goto fail;
+	}
+
+	/*
+	 * IPI packet to desired core.
+	 */
+	if (netfn_pkt_steer_send(nct->tx_steer, skb, capwap_core)) {
+		return NETDEV_TX_OK;
+	}
+fail:
+	/*
+	 * dev_kfree_skb has a NULL check inside.
+	 */
+	NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_failures);
+	dev_kfree_skb(skb);
 	return NETDEV_TX_OK;
 }
 
@@ -99,8 +158,11 @@ static void netfn_capwap_tun_get_stats64(struct net_device *dev, struct rtnl_lin
  */
 static int netfn_capwap_tun_mtu(struct net_device *dev, int mtu)
 {
-	dev->mtu = mtu;
+	struct netfn_capwap_tun *nct = netdev_priv(dev);
+	struct net_device *next_dev = nct->next_dev;
 
+	__dev_set_mtu(next_dev, mtu);
+	dev->mtu = next_dev->mtu - nct->enc.outer_hdr_len;
 	return 0;
 }
 
@@ -127,10 +189,17 @@ static void netfn_capwap_tun_destructor(struct net_device *dev)
 	pr_info("%px: Freeing the tunnel(%s)\n", &global_nc, dev->name);
 
 	/*
-	 * Free the tun related memory.
+	 * Free pkt steer object.
 	 */
+	if (nct->tx_steer) {
+		netfn_pkt_steer_free(nct->tx_steer);
+	}
+
+	if (nct->rx_steer) {
+		netfn_pkt_steer_free(nct->rx_steer);
+	}
+
 	netfn_capwap_dec_deinit(&nct->dec);
-	netfn_capwap_enc_deinit(&nct->enc);
 	debugfs_remove_recursive(nct->dentry);
 	free_netdev(dev);
 	return;
@@ -286,9 +355,71 @@ static void netfn_capwap_tun_vp_detach(struct net_device *dev)
 	 * Free the vp dev
 	 */
 	ppe_vp_free_dev(vp_dev);
-
 	pr_info("%px: Tun(%s), unbinded vp dev and freed\n", dev, dev->name);
 	return;
+}
+
+/*
+ * netfn_capwap_tun_tx_cb()
+ *	Tx packet steering callback
+ */
+static void netfn_capwap_tun_tx_cb(struct sk_buff_head *q_head, void *app_data)
+{
+	struct netfn_capwap_tun *nct = app_data;
+	struct netfn_capwap_pkt_stats *stats;
+	struct sk_buff *skb, *nskb;
+
+	stats = &nct->stats;
+
+	/*
+	 * Encapsulates and transmits out.
+	 */
+	skb_queue_walk_safe(q_head, skb, nskb) {
+		struct sk_buff_head q_frags;
+
+		__skb_queue_head_init(&q_frags);
+		__skb_unlink(skb, q_head);
+
+		/*
+		 * Encapsulate the packet.
+		 */
+		if (!netfn_capwap_enc(&nct->enc, skb, &q_frags)) {
+			NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_failures);
+			dev_kfree_skb_list_fast(&q_frags);
+			continue;
+		}
+
+		/*
+		 * TODO: optimize this path by merging the fragmentation and send loop into one.
+		 */
+		/*
+		 * Trasmit the packet out.
+		 */
+		skb_queue_walk_safe(&q_frags, skb, nskb) {
+			int len = skb->len;
+
+			__skb_unlink(skb, &q_frags);
+			skb->dev = nct->next_dev;
+
+			if (dev_queue_xmit(skb) != NETDEV_TX_OK) {
+				NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_failures);
+				continue;
+			}
+
+			NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_pkts);
+			NETFN_CAPWAP_TUN_STATS_ADD(&stats->tx_bytes, len);
+		}
+
+	}
+}
+
+/*
+ * netfn_capwap_tun_rx_cb()
+ *	Rx packet steering callback
+ */
+static void netfn_capwap_tun_rx_cb(struct sk_buff_head *q_head, void *app_data)
+{
+	BUG_ON(1);
 }
 
 /*
@@ -297,6 +428,7 @@ static void netfn_capwap_tun_vp_detach(struct net_device *dev)
  */
 struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg)
 {
+	struct netfn_pkt_steer_info info = {0};
 	struct netfn_capwap *nc = &global_nc;
 	struct netfn_capwap_tun *nct;
 	struct net_device *dev;
@@ -318,26 +450,7 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg)
 	 */
 	nct->nc = nc;
 	nct->dev = dev;
-	nct->features = cfg->features;
 	memset(&nct->stats, 0, sizeof(nct->stats));
-
-	/*
-	 * Encap init.
-	 */
-	if (!netfn_capwap_enc_init(&nct->enc, &cfg->enc)) {
-		pr_warn("%px: Encapsulation init failed.\n", dev);
-		dev->priv_destructor(dev);
-		return NULL;
-	}
-
-	/*
-	 * Decap init.
-	 */
-	if (!netfn_capwap_dec_init(&nct->dec, &cfg->dec)) {
-		pr_warn("%px: Decapsulation init failed.\n", dev);
-		dev->priv_destructor(dev);
-		return NULL;
-	}
 
 	/*
 	 * Create debug entry for tunnel.
@@ -376,8 +489,55 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg)
 	}
 
 	nct->next_dev = nct->vp_dev;
+
+	/*
+	 * Encap init.
+	 */
+	if (!netfn_capwap_enc_init(&nct->enc, &cfg->enc, nct->dentry)) {
+		pr_warn("%px: Encapsulation init failed.\n", dev);
+		goto fail;
+	}
+
+	/*
+	 * Decap init.
+	 */
+	if (!netfn_capwap_dec_init(&nct->dec, &cfg->dec, nct->dentry)) {
+		pr_warn("%px: Decapsulation init failed.\n", dev);
+		goto fail;
+	}
+
+	/*
+	 * Allocate tx pkt steering object.
+	 */
+	info.cb = netfn_capwap_tun_tx_cb;
+	info.app_data = nct;
+	info.budget = NETFN_CAPWAP_TUN_TX_BUDGET;
+	info.weight = 1;
+	nct->tx_steer = netfn_pkt_steer_alloc(&info);
+	if (!nct->tx_steer) {
+		pr_warn("%px: Unable to allocate tx packet steering object.\n", nct);
+		goto fail;
+	}
+
+	/*
+	 * Allocate rx pkt steering object.
+	 */
+	info.cb = netfn_capwap_tun_rx_cb;
+	info.app_data = nct;
+	info.budget = NETFN_CAPWAP_TUN_RX_BUDGET;
+	info.weight = 1;
+	nct->rx_steer = netfn_pkt_steer_alloc(&info);
+	if (!nct->rx_steer) {
+		pr_warn("%px: Unable to allocate rx packet steering object.\n", nct);
+		goto fail;
+	}
+
 	pr_info("%px: Successfully allocated tunnel(%s)\n", nct, dev->name);
 	return dev;
+fail:
+	netfn_capwap_tun_vp_detach(dev);
+	unregister_netdev(dev);
+	return NULL;
 }
 EXPORT_SYMBOL(netfn_capwap_tun_alloc);
 

@@ -21,6 +21,8 @@
 
 #include <netfn_types.h>
 
+#define NETFN_CAPWAP_SNAP_HDR_LEN 6
+
 /*
  * netfn_capwap_enc_cfg
  *	Encapsulation configuration
@@ -28,8 +30,13 @@
 struct netfn_capwap_enc_cfg {
 	netfn_tuple_t tuple;		/**< Tuples associated with tunnel. */
 	uint32_t flags;			/**< Vlan/pppoe/udplite_checksum configured. */
-	uint8_t udp_csum_cov;		/**< UDP Checksum coverage. */
+	uint16_t csum_cov;		/**< UDP Checksum coverage. */
+	uint16_t mtu;			/**< MTU to be configured for fragmentation. */
+	uint8_t ttl;			/**< TTL configured for tunnel. */
+	uint8_t tos;			/**< ToS for encapsulation. */
 	uint8_t bssid[ETH_ALEN];	/**< Basic service set ID. */
+	uint8_t snap[NETFN_CAPWAP_SNAP_HDR_LEN];
+					/**< Custom snap header. */
 };
 
 /*
