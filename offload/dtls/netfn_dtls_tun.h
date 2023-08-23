@@ -47,6 +47,7 @@ struct netfn_dtls_tun_stats {
 	uint64_t rx_fail;		/* Decapsulation failure */
 	uint64_t rx_fail_linearize;	/* Linearization failed */
 	uint64_t rx_fail_session;	/* session not found failure */
+	uint64_t rx_fail_ctrl;		/* Not APP-data packet */
 };
 
 /*

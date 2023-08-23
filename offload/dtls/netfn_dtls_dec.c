@@ -28,7 +28,25 @@
  */
 void netfn_dtls_dec_err(void *app_data, eip_req_t req, int err)
 {
-	BUG_ON(1);
+	struct netfn_dtls_session_stats *ses_stats;
+	struct netfn_dtls_session *ses = app_data;
+	struct sk_buff *skb = eip_req2skb(req);
+	struct netfn_dtls_tun_stats *tun_stats;
+	struct netfn_dtls_tun *tun;
+
+	tun = ses->tun;
+	tun_stats = this_cpu_ptr(tun->stats_pcpu);
+	tun_stats->rx_fail++;
+
+	/*
+	 * Update session statistics.
+	 */
+	ses_stats = this_cpu_ptr(ses->stats_pcpu);
+	ses_stats->rx_pkts++;
+	ses_stats->rx_bytes += skb->len;
+	ses_stats->fail_transform++;
+
+	dev_kfree_skb_any(skb);
 }
 
 /*
@@ -37,22 +55,83 @@ void netfn_dtls_dec_err(void *app_data, eip_req_t req, int err)
  */
 void netfn_dtls_dec_done(void *app_data, eip_req_t req)
 {
-	/*
-	 * TODO: Send packet to NETFN CAPWAP.
-	 */
+	struct netfn_dtls_session_stats *ses_stats;
+	struct netfn_dtls_session *ses = app_data;
+	struct sk_buff *skb = eip_req2skb(req);
+	struct netfn_dtls_tun_stats *tun_stats;
+	rx_handler_func_t *rx_handler;
+	struct netfn_dtls_tun *tun;
 
-	BUG_ON(1);
+	tun = ses->tun;
+	tun_stats = this_cpu_ptr(tun->stats_pcpu);
+	ses_stats = this_cpu_ptr(ses->stats_pcpu);
+
+	/*
+	 * Update statistics.
+	 */
+	ses_stats->rx_pkts++;
+	ses_stats->rx_bytes += skb->len;
+	tun_stats->rx_pkts++;
+	tun_stats->rx_bytes += skb->len;
+
+	skb_scrub_packet(skb, false);
+
+	/*
+	 * Reset General SKB fields for further processing.
+	 * Header pointer is already set by Driver.
+	 */
+	skb->dev = tun->dev;
+	skb->skb_iif = tun->dev->ifindex;
+	skb->ip_summed = CHECKSUM_NONE;
+
+	rx_handler = rcu_dereference(skb->dev->rx_handler);
+	if (likely(rx_handler) && likely(rx_handler(&skb) == RX_HANDLER_CONSUMED))
+		return;
+
+	netif_receive_skb(skb);
 }
 
 /*
  * netfn_dtls_dec()
- *	Handle UDP/UDPlite encapsulated DTLS+CAPWAP packets.
+ *	Decapsulate DTLS packet. SKB->data should point to IP header.
  */
 void netfn_dtls_dec(struct netfn_dtls_session *ses, struct sk_buff *skb)
 {
+	struct netfn_dtls_session_stats *ses_stats;
+	struct netfn_dtls_tun_stats *tun_stats;
+	struct netfn_dtls_tun *tun = ses->tun;
+	unsigned int len;
+	int error;
+
+	ses_stats = this_cpu_ptr(ses->stats_pcpu);
+	tun_stats = this_cpu_ptr(tun->stats_pcpu);
+	len = skb->len;
+
+	error = eip_tr_dtls_dec(ses->tr, skb);
+	if (unlikely(error < 0)) {
+		/*
+		 * TODO: We need to reschedule packet during congestion.
+		 */
+		ses_stats->fail_enqueue++;
+		tun_stats->rx_fail++;
+		dev_kfree_skb_any(skb);
+		return;
+	}
 
 	/*
-	 * TODO: Lookup decapsulation session and send packet to EIP driver for decapsulation.
+	 * Update session statistics.
 	 */
-	BUG_ON(1);
+	ses_stats->tx_pkts++;
+	ses_stats->tx_bytes += len;
+}
+
+/*
+ * netfn_dtls_dec_init()
+ *	Initialize Decapsulation handler.
+ */
+void netfn_dtls_dec_init(struct netfn_dtls_session *ses, struct eip_tr_info *tr_info)
+{
+	tr_info->dtls.app_data = ses;
+	tr_info->dtls.cb = netfn_dtls_dec_done;
+	tr_info->dtls.err_cb = netfn_dtls_dec_err;
 }
