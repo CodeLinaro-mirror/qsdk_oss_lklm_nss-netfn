@@ -39,13 +39,15 @@ struct netfn_dtls_session {
 	struct netfn_dtls_tun *tun;	/* Tunnel device */
 
 	netfn_tuple_t tuple;		/* session tuple */
-	__be32 epoch;			/* DTLS epoch */
+	__be16 epoch;			/* DTLS epoch */
+	uint32_t flags;			/* Flags passed during allocation */
 	struct eip_tr *tr;		/* Transform record allocated by HW */
 	struct dentry *dentry;		/* debugfs dentry */
 	struct netfn_dtls_session_stats __percpu *stats_pcpu;	/* Session statistics */
 
 };
 
+uint16_t netfn_dtls_session_get_overhead(struct netfn_dtls_session *ses);
 void netfn_dtls_session_free(struct netfn_dtls_session *ses);
 struct netfn_dtls_session *netfn_dtls_session_alloc(struct netfn_dtls_cfg *cfg, netfn_tuple_t *t, struct netfn_dtls_tun *tun);
 
