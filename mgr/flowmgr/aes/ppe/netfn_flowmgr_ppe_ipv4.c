@@ -13,6 +13,9 @@
 #include <netfn_flowmgr.h>
 #include <flowmgr/netfn_flowmgr_priv.h>
 #include "netfn_flowmgr_ppe.h"
+#include "netfn_flowmgr_ppe_stats.h"
+
+bool ipv4_stats_sync = false;
 
 /*
  * netfn_flowmgr_ppe_validate_v4_create_tuple_info()
@@ -795,4 +798,40 @@ done:
 	 * Setting both netfn and ppe specific error code
 	 */
 	return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(netfn_status, ppe_status);
+}
+
+/*
+ * netfn_flowmgr_ppe_ipv4_deinit()
+ *	PPE IPv4 deinitialization
+ */
+void netfn_flowmgr_ppe_ipv4_deinit(void)
+{
+	netfn_flowmgr_warn("Netfn flowmgr PPE IPv4 de-initialization\n");
+
+	if (ipv4_stats_sync) {
+		netfn_flowmgr_ppe_ipv4_stats_deinit();
+	}
+}
+
+/*
+ * netfn_flowmgr_ppe_ipv4_init()
+ *	PPE IPv4 initialization
+ */
+bool netfn_flowmgr_ppe_ipv4_init(void)
+{
+	bool status = true;
+
+	netfn_flowmgr_warn("Netfn flowmgr PPE IPv4 initialization\n");
+
+	if (enable_stats_sync) {
+		netfn_flowmgr_trace("Stats sync is enabled, initialize PPE IPv4 stats\n");
+		status = netfn_flowmgr_ppe_ipv4_stats_init();
+		if (status != true) {
+			netfn_flowmgr_warn("PPE IPv4 stats initialization failed\n");
+			return status;
+		}
+		ipv4_stats_sync = true;
+		return status;
+	}
+	return status;
 }

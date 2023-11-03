@@ -125,18 +125,31 @@ typedef enum netfn_flowmgr_ae_type {
 } netfn_flowmgr_ae_type_t;
 
 /**
- * netfn_flowmgr_stats
- *	Statistics.
+ * netfn_flowmgr_conn_stats
+ *      Connection statistics.
  */
-typedef struct netfn_flowmgr_stats {
-	struct netfn_tuple tuple;			/**< Holds values of the tuple */
-	uint32_t rx_pkt_count;				/**< RX packet count */
-	uint32_t rx_byte_count;				/**< RX byte count */
-	uint32_t tx_pkt_count;				/**< TX packet count */
-	uint32_t tx_byte_count;				/**< TX byte count */
+struct netfn_flowmgr_conn_stats {
+	uint32_t ip_version;				/**< IPv4 or IPv6 */
+	uint32_t protocol;				/**< L4 protocol, e.g., TCP,UDP or UDP Lite */
+	uint32_t org_src_ip[4];				/**< Source IP address */
+	uint32_t org_dest_ip[4];			/**< Destination IP address */
+	uint32_t org_src_ident;				/**< Source L4 port, e.g., TCP or UDP port */
+	uint32_t org_dest_ident;			/**< Destination L4 port, e.g., TCP or UDP port */
+	uint32_t org_tx_pkt_count;			/**< TX packet count */
+	uint32_t org_tx_byte_count;			/**< TX byte count */
+	uint32_t org_rx_pkt_count;			/**< RX packet count */
+	uint32_t org_rx_byte_count;			/**< RX byte count */
+	uint32_t reply_src_ip[4];			/**< Source IP address */
+	uint32_t reply_dest_ip[4];			/**< Destination IP address */
+	uint32_t reply_src_ident;			/**< Source L4 port, e.g., TCP or UDP port */
+	uint32_t reply_dest_ident;			/**< Destination L4 port, e.g., TCP or UDP port */
+	uint32_t reply_tx_pkt_count;			/**< TX packet count */
+	uint32_t reply_tx_byte_count;			/**< TX byte count */
+	uint32_t reply_rx_pkt_count;			/**< RX packet count */
+	uint32_t reply_rx_byte_count;			/**< RX byte count */
 	netfn_flowmgr_accel_mode_t mode;		/**< AE */
 	netfn_flowmgr_stats_sync_reason_t reason;	/**< Reason for the sync */
-} netfn_flowmgr_stats_t;
+};
 
 /**
  * netfn_flowmgr_mac_rule
@@ -340,29 +353,64 @@ netfn_flowmgr_ret_t netfn_flowmgr_dscp_pri_add(struct netfn_flowmgr_dscp_priorit
  */
 netfn_flowmgr_ret_t netfn_flowmgr_dscp_pri_del(int16_t rule_id, netfn_flowmgr_accel_mode_t mode);
 
-/**
- * netfn_flowmgr_stats_callback_t
- *	Stats registration callback.
- *
- * @param[in] app_data.
- * @param[in] stats.
- *
- * @return
- *
+/*
+ * IPv6 stats registration callback
  */
-typedef void (*netfn_flowmgr_stats_callback_t)(void *app_data, netfn_flowmgr_stats_t *stats);
+typedef void (*netfn_flowmgr_ipv6_stats_callback_t)(void *app_data, struct netfn_flowmgr_conn_stats *conn_stats);
 
 /**
- * netfn_flowmgr_stats_callback_register
- *	Register the callbacks with flowmgr for stats.
+ * netfn_flowmgr_ipv6_stats_callback_unregister
+ *	API to unregister IPv6 connection stats sync callback.
+ *
+ * @return
+ */
+void netfn_flowmgr_ipv6_stats_callback_unregister(void);
+
+/**
+ * netfn_flowmgr_ipv6_stats_callback_register
+ *      Register the callbacks with the flowmgr for IPv6 stats.
+ *
+ * @datatypes
+ * void
+ * netfn_flowmgr_ipv6_stats_callback_t
+ *
+ * @param[in]
+ * app_data
+ * stats_cb
+ *
+ * @return
+ * Status of the register operation
+ */
+extern netfn_flowmgr_ret_t netfn_flowmgr_ipv6_stats_callback_register(void *app_data, netfn_flowmgr_ipv6_stats_callback_t stats_cb);
+
+/*
+ * IPv4 stats registration callback
+ */
+typedef void (*netfn_flowmgr_ipv4_stats_callback_t)(void *app_data, struct netfn_flowmgr_conn_stats *conn_stats);
+
+/**
+ * netfn_flowmgr_ipv4_stats_callback_unregister
+ *	API to unregister IPv4 connection stats sync callback.
+ *
+ * @return
+ */
+void netfn_flowmgr_ipv4_stats_callback_unregister(void);
+
+/**
+ * netfn_flowmgr_ipv4_stats_callback_register
+ *      Register the callbacks with the flowmgr for IPv4 stats.
+ *
+ * @datatypes
+ * void
+ * netfn_flowmgr_ipv4_stats_callback_t
  *
  * @param[in] app_data.
  * @param[in] stats_cb user callback.
  *
  * @return
- * netfn_flowmgr_ret_t
+ * Status of the register operation
  */
-extern netfn_flowmgr_ret_t netfn_flowmgr_stats_callback_register(void *app_data, netfn_flowmgr_stats_callback_t stats_cb);
+extern netfn_flowmgr_ret_t netfn_flowmgr_ipv4_stats_callback_register(void *app_data, netfn_flowmgr_ipv4_stats_callback_t stats_cb);
 
 /**
  * netfn_flowmgr_rule_decel
