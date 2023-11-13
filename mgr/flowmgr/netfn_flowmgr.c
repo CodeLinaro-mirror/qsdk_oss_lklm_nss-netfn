@@ -15,6 +15,7 @@
 #include <linux/etherdevice.h>
 #include "netfn_flowmgr_priv.h"
 #include "aes/ppe/netfn_flowmgr_ppe.h"
+#include "aes/sfe/netfn_flowmgr_sfe.h"
 
 #define NETFN_FLOWMGR_STATIC_DBG_LEVEL_STR_LEN 8
 
@@ -549,9 +550,9 @@ void netfn_flowmgr_ae_deinit(void)
 #ifdef NETFN_FLOWMGR_AE_PPE_ENABLE
 	netfn_flowmgr_ppe_deinit();
 #endif
-	/*
-	 * TODO: Add equivalent deinit changes for SFE.
-	 */
+#ifdef NETFN_FLOWMGR_AE_SFE_ENABLE
+	netfn_flowmgr_sfe_deinit();
+#endif
 }
 
 /*
@@ -559,17 +560,20 @@ void netfn_flowmgr_ae_deinit(void)
  *      Netfn flow manager AEs initialization
  */
 int netfn_flowmgr_ae_init(void) {
-	bool status;
+	bool ppe_status = false;
+	bool sfe_status = false;
 #ifdef NETFN_FLOWMGR_AE_PPE_ENABLE
-	status = netfn_flowmgr_ppe_init();
-	if(!status) {
+	ppe_status = netfn_flowmgr_ppe_init();
+	if(!ppe_status)
 		netfn_flowmgr_warn("PPE netfn initialization failed\n");
-		return -1;
-	}
 #endif
-	/*
-	 * TODO: Add equivalent init changes for SFE.
-	 */
+#ifdef NETFN_FLOWMGR_AE_SFE_ENABLE
+	sfe_status = netfn_flowmgr_sfe_init();
+	if(!sfe_status)
+		netfn_flowmgr_warn("SFE netfn initialization failed\n");
+#endif
+	if (!ppe_status && !sfe_status)
+		return -1;
 
 	return 0;
 }
