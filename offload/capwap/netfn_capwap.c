@@ -30,38 +30,15 @@
 #include "netfn_capwap_priv.h"
 
 /*
+ * Global capwap object.
+ */
+struct netfn_capwap global_nc;
+
+/*
  * Core configuration.
  */
 int fwd_cores_mask = NETFN_CAPWAP_FWD_CORES_MASK;	/* 0100 represents core 2 */
 int capwap_core = NETFN_CAPWAP_CORE;			/* 3 represents core 3 */
-
-/*
- * Global capwap object.
- */
-static struct netfn_capwap global_nc;
-
-/*
- * netfn_capwap_root_dir
- *	Root directory for netfn capwap engine.
- */
-static struct ctl_table netfn_capwap_root_dir[] = {
-	{
-		.procname = "capwap",
-		.mode = 0555,
-	},
-};
-
-/*
- * netfn_capwap_root
- *	Root of netfn capwap engine sysctl configuration.
- */
-static struct ctl_table netfn_capwap_root[] = {
-	{
-		.procname = "dev",
-		.mode = 0555,
-		.child = netfn_capwap_root_dir
-	},
-};
 
 /*
  * netfn_capwap_init()
@@ -80,16 +57,6 @@ int __init netfn_capwap_init(void)
 	}
 
 	/*
-	 * Create sysctl for capwap configuration.
-	 */
-	nc->sysctl = register_sysctl_table(netfn_capwap_root);
-	if (!nc->sysctl) {
-		pr_warn("%px: Unable to register sysctl for capwap engine.\n", nc);
-		vfree(nc);
-		return -ENOMEM;
-	}
-
-	/*
 	 * Create a debugfs entry for capwap netfn engine.
 	 */
 	nc->dentry = debugfs_create_dir("qca-nss-netfn-capwap", NULL);
@@ -97,9 +64,7 @@ int __init netfn_capwap_init(void)
 		pr_warn("%p, Unable to create debugsfs entry for NETFN Capwap engine\n", nc);
 	}
 
-	spin_lock_init(&nc->lock);
-
-	pr_info("NETFN CAPWAP engine loaded: (%s)\n", NETFN_BUILD_ID);
+	pr_info("NETFN CAPWAP engine loaded: (%s)\n", NSS_NETFN_BUILD_ID);
 	return 0;
 }
 
@@ -115,11 +80,6 @@ void __exit netfn_capwap_exit(void)
 	 * Remove the debug entry.
 	 */
 	debugfs_remove_recursive(nc->dentry);
-
-	/*
-	 * Unregister the sysctl table.
-	 */
-	unregister_sysctl_table(nc->sysctl);
 }
 
 module_param(fwd_cores_mask, int, S_IRUSR);

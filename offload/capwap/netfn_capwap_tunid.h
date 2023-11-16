@@ -26,10 +26,9 @@
  *	Tunnel id.
  */
 struct netfn_capwap_tunid {
-	struct net_device *dev;			/* Pointer to dummy dev. */
-	struct net_device *tunnels[NETFN_CAPWAP_MAX_IDS];
-							/* Tunnel dev array. */
-	DECLARE_BITMAP(map, NETFN_CAPWAP_MAX_IDS); 	/* Mapping of active/deactive tunnels. */
-	spinlock_t lock;				/* Lock for tunnel map. */
+	struct net_device *dev;					/* Pointer to dummy dev. */
+	struct net_device *tunnels[NETFN_CAPWAP_MAX_IDS];	/* Tunnel dev array. */
+	DECLARE_BITMAP(map, NETFN_CAPWAP_MAX_IDS); 		/* Mapping of active/deactive tunnels. */
+	spinlock_t lock;					/* Tunnel ID lock. */
 };
 #endif /* __NETFN_CAPWAP_TUNID_H */

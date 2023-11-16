@@ -20,7 +20,6 @@
 #define __NETFN_CAPWAP_H
 
 #include <netfn_types.h>
-#include <netfn_pkt_steer.h>
 
 /*
  * netfn_capwap_enc_cfg
@@ -51,6 +50,7 @@ struct netfn_capwap_tun_cfg {
 	struct netfn_capwap_enc_cfg enc;	/**< Encap configuration of tunnel. */
 	struct netfn_capwap_dec_cfg dec;	/**< Decap configuration of tunnel. */
 	uint8_t capwap_ver;			/**< Capwap version. */
+	uint8_t features;			/**< Features enabled for tunnel. */
 };
 
 /*

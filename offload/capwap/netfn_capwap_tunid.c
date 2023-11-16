@@ -34,15 +34,6 @@
 #include "netfn_capwap_tunid.h"
 
 /*
- * netfn_capwap_tunid_xmit()
- *	Capwap tunnel xmit
- */
-netdev_tx_t netfn_capwap_tunid_dev_xmit(struct sk_buff *skb, struct net_device *dev)
-{
-	return dev->netdev_ops->ndo_start_xmit(skb, dev);
-}
-
-/*
  * netfn_capwap_tunid_open()
  *	Start netdev queue.
  */
@@ -77,6 +68,24 @@ static void netfn_capwap_tunid_stats(struct net_device *dev, struct rtnl_link_st
  */
 static netdev_tx_t netfn_capwap_tunid_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
+	struct netfn_capwap_prehdr *pre = (struct netfn_capwap_prehdr *)skb->data;
+	struct netfn_capwap_tun_id *ncti = netdev_priv(dev);
+	struct net_device *tun_dev;
+	uint8_t id = pre->tun_id;
+	netdev_tx_t status;
+
+	rcu_read_lock_bh();
+	tun_dev = rcu_dereference(ncti->tunnels[id]);
+	if (!tun_dev) {
+		rcu_read_unlock_bh();
+		dev_kfree_skb(skb);
+		return NETDEV_TX_OK;
+	}
+
+	skb->dev = tun_dev;
+
+	status = dev_queue_xmit(skb);
+	rcu_read_unlock_bh();
 	return NETDEV_TX_OK;
 }
 
@@ -94,6 +103,16 @@ static const struct net_device_ops netfn_capwap_tunid_ops = {
 };
 
 /*
+ * netfn_capwap_tunid_destructor()
+ *	Dummy dev descriptor
+ */
+static void netfn_capwap_tunid_destructor(struct net_device *dev)
+{
+	free_netdev(dev);
+	return;
+}
+
+/*
  * netfn_capwap_tunid_setup()
  *	Tunid setup function.
  */
@@ -101,13 +120,13 @@ static void netfn_capwap_tunid_setup(struct net_device *dev)
 {
 	dev->addr_len = ETH_ALEN;
 	dev->mtu = ETH_DATA_LEN;
-	dev->needed_headroom = 0;
-	dev->needed_tailroom = 0;
+	dev->needed_headroom = NETFN_CAPWAP_MAX_HDR_SZ;
+	dev->needed_tailroom = NETFN_CAPWAP_MAX_HDR_SZ;
 	dev->type = ARPHRD_VOID;
 	dev->ethtool_ops = NULL;
 	dev->header_ops = NULL;
 	dev->netdev_ops = &netfn_capwap_tunid_ops;
-	dev->priv_destructor = NULL;
+	dev->priv_destructor = netfn_capwap_tunid_destructor;
 	memcpy(dev->dev_addr, "\x00\x00\x00\x00\x00\x00", dev->addr_len);
 	memset(dev->broadcast, 0xff, dev->addr_len);
 	memcpy(dev->perm_addr, dev->dev_addr, dev->addr_len);
@@ -119,9 +138,30 @@ static void netfn_capwap_tunid_setup(struct net_device *dev)
  */
 struct net_device *netfn_capwap_tunid_alloc(void)
 {
-	struct net_device *dev = NULL;
+	struct netfn_capwap_tunid *ncti;
+	struct net_device *dev;
+	int err;
 
-	BUG_ON(1);
+	/*
+	 * Allocate a new device for tunnel.
+	 */
+	dev = alloc_netdev(sizeof(*ncti), "netfn_capwap%d", NET_NAME_ENUM, netfn_capwap_tunid_setup);
+	if (!dev) {
+		pr_warn("%p: failed to allocate capwap dummy device\n", &global_nc);
+		return NULL;
+	}
+
+	ncti = netdev_priv(dev);
+	ncti->dev = dev;
+	memset(&ncti->tunnels, 0, sizeof(NETFN_CAPWAP_MAX_IDS));
+	spin_lock_init(&ncti->lock);
+
+	err = register_netdev(dev);
+	if (err) {
+		pr_warn("%px: register_netdev() failed with error(%d)\n", &global_nc, err);
+		return NULL;
+	}
+
 	return dev;
 }
 EXPORT_SYMBOL(netfn_capwap_tunid_alloc);
@@ -132,7 +172,40 @@ EXPORT_SYMBOL(netfn_capwap_tunid_alloc);
  */
 bool netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, struct netfn_capwap_tun_cfg *cfg)
 {
-	BUG_ON(1);
+	struct netfn_capwap_tunid *ncti;
+	struct net_device *tun_dev;
+
+	/*
+	 * Sanity check for input params
+	 */
+	BUG_ON(!dev);
+
+	if (id <= 0 || id > NETFN_CAPWAP_MAX_IDS) {
+		pr_warn("%px: Invalid id(%d) allowed(1 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS);
+		return false;
+	}
+
+	ncti = netdev_priv(dev);
+
+	/*
+	 * Check if id already in use
+	 */
+	if (test_and_set_bit(id, ncti->map)) {
+		pr_warn("%px: Id(%d) already in use\n", ncti, id);
+		return false;
+	}
+
+	tun_dev = netfn_capwap_tun_alloc(cfg);
+	if (!tun_dev) {
+		pr_warn("%px: Unable to allocate tunnel for id(%d)\n", ncti, id);
+		return false;
+	}
+
+	ncti = netdev_priv(dev);
+
+	spin_lock_bh(&ncti->lock);
+	rcu_assign_pointer(ncti->tunnels[id], tun_dev);
+	spin_unlock_bh(&ncti->lock);
 
 	return true;
 }
@@ -141,11 +214,29 @@ EXPORT_SYMBOL(netfn_capwap_tunid_add);
 /*
  * netfn_capwap_tunid_free()
  *	Frees tunnel corresponding to dev passed.
+ *	We free the dev alone. We rely on the caller for
+ *	freeing the corresponding tunnel devs.
  */
 bool netfn_capwap_tunid_free(struct net_device *dev)
 {
-	BUG_ON(1);
+	struct netfn_capwap_tunid *ncti;
 
+	/*
+	 * Check if dev is null
+	 */
+	BUG_ON(!dev);
+
+	ncti = netdev_priv(dev);
+
+	/*
+	 * Reject if we have active tunnels.
+	 */
+	if (!bitmap_empty(ncti->map, NETFN_CAPWAP_MAX_IDS)) {
+		pr_warn("%px: Capwap tunnels are still active.\n", ncti);
+		return false;
+	}
+
+	unregister_netdev(dev);
 	return true;
 }
 EXPORT_SYMBOL(netfn_capwap_tunid_free);
@@ -154,10 +245,35 @@ EXPORT_SYMBOL(netfn_capwap_tunid_free);
  * netfn_capwap_tunid_del()
  *	Delets tun_id specific tunnel.
  */
-bool netfn_capwap_tunid_del(struct net_device *dev, uint16_t id)
+bool netfn_capwap_tunid_del(struct net_device *dev, uint8_t id)
 {
-	BUG_ON(1);
+	struct netfn_capwap_tunid *ncti;
+	struct net_device *tun_dev;
 
+	/*
+	 * Sanity check for input params
+	 */
+	BUG_ON(!dev);
+
+	if (id <= 0 || id > NETFN_CAPWAP_MAX_IDS) {
+		pr_warn("%px: Invalid id(%d) allowed(1 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS);
+		return false;
+	}
+
+	ncti = netdev_priv(dev);
+
+	spin_lock_bh(&ncti->lock);
+	tun_dev = rcu_dereference_protected(ncti->tunnels[id], lock_is_held(&ncti->lock));
+	rcu_assign_pointer(ncti->tunnels[id], NULL);
+	clear_bit(id, ncti->map);
+	spin_unlock_bh(&ncti->lock);
+
+	if (!tun_dev) {
+		pr_info("%px: Unable to delete tun(%d)\n", ncti, id);
+		return false;
+	}
+
+	pr_info("%px: Successfully deleted tun(%d)\n", ncti, id);
 	return true;
 }
 EXPORT_SYMBOL(netfn_capwap_tunid_del);
@@ -168,9 +284,36 @@ EXPORT_SYMBOL(netfn_capwap_tunid_del);
  */
 bool netfn_capwap_tunid_bind(struct net_device *dev, uint8_t id, struct net_device *next)
 {
-	BUG_ON(1);
+	struct netfn_capwap_tunid *ncti;
+	struct net_device *tun_dev;
 
+	BUG_ON(!dev);
+	BUG_ON(!next);
+
+	if (id <= 0 || id > NETFN_CAPWAP_MAX_IDS) {
+		pr_warn("%px: Invalid id(%d) allowed(1 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS);
+		return false;
+	}
+
+	ncti = netdev_priv(dev);
+
+	rcu_read_lock_bh();
+	tun_dev = rcu_dereference(ncti->tunnels[id]);
+	if (!tun_dev) {
+		pr_warn("%px: No tunnel found with id(%d)\n", ncti, id);
+		goto error;
+	}
+
+	if (!netfn_capwap_tun_bind(tun_dev, next)) {
+		pr_warn("%px: Unable to bind tun(%d).\n", ncti, id);
+		goto error;
+	}
+
+	rcu_read_unlock_bh();
 	return true;
+error:
+	rcu_read_unlock_bh();
+	return false;
 }
 EXPORT_SYMBOL(netfn_capwap_tunid_bind);
 
@@ -178,9 +321,34 @@ EXPORT_SYMBOL(netfn_capwap_tunid_bind);
  * netfn_capwap_tunid_stats_get()
  *	Gets the tunnel ID stats.
  */
-int netfn_capwap_tunid_stats_get(struct net_device *pdev, uint8_t tun_id, struct netfn_capwap_tun_stats *stats)
+int netfn_capwap_tunid_stats_get(struct net_device *dev, uint8_t id, struct netfn_capwap_tun_stats *stats)
 {
-	BUG_ON(1);
+	struct netfn_capwap_tunid *ncti;
+	struct net_device *tun_dev;
+
+	/*
+	 * Sanity check for input params
+	 */
+	BUG_ON(!dev);
+	BUG_ON(!stats);
+
+	if (id <= 0 || id > NETFN_CAPWAP_MAX_IDS) {
+		pr_warn("%px: Invalid id(%d) allowed(1 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS);
+		return -EINVAL;
+	}
+
+	ncti = netdev_priv(dev);
+
+	rcu_read_lock_bh();
+	tun_dev = rcu_dereference(ncti->tunnels[id]);
+	if (!tun_dev) {
+		rcu_read_unlock_bh();
+		pr_warn("%px: No tunnels found with id(%d)\n", ncti, id);
+		return -EINVAL;
+	}
+
+	netfn_capwap_tun_stats_get(tun_dev, stats);
+	rcu_read_unlock_bh();
 
 	return 0;
 }

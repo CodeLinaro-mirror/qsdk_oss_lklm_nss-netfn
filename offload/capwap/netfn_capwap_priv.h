@@ -19,6 +19,12 @@
 #ifndef __NETFN_CAPWAP_PRIV_H
 #define __NETFN_CAPWAP_PRIV_H
 
+extern struct netfn_capwap global_nc;
+extern int fwd_cores_mask;
+extern int capwap_core;
+
+#define NETFN_CAPWAP_TUN_STATS_STRLEN 20	/* Stats string length. */
+#define NETFN_CAPWAP_TUN_STATS_WIDTH 82		/* Stats string width. */
 #define NETFN_CAPWAP_FWD_CORES_MASK 4	/* Default values for core masks */
 #define NETFN_CAPWAP_CORE 8		/* Default values for core */
 
@@ -27,8 +33,6 @@
  *	Driver level instance
  */
 struct netfn_capwap {
-	struct ctl_table_header *sysctl;/* Sysctl for configuration. */
 	struct dentry *dentry;		/* Debug entry for driver. */
-	spinlock_t lock;		/* Global lock. */
 };
 #endif /* __NETFN_CAPWAP_PRIV_H */

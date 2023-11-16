@@ -21,21 +21,27 @@
 #define __NETFN_CAPWAP_ENC_H
 
 /*
+ * netfn_capwap_enc_stats_read()
+ *	Reads encap stats.
+ */
+void netfn_capwap_enc_stats_read(struct netfn_capwap_tun_enc *enc, struct netfn_capwap_tun_stats *stats);
+
+/*
  * netfn_capwap_enc_init()
  *	Encapsulation initialization.
  */
-void netfn_capwap_enc_init(struct netfn_capwap_tun *nct, struct netfn_capwap_tun_cfg *cfg);
+bool netfn_capwap_enc_init(struct netfn_capwap_tun_enc *enc, struct netfn_capwap_enc_cfg *cfg);
 
 /*
- * netfn_capwap_enc_frag()
- *	Fragment the packet.
+ * netfn_capwap_enc_deinit()
+ *	Encapsulation deinitialization.
  */
-int netfn_capwap_enc_frag(struct netfn_capwap_tun *nct, struct sk_buff *skb, struct sk_buff_head *q_frag);
+void netfn_capwap_enc_deinit(struct netfn_capwap_tun_enc *enc);
 
 /*
  * netfn_capwap_enc()
- *	Encapsulates the packet.
+ *	Encapsulates the packet and transmits skb.
  */
-int netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff_head *q_frag, struct netfn_capwap_enc_mdata *mdata)
+int netfn_capwap_enc(struct netfn_capwap_tun_enc *enc, struct sk_buff *skb);
 
 #endif /* __NETFN_CAPWAP_ENC_H */

@@ -19,6 +19,8 @@
 #ifndef __NETFN_CAPWAP_HDR_H
 #define __NETFN_CAPWAP_HDR_H
 
+#include <linux/ieee80211.h>
+
 /*
  * First word
  */
@@ -67,6 +69,7 @@
 #define NETFN_CAPWAP_MAX_NWIRELESS	8
 #define NETFN_CAPWAP_SNAP_HDR_LEN	6
 #define NETFN_CAPWAP_WIRELESS_INFO_LEN	8
+#define NETFN_CAPWAP_WLAN_QOS		2
 
 #define NETFN_CAPWAP_ENC_FLAG_IPV6		0x00000001
 #define NETFN_CAPWAP_ENC_FLAG_UDPLITE		0x00000002
@@ -76,8 +79,8 @@
 #define NETFN_CAPWAP_FEATURES_INNER_SGT		0x00000002
 #define NETFN_CAPWAP_FEATURES_OUTER_SGT		0x00000004
 #define NETFN_CAPWAP_FEATURES_WLAN_QOS		0x00000008
-#define NETFN_CAPWAP_FEATURES_RPS		0x00000010
 
+#define NETFN_CAPWAP_PKT_TYPE_INVALID		-1
 #define NETFN_CAPWAP_PKT_TYPE_CTRL		0x0001
 #define NETFN_CAPWAP_PKT_TYPE_DATA		0x0002
 #define NETFN_CAPWAP_PKT_TYPE_DTLS		0x0004
@@ -89,12 +92,15 @@
 #define NETFN_CAPWAP_CTRL_PORT			5256
 
 #define NETFN_CAPWAP_HDR_IPV4_SZ (sizeof(struct iphdr) + sizeof(struct udphdr))
-#define NETFN_CAPWAP_HDR_DTLS_SZ	20
 #define NETFN_CAPWAP_MAX_BUF_SZ		9000
 #define NETFN_CAPWAP_MAX_FRAGS 		10
-#define NETFN_CAPWAP_L2_HDR_SZ		40	/* ETH + VLAN + SNAP */
+#define NETFN_CAPWAP_L2_HDR_SZ		(sizeof(struct ethhdr) + sizeof(struct vlan_hdr))
 #define NETFN_CAPWAP_MIN_HDR_SZ (NETFN_CAPWAP_L2_HDR_SZ + sizeof(struct ipv6hdr) \
 		  + sizeof(struct udphdr) + sizeof(struct netfn_capwap_hdr))
+#define NETFN_CAPWAP_8023_TO_80211_SZ (sizeof(struct ieee80211_hdr_3addr) + sizeof(struct netfn_capwap_winfo) \
+		+ NETFN_CAPWAP_SNAP_HDR_LEN + NETFN_CAPWAP_WLAN_QOS - sizeof(struct ethhdr))
+								/* wlan header + winfo + snap + wlan_qos - ethernet */
+#define NETFN_CAPWAP_MAX_HDR_SZ (NETFN_CAPWAP_MIN_HDR_SZ + NETFN_CAPWAP_8023_TO_80211_SZ)
 
 /*
  * netfn_capwap_prehdr.
@@ -134,16 +140,15 @@ struct netfn_capwap_winfo {
  *	CAPWAP header information
  */
 struct netfn_capwap_hdr_mdata {
-	struct sk_buff *frag_list;
 	uint16_t frag_id;		/* Fragment - ID */
 	uint16_t frag_offset;		/* Fragment offset */
-	uint8_t frag:1;
-	uint8_t frag_end:1;
-	uint8_t keep_alive:1;
-	uint8_t winfo:1;
-	uint8_t type_80211:1;
-	uint8_t drop:1;
-	uint8_t exception:1;
+	uint8_t frag:1;			/* 1=Fragment, 0=Not a fragment */
+	uint8_t frag_end:1;		/* Is frag end */
+	uint8_t keep_alive:1;		/* Is keepalive */
+	uint8_t winfo:1;		/* Inner contains wireless info */
+	uint8_t type_80211:1;		/* Inner is 802.11 */
+	uint8_t drop:1;			/* Drop the skb */
+	uint8_t exception:1;		/* Exception the skb */
 };
 
 /*
@@ -187,12 +192,12 @@ union netfn_capwap_hdr_info {
 		uint8_t wbit:1;		/* 1=wireless info present, 0=not present */
 		uint8_t lbit:1;		/* 1=Last fragment, 0=Not the last fragment */
 		uint8_t fbit:1;		/* 1=Fragmented, 0=Not fragmented */
-		uint8_t tbit:1;
-		uint8_t wbid:5;
-		uint8_t rid2:2;
-		uint8_t rid1:3;
-		uint8_t hlen:5;
-		uint8_t preamble;
+		uint8_t tbit:1;		/* 1=Inner is 802.11, 0=Inner is 802.3 */
+		uint8_t wbid:5;		/* Type of wlan packet: 0=Reserved, 1=IEEE 802.11, 2=Reserved, 3=EPCGlobal [EPCGlobal] */
+		uint8_t rid2:2;		/* Radio ID */
+		uint8_t rid1:3;		/* Radio ID */
+		uint8_t hlen:5;		/* Header length */
+		uint8_t preamble;	/* 0=CAPWAP header, 1=DTLS header */
 	} fields;
 
 	__le32 word;		/* Header information words */
@@ -202,7 +207,7 @@ union netfn_capwap_hdr_frag {
 	struct {
 		uint16_t reserve:3;	/* 13-bit Offset of the fragment in 8 byte words */
 		uint16_t offset:13;	/* 13-bit Offset of the fragment in 8 byte words */
-		uint16_t id;	/* Fragment ID */
+		uint16_t id;		/* Fragment ID */
 
 	} fields;
 	__le32 word;		/* Fragment information words */

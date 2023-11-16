@@ -27,16 +27,26 @@
 #include <linux/bitmap.h>
 
 #include "netfn_capwap.h"
-#include "netfn_capwap_private.h"
+#include "netfn_capwap_priv.h"
 #include "netfn_capwap_hdr.h"
 #include "netfn_capwap_tun.h"
 #include "netfn_capwap_dec.h"
 
 /*
- * netfn_capwap_dec_rx_skbs()
- *	Receive an SKB queue for processing
+ * netfn_capwap_dec_stats_show()
+ *	Prints the decap stats.
  */
-void netfn_capwap_dec_rx_skbs(void *app_data, struct sk_buff_head *q_head)
+ssize_t netfn_capwap_dec_stats_show(struct netfn_capwap_tun_dec *dec, char *buf, size_t size_wr, ssize_t *stats_sz)
+{
+	BUG_ON(1);
+	return 0;
+}
+
+/*
+ * netfn_capwap_dec_stats_read()
+ *	Reads decap stats.
+ */
+void netfn_capwap_dec_stats_read(struct netfn_capwap_tun_dec *dec, struct netfn_capwap_dec_stats *dest)
 {
 	BUG_ON(1);
 }
@@ -45,7 +55,16 @@ void netfn_capwap_dec_rx_skbs(void *app_data, struct sk_buff_head *q_head)
  * netfn_capwap_dec_init()
  *	Initializes the decap object.
  */
-void netfn_capwap_dec_init(struct netfn_capwap_tun *nct, struct net_device *dev)
+void netfn_capwap_dec_init(struct netfn_capwap_tun_dec *dec, struct netfn_capwap_dec_cfg *dec)
+{
+	BUG_ON(1);
+}
+
+/*
+ * netfn_capwap_dec_deinit()
+ *	Deinitializes the decap object.
+ */
+void netfn_capwap_dec_deinit(struct netfn_capwap_tun_dec *dec)
 {
 	BUG_ON(1);
 }

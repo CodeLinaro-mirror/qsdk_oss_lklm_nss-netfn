@@ -27,36 +27,34 @@
 #include <linux/bitmap.h>
 
 #include "netfn_capwap.h"
-#include "netfn_capwap_private.h"
+#include "netfn_capwap_priv.h"
 #include "netfn_capwap_hdr.h"
 #include "netfn_capwap_tun.h"
 #include "netfn_capwap_enc.h"
 
 /*
- * netfn_capwap_enc_init()
- *	Encapsulation initialization.
+ * netfn_capwap_enc_stats_read()
+ *	Reads encap stats.
  */
-void netfn_capwap_enc_init(struct netfn_capwap_tun *nct, struct netfn_capwap_tun_cfg *cfg)
+void netfn_capwap_enc_stats_read(struct netfn_capwap_tun_enc *enc, struct netfn_capwap_tun_stats *dest)
 {
-	BUG_ON(1);
+	return;
 }
 
 /*
- * netfn_capwap_enc_frag()
- *	Fragment the packet.
+ * netfn_capwap_enc_init()
+ *	Encapsulation initialization.
  */
-int netfn_capwap_enc_frag(struct netfn_capwap_tun *nct, struct sk_buff *skb, struct sk_buff_head *q_frag)
+void netfn_capwap_enc_init(struct netfn_capwap_tun_enc *enc, struct netfn_capwap_enc_cfg *cfg)
 {
 	BUG_ON(1);
-
-	return 0;
 }
 
 /*
  * netfn_capwap_enc()
  *	Encapsulates the packet.
  */
-int netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff_head *q_frag, struct netfn_capwap_enc_mdata *mdata)
+int netfn_capwap_enc(struct netfn_capwap_tun_enc *enc, struct sk_buff *skb)
 {
 	BUG_ON(1);
 
