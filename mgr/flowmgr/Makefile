@@ -23,6 +23,7 @@ ifdef NETFN_FLOWMGR_AE_SFE_ENABLE
 qca-nss-flowmgr-objs += aes/sfe/netfn_flowmgr_sfe.o
 qca-nss-flowmgr-objs += aes/sfe/netfn_flowmgr_sfe_ipv4.o
 qca-nss-flowmgr-objs += aes/sfe/netfn_flowmgr_sfe_ipv6.o
+qca-nss-flowmgr-objs += aes/sfe/netfn_flowmgr_sfe_stats.o
 endif
 
 ccflags-y += -Wall -Werror

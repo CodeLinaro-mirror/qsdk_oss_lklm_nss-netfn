@@ -14,6 +14,7 @@
 #include <netfn_flowmgr.h>
 #include <flowmgr/netfn_flowmgr_priv.h>
 #include "netfn_flowmgr_sfe.h"
+#include "netfn_flowmgr_sfe_stats.h"
 #include "netfn_flowmgr_sfe_ipv4.h"
 #include "netfn_flowmgr_sfe_ipv6.h"
 
@@ -168,6 +169,14 @@ bool netfn_flowmgr_sfe_init(void)
 	 */
 	netfn_flowmgr_ae_ops_register(NETFN_FLOWMGR_ACCEL_MODE_SFE, &sfe_ops);
 
+	if (!netfn_flowmgr_sfe_ipv4_init()) {
+		netfn_flowmgr_warn("Netfn flowmgr SFE IPv4 initialization failed\n");
+		return false;
+	}
+	if (!netfn_flowmgr_sfe_ipv6_init()) {
+		netfn_flowmgr_warn("Netfn flowmgr SFE IPv6 initialization failed\n");
+		return false;
+	}
 	return true;
 }
 
@@ -181,4 +190,7 @@ void netfn_flowmgr_sfe_deinit(void)
 	 * Unregister the callbacks with netfn core.
 	 */
 	netfn_flowmgr_ae_ops_unregister(NETFN_FLOWMGR_AE_TYPE_SFE);
+
+	netfn_flowmgr_sfe_ipv4_deinit();
+	netfn_flowmgr_sfe_ipv6_deinit();
 }
