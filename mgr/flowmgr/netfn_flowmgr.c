@@ -230,7 +230,7 @@ void netfn_flowmgr_ipv6_stats_callback_unregister(void)
                 f->stats_sync_v6_cb = NULL;
                 f->stats_sync_v6_data = NULL;
         }
-	spin_unlock_bh(&f->lock);
+	spin_lock_bh(&f->lock);
 
 	netfn_flowmgr_info("Netfn IPv6 stats callback unregistered successfully");
 }
@@ -247,7 +247,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_ipv6_stats_callback_register(void *app_data, n
 	spin_lock_bh(&f->lock);
 	f->stats_sync_v6_cb = cb;
 	f->stats_sync_v6_data = app_data;
-	spin_unlock_bh(&f->lock);
+	spin_lock_bh(&f->lock);
 
 	netfn_flowmgr_info("Netfn IPv6 stats callback registered successfully, cb: %p", cb);
 	return NETFN_FLOWMGR_RET_SUCCESS;
@@ -267,7 +267,7 @@ void netfn_flowmgr_ipv4_stats_callback_unregister(void)
                 f->stats_sync_v4_cb = NULL;
                 f->stats_sync_v4_data = NULL;
         }
-	spin_unlock_bh(&f->lock);
+	spin_lock_bh(&f->lock);
 
 	netfn_flowmgr_info("Netfn IPv4 stats callback unregistered successfully");
 }
@@ -284,7 +284,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_ipv4_stats_callback_register(void *app_data, n
 	spin_lock_bh(&f->lock);
 	f->stats_sync_v4_cb = cb;
 	f->stats_sync_v4_data = app_data;
-	spin_unlock_bh(&f->lock);
+	spin_lock_bh(&f->lock);
 
 	netfn_flowmgr_info("Netfn IPv4 stats callback registered successfully, cb: %p", cb);
 	return NETFN_FLOWMGR_RET_SUCCESS;
@@ -599,8 +599,17 @@ void __exit netfn_flowmgr_exit_module(void)
  */
 static int __init netfn_flowmgr_init_module(void)
 {
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
 	int ret = 0;
 
+	/*
+	 * Initialize lock
+	 */
+	spin_lock_init(&f->lock);
+
+	/*
+	 * AEs initialization
+	 */
 	ret = netfn_flowmgr_ae_init();
 	if (ret) {
 		netfn_flowmgr_warn("Failed to initialize AEs, error=%d\n", ret);

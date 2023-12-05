@@ -12,6 +12,7 @@ endif
 
 obj-m += qca-nss-flowmgr.o
 qca-nss-flowmgr-objs := netfn_flowmgr.o
+qca-nss-flowmgr-objs += netfn_flowmgr_stats.o
 ifdef NETFN_FLOWMGR_AE_PPE_ENABLE
 qca-nss-flowmgr-objs += aes/ppe/netfn_flowmgr_ppe.o
 qca-nss-flowmgr-objs += aes/ppe/netfn_flowmgr_ppe_ipv4.o

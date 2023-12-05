@@ -56,10 +56,8 @@ static inline void netfn_flowmgr_ppe_ipv4_process_one_conn_sync_msg(struct ppe_d
 	netfn_flowmgr_ipv4_stats_callback_t sync_cb;
 	void *sync_data;
 
-	spin_lock(&f->lock);
 	sync_cb = f->stats_sync_v4_cb;
 	sync_data = f->stats_sync_v4_data;
-	spin_unlock(&f->lock);
 
 	if (sync_cb == NULL) {
 		netfn_flowmgr_warn("No callback registered for stats sync\n");
@@ -227,10 +225,8 @@ static inline void netfn_flowmgr_ppe_ipv6_process_one_conn_sync_msg(struct ppe_d
 	netfn_flowmgr_ipv6_stats_callback_t sync_cb;
 	void *sync_data;
 
-	spin_lock(&f->lock);
 	sync_cb = f->stats_sync_v6_cb;
 	sync_data = f->stats_sync_v6_data;
-	spin_unlock(&f->lock);
 
 	if (sync_cb == NULL) {
 		netfn_flowmgr_warn("No callback registered for IPv6 stats sync\n");

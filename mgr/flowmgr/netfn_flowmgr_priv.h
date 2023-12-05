@@ -13,7 +13,9 @@
 #define __NETFN_FLOWMGR_PRIV_H
 
 #include <netfn_flowmgr.h>
+#include "netfn_flowmgr_stats.h"
 
+extern struct netfn_flowmgr netfn_flowmgr_gbl;
 extern uint32_t static_dbg_level;
 extern uint16_t ipv4_stats_sync_period;
 extern uint16_t ipv6_stats_sync_period;
@@ -91,13 +93,16 @@ struct netfn_flowmgr_ae_ops {
  *	Netfn flowmgr base structure
  */
 struct netfn_flowmgr {
-	spinlock_t lock;						/* Netfn flowmgr lock */
-	struct netfn_flowmgr_ae_ops *ae_ops[NETFN_FLOWMGR_AE_TYPE_MAX];	/* AE operations */
-	struct ctl_table_header *netfn_flowmgr_header;			/* Netfn flowmgr sysctl */
-	netfn_flowmgr_ipv4_stats_callback_t stats_sync_v4_cb;		/* Callback to call to sync IPv4 statistics */
-        void *stats_sync_v4_data;					/* Argument of IPv4 callback: stats_sync_v4_cb */
-	netfn_flowmgr_ipv6_stats_callback_t stats_sync_v6_cb;		/* Callback to call to IPv6 sync statistics */
-        void *stats_sync_v6_data;					/* Argument of IPv6 callback: stats_syncv6__cb */
+	spinlock_t lock;							/* Netfn flowmgr lock */
+	struct netfn_flowmgr_ae_ops *ae_ops[NETFN_FLOWMGR_AE_TYPE_MAX];		/* AE operations */
+	struct ctl_table_header *netfn_flowmgr_header;				/* Netfn flowmgr sysctl */
+	netfn_flowmgr_ipv4_stats_callback_t stats_sync_v4_cb;			/* Callback to call to sync IPv4 statistics */
+        void *stats_sync_v4_data;						/* Argument of IPv4 callback: stats_sync_v4_cb */
+	netfn_flowmgr_ipv6_stats_callback_t stats_sync_v6_cb;			/* Callback to call to IPv6 sync statistics */
+        void *stats_sync_v6_data;						/* Argument of IPv6 callback: stats_syncv6__cb */
+	struct dentry *dentry;							/* Debugfs entry */
+        struct dentry *stats_dentry;						/* Debugfs sub entry */
+	struct netfn_flowmgr_debug_stats stats[NETFN_FLOWMGR_AE_TYPE_MAX];	/* Debuggability stats */
 };
 
 extern struct netfn_flowmgr netfn_flowmgr_gbl;

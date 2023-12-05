@@ -1,0 +1,195 @@
+/*
+ **************************************************************************
+ * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * SPDX-License-Identifier: ISC
+ **************************************************************************
+ */
+
+/*
+ * netfn_flowmgr_stats.c
+ *      Network function flowmgr stats
+ */
+#include <linux/atomic.h>
+#include <linux/debugfs.h>
+#include "netfn_flowmgr_stats.h"
+#include "netfn_flowmgr_priv.h"
+
+/*
+ * netfn_flowmgr_debug_stats_str
+ *	Netfn flowmgr common statistics
+ */
+static const char * const netfn_flowmgr_debug_stats_str[] = {
+	/* v4 stats */
+	"v4_create_ppe_rule_req",			/**< No of v4 ppe create rule requests */
+	"v4_create_rule_req_fail_no_mem",		/**< No of v4 create rule failed with no memory */
+	"v4_create_rule_invalid_ppe_tx_if",		/**< No of v4 create rule failed due to invalid ppe tx if */
+	"v4_create_rule_invalid_ppe_rx_if",		/**< No of v4 create rule failed due to invalid ppe rx if */
+	"v4_create_rule_invalid_ppe_top_tx_if",		/**< No of v4 create rule failed due to invalid ppe top tx if */
+	"v4_create_rule_invalid_ppe_top_rx_if",		/**< No of v4 create rule failed due to invalid ppe top rx if */
+	"v4_create_rule_flow_flag_mismatch",		/**< No of v4 create rule failed due to flow flag mismatched */
+	"v4_create_rule_bridge_flow",			/**< No of v4 create rule for bridged flow */
+	"v4_create_rule_routed_flow",			/**< No of v4 create rule for routed flow */
+	"v4_create_validate_tuple_mismatch",		/**< No of v4 create rule failed due to tuple mismatch */
+	"v4_create_validate_tuple_type_3",		/**< No of v4 create rule tuple type 3 */
+	"v4_create_validate_tuple_type_4",		/**< No of v4 create rule tuple type 4 */
+	"v4_create_validate_tuple_type_5",		/**< No of v4 create rule tuple type 5 */
+	"v4_create_validate_tuple_simul_snat_dnat",	/**< No of v4 create rule failed due to simul snat and dnat */
+	"v4_create_validate_tuple_invalid_snat_ip",	/**< No of v4 create rule failed due to invalid snat ip */
+	"v4_create_validate_tuple_invalid_dnat_ip",	/**< No of v4 create rule failed due to invalid dnat ip */
+	"v4_create_validate_tuple_invalid_snat_port",	/**< No of v4 create rule failed due to invalid snat port */
+	"v4_create_validate_tuple_invalid_dnat_port",	/**< No of v4 create rule failed due to invalid dnat port */
+	"v4_create_validate_tuple_ip_addr_mismatch",	/**< No of v4 create rule failed due to ip addr mismatch */
+	"v4_create_validate_tuple_ident_mismatch",	/**< No of v4 create rule failed due to ident mismatch */
+	"v4_create_validate_tuple_proto_mismatch",	/**< No of v4 create rule failed due to proto mismatch */
+	"v4_create_validate_tuple_type_unsupported",	/**< No of v4 create rule failed due to unsupported tuple type */
+	"v4_create_validate_tuple_type_invalid",	/**< No of v4 create rule failed due to invalid tuple type */
+	"v4_create_rule_ppe_success",			/**< No of v4 successful ppe create rule requests */
+	"v4_create_rule_req_fail_ppe_fail",		/**< No of v4 failed ppe create rule requests */
+	"v4_destroy_ppe_rule_req",			/**< No of v4 ppe destroy rule requests */
+	"v4_destroy_validate_tuple_mismatch",		/**< No of v4 destroy rule failed due to tuple mismatch */
+	"v4_destroy_validate_tuple_type_3",		/**< No of v4 destroy rule tuple type 3 */
+	"v4_destroy_validate_tuple_type_4",		/**< No of v4 destroy rule tuple type 4 */
+	"v4_destroy_validate_tuple_type_5",		/**< No of v4 destroy rule tuple type 5 */
+	"v4_destroy_validate_tuple_type_invalid",	/**< No of v4 destroy rule failed due to invalid tuple type */
+	"v4_destroy_validate_tuple_ip_addr_mismatch",	/**< No of v4 destroy rule failed due to ip addr mismatch */
+	"v4_destroy_validate_tuple_ident_mismatch",	/**< No of v4 destroy rule failed due to ident mismatch */
+	"v4_destroy_validate_tuple_proto_mismatch",	/**< No of v4 destroy rule failed due to proto mismatch */
+	"v4_destroy_rule_req_fail_no_mem",		/**< No of v4 destroy rule failed with no memory */
+	"v4_destroy_rule_ppe_success",			/**< No of v4 successful ppe destroy rule requests */
+	"v4_destroy_rule_req_fail_ppe_fail",		/**< No of v4 failed ppe destroy rule requests */
+
+	/* v6 stats */
+	"v6_create_ppe_rule_req",			/**< No of v6 ppe create rule requests */
+	"v6_create_rule_req_fail_no_mem",		/**< No of v6 create rule failed with no memory */
+	"v6_create_rule_invalid_ppe_tx_if",		/**< No of v6 create rule failed due to invalid ppe tx if */
+	"v6_create_rule_invalid_ppe_rx_if",		/**< No of v6 create rule failed due to invalid ppe rx if */
+	"v6_create_rule_invalid_ppe_top_tx_if",		/**< No of v6 create rule failed due to invalid ppe top tx if */
+	"v6_create_rule_invalid_ppe_top_rx_if",		/**< No of v6 create rule failed due to invalid ppe top rx if */
+	"v6_create_rule_flow_flag_mismatch",		/**< No of v6 create rule failed due to flow flag mismatched */
+	"v6_create_rule_bridge_flow",			/**< No of v6 create rule for bridged flow */
+	"v6_create_rule_routed_flow",			/**< No of v6 create rule for routed flow */
+	"v6_validate_tuple_mismatch",			/**< No of v6 create rule failed due to tuple mismatch */
+	"v6_validate_tuple_type_3",			/**< No of v6 create rule tuple type 3 */
+	"v6_validate_tuple_type_4",			/**< No of v6 create rule tuple type 4 */
+	"v6_validate_tuple_type_5",			/**< No of v6 create rule tuple type 5 */
+	"v6_validate_tuple_ip_addr_mismatch",		/**< No of v6 create rule failed due to ip addr mismatch */
+	"v6_validate_tuple_ident_mismatch",		/**< No of v6 create rule failed due to ident mismatch */
+	"v6_validate_tuple_proto_mismatch",		/**< No of v6 create rule failed due to proto mismatch */
+	"v6_validate_tuple_type_invalid",		/**< No of v6 create rule failed due to invalid tuple type */
+	"v6_create_rule_ppe_success",			/**< No of v6 successful ppe create rule requests */
+	"v6_create_rule_req_fail_ppe_fail",		/**< No of v6 failed ppe create rule requests */
+	"v6_destroy_ppe_rule_req",			/**< No of v6 ppe destroy rule requests */
+	"v6_destroy_rule_req_fail_no_mem",		/**< No of v6 destroy rule failed with no memory */
+	"v6_destroy_rule_ppe_success",			/**< No of v6 successful ppe destroy rule requests */
+	"v6_destroy_rule_req_fail_ppe_fail",		/**< No of v6 failed ppe destroy rule requests */
+
+	/* common stats */
+	"validate_vlan_inner_mismatch",			/**< No of v4/v6 create rule failed due to inner vlan mismatch */
+	"validate_vlan_outer_mismatch",			/**< No of v4/v6 create rule failed due to outer vlan mismatch */
+};
+
+/*
+ * netfn_flowmgr_ae_type_str
+ *	Netfn flowmgr AE type
+ */
+static const char * const netfn_flowmgr_ae_type_str[] = {
+	"INVALID",
+	"SFE",		/**< AE type SFE */
+	"PPE",		/**< AE type PPE */
+};
+
+/*
+ * netfn_flowmgr_debug_stats_show()
+ *	Read netfn flowmgr debug statistics
+ */
+static int netfn_flowmgr_debug_stats_show(struct seq_file *m, void __attribute__((unused))*ptr)
+{
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+	struct netfn_flowmgr_debug_stats *ae_stats;
+	netfn_flowmgr_ae_type_t ae_type;
+	int stats_idx;
+
+	/*
+	 * For all AE type store and print the stats atomically.
+	 */
+	for (ae_type = NETFN_FLOWMGR_AE_TYPE_SFE; ae_type < NETFN_FLOWMGR_AE_TYPE_MAX; ++ae_type) {
+		ae_stats = &f->stats[ae_type];
+		seq_printf(m, "\nNetfn flowmgr stats for AE: %s:\n\n", netfn_flowmgr_ae_type_str[ae_type]);
+		/*
+		 * Iterate till debug stats length and dump the stats.
+		 */
+		for (stats_idx = 0; stats_idx < sizeof(struct netfn_flowmgr_debug_stats) / sizeof(uint64_t); stats_idx++) {
+			seq_printf(m, "\t\t [%s]:  %llu\n", netfn_flowmgr_debug_stats_str[stats_idx], 
+					atomic64_read((atomic64_t *)&ae_stats[stats_idx]));
+		}
+	}
+	return 0;
+};
+
+/*
+ * netfn_flowmgr_stats_open()
+ *	Netfn flowmgr stats open callback
+ */
+static int netfn_flowmgr_stats_open(struct inode *inode, struct file *file)
+{
+        return single_open(file, netfn_flowmgr_debug_stats_show, inode->i_private);
+}
+
+/*
+ * netfn_flowmgr_stats_file_ops
+ *      File operations for stats
+ */
+const struct file_operations netfn_flowmgr_stats_file_ops = {
+        .open = netfn_flowmgr_stats_open,
+        .read = seq_read,
+        .llseek = seq_lseek,
+        .release = seq_release,
+};
+
+/*
+ * netfn_flowmgr_stats_debugfs_init()
+ *	Create netfn flowmgr statistics debugfs entry.
+ */
+int netfn_flowmgr_stats_debugfs_init(void)
+{
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+	f->dentry = debugfs_create_dir("qca-nss-netfn", NULL);
+	if (!f->dentry) {
+		netfn_flowmgr_warn("%p: Unable to create qca-nss-netfn debugfs stats directory in flowmgr\n", f);
+		return -1;
+	}
+
+	f->stats_dentry = debugfs_create_dir("flowmgr", f->dentry);
+	if (!f->stats_dentry) {
+		netfn_flowmgr_warn("%p: Unable to create flowmgr debugfs stats sub-directory in flowmgr\n", f);
+		goto debugfs_dir_failed;
+	}
+
+	if (!debugfs_create_file("stats", S_IRUGO, f->stats_dentry,
+				NULL, &netfn_flowmgr_stats_file_ops)) {
+		netfn_flowmgr_warn("%p: Unable to create common statistics file entry in debugfs\n", f);
+		goto debugfs_dir_failed;
+	}
+
+	return 0;
+
+debugfs_dir_failed:
+	debugfs_remove_recursive(f->dentry);
+	f->dentry = NULL;
+	f->stats_dentry = NULL;
+	return -1;
+}
+
+/*
+ * netfn_flowmgr_stats_debugfs_exit()
+ *	Destroy netfn flowmgr statistics debugfs entry.
+ */
+void netfn_flowmgr_stats_debugfs_exit(void)
+{
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+	if (f->dentry) {
+		debugfs_remove_recursive(f->dentry);
+		f->dentry = NULL;
+		f->stats_dentry = NULL;
+	}
+}

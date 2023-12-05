@@ -11,6 +11,7 @@
  */
 #include <netfn_flowmgr.h>
 #include <flowmgr/netfn_flowmgr_priv.h>
+#include <flowmgr/netfn_flowmgr_stats.h>
 #include "netfn_flowmgr_ppe.h"
 #include "netfn_flowmgr_ppe_ipv4.h"
 #include "netfn_flowmgr_ppe_ipv6.h"
@@ -24,6 +25,7 @@ bool ipv6_stats_sync = false;
  */
 static netfn_flowmgr_ret_t netfn_flowmgr_ppe_validate_v6_tuple_info(struct netfn_tuple original_tuple, struct netfn_tuple reply_tuple)
 {
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
 	uint32_t org_src_ip[4];
 	uint32_t org_dst_ip[4];
 	uint32_t reply_src_ip[4];
@@ -32,8 +34,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_ppe_validate_v6_tuple_info(struct netfn
 	uint16_t org_dst_ident;
 	uint16_t reply_src_ident;
 	uint16_t reply_dst_ident;
+	struct netfn_flowmgr_debug_stats *stats;
 	netfn_tuple_type_t tuple_type;
 
+	stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_PPE];
 	netfn_flowmgr_trace("org tuple type = %d\n", original_tuple.tuple_type);
 	netfn_flowmgr_trace("reply tuple type = %d\n", reply_tuple.tuple_type);
 
@@ -42,6 +46,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_ppe_validate_v6_tuple_info(struct netfn
 	 */
 	if (original_tuple.tuple_type != reply_tuple.tuple_type){
 		netfn_flowmgr_warn("Tuple type is not matching for original and reply direction\n");
+		netfn_flowmgr_stats_inc(&stats->v6_validate_tuple_mismatch);
 		return NETFN_FLOWMGR_RET_PPE_TUPLE_MISMATCH;
 	}
 
@@ -51,6 +56,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_ppe_validate_v6_tuple_info(struct netfn
 	 * Based on tuple type validate the tuple info
 	 */
 	if (tuple_type == NETFN_TUPLE_3TUPLE) {
+		netfn_flowmgr_stats_inc(&stats->v6_validate_tuple_type_3);
 		/*
 		 * IPs
 		 */
@@ -68,6 +74,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_ppe_validate_v6_tuple_info(struct netfn
 			netfn_flowmgr_warn("Non-matching IP addresses in flow and return direction\n");
 			netfn_flowmgr_warn("org_src_ip = %pI6, org_dst_ip = %pI6\n", &org_src_ip, &org_dst_ip);
 			netfn_flowmgr_warn("reply_src_ip = %pI6, reply_dst_ip = %pI6\n", &reply_src_ip, &reply_dst_ip);
+			netfn_flowmgr_stats_inc(&stats->v6_validate_tuple_ip_addr_mismatch);
 			return NETFN_FLOWMGR_RET_PPE_IP_ADDR_MISMATCH;
 		}
 
@@ -77,9 +84,11 @@ static netfn_flowmgr_ret_t netfn_flowmgr_ppe_validate_v6_tuple_info(struct netfn
 		if (original_tuple.tuples.tuple_3.protocol != reply_tuple.tuples.tuple_3.protocol) {
 			netfn_flowmgr_warn("Non-matching protocol in flow and return direction, org_proto = %u, reply_proto = %u\n",
 							original_tuple.tuples.tuple_3.protocol, reply_tuple.tuples.tuple_3.protocol);
+			netfn_flowmgr_stats_inc(&stats->v6_validate_tuple_proto_mismatch);
 			return NETFN_FLOWMGR_RET_PPE_PROTOCOL_MISMATCH;
 		}
 	} else if (tuple_type == NETFN_TUPLE_5TUPLE) {
+		netfn_flowmgr_stats_inc(&stats->v6_validate_tuple_type_5);
 		/*
 		 * IPs
 		 */
@@ -105,6 +114,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_ppe_validate_v6_tuple_info(struct netfn
 			netfn_flowmgr_warn("Non-matching IP addresses in flow and return direction\n");
 			netfn_flowmgr_warn("org_src_ip = %pI6, org_dst_ip = %pI6\n", &org_src_ip, &org_dst_ip);
 			netfn_flowmgr_warn("reply_src_ip = %pI6, reply_dst_ip = %pI6\n", &reply_src_ip, &reply_dst_ip);
+			netfn_flowmgr_stats_inc(&stats->v6_validate_tuple_ip_addr_mismatch);
 			return NETFN_FLOWMGR_RET_PPE_IP_ADDR_MISMATCH;
 		}
 
@@ -115,6 +125,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_ppe_validate_v6_tuple_info(struct netfn
 			netfn_flowmgr_warn("Non-matching port numbers in flow and return direction\n");
 			netfn_flowmgr_warn("org_src_ident = %u, org_dst_ident = %u\n", org_src_ident, org_dst_ident);
 			netfn_flowmgr_warn("reply_src_ident = %u, reply_dst_ident = %u\n", reply_src_ident, reply_dst_ident);
+			netfn_flowmgr_stats_inc(&stats->v6_validate_tuple_ident_mismatch);
 			return  NETFN_FLOWMGR_RET_PPE_PORT_MISMATCH;
 		}
 
@@ -122,14 +133,15 @@ static netfn_flowmgr_ret_t netfn_flowmgr_ppe_validate_v6_tuple_info(struct netfn
 		 * Original flow rule protocol should match with reply direction
 		 */
 		if (original_tuple.tuples.tuple_5.protocol != reply_tuple.tuples.tuple_5.protocol) {
-			netfn_flowmgr_warn("Non-matching protocol in flow and return direction\n");
 			netfn_flowmgr_warn("Non-matching protocol in flow and return direction, org_proto = %u, reply_proto = %u\n",
 						original_tuple.tuples.tuple_5.protocol, reply_tuple.tuples.tuple_5.protocol);
+			netfn_flowmgr_stats_inc(&stats->v6_validate_tuple_proto_mismatch);
 			return NETFN_FLOWMGR_RET_PPE_PROTOCOL_MISMATCH;
 		}
 
 	} else {
 		netfn_flowmgr_warn("Unsupported tupple type in PPE acceleration mode, tuple_type = %d\n", tuple_type);
+		netfn_flowmgr_stats_inc(&stats->v6_validate_tuple_type_invalid);
 		return NETFN_FLOWMGR_RET_PPE_UNSUPPORTED_TUPLE_TYPE;
 	}
 	return NETFN_FLOWMGR_RET_SUCCESS;
@@ -141,6 +153,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_ppe_validate_v6_tuple_info(struct netfn
  */
 netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v6_rule(struct netfn_flowmgr_create_rule *original, struct netfn_flowmgr_create_rule *reply)
 {
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
 	struct ppe_drv_v6_rule_create *pd6rc;
 	struct net_device *in_dev;
 	struct net_device *out_dev;
@@ -150,9 +163,17 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v6_rule(struct netfn_flowmgr_create
 	uint32_t reply_flow_flags;
 	uint32_t org_rules;
 	uint32_t reply_rules;
+	struct netfn_flowmgr_debug_stats *stats;
 	netfn_tuple_type_t tuple_type;
 	ppe_drv_ret_t ppe_status = PPE_DRV_RET_SUCCESS;
 	netfn_flowmgr_ret_status_t netfn_status = NETFN_FLOWMGR_RET_SUCCESS;
+
+	stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_PPE];
+
+	/*
+         * Update stats
+         */
+	netfn_flowmgr_stats_inc(&stats->v6_create_ppe_rule_req);
 
 	/*
          * Validate PPE v6 tuple information
@@ -169,6 +190,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v6_rule(struct netfn_flowmgr_create
 	pd6rc = (struct ppe_drv_v6_rule_create *)kzalloc(sizeof(struct ppe_drv_v6_rule_create), GFP_ATOMIC);
 	if (!pd6rc) {
 		netfn_flowmgr_warn("No memory to allocate ppe ipv6 rule create structure\n");
+		netfn_flowmgr_stats_inc(&stats->v6_create_rule_req_fail_no_mem);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_NO_MEM, ppe_status);
 	}
 
@@ -217,24 +239,28 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v6_rule(struct netfn_flowmgr_create
 		if (pd6rc->conn_rule.rx_if == -1) {
 			netfn_flowmgr_warn("Invalid PPE rx interface index\n");
 			netfn_status = NETFN_FLOWMGR_RET_PPE_INVALID_INTERFACE_INDEX;
+			netfn_flowmgr_stats_inc(&stats->v6_create_rule_invalid_ppe_rx_if);
 			goto done;
 		}
 		pd6rc->conn_rule.tx_if = ppe_drv_iface_idx_get_by_dev(out_dev);
 		if (pd6rc->conn_rule.tx_if == -1) {
 			netfn_flowmgr_warn("Invalid PPE tx interface index\n");
 			netfn_status = NETFN_FLOWMGR_RET_PPE_INVALID_INTERFACE_INDEX;
+			netfn_flowmgr_stats_inc(&stats->v6_create_rule_invalid_ppe_tx_if);
 			goto done;
 		}
 		pd6rc->top_rule.rx_if = ppe_drv_iface_idx_get_by_dev(in_dev);
 		if (pd6rc->top_rule.rx_if == -1) {
 			netfn_flowmgr_warn("Invalid PPE top rx interface index\n");
 			netfn_status = NETFN_FLOWMGR_RET_PPE_INVALID_INTERFACE_INDEX;
+			netfn_flowmgr_stats_inc(&stats->v6_create_rule_invalid_ppe_top_rx_if);
 			goto done;
 		}
 		pd6rc->top_rule.tx_if = ppe_drv_iface_idx_get_by_dev(out_dev);
 		if (pd6rc->top_rule.tx_if == -1) {
 			netfn_flowmgr_warn("Invalid PPE top tx interface index\n");
 			netfn_status = NETFN_FLOWMGR_RET_PPE_INVALID_INTERFACE_INDEX;
+			netfn_flowmgr_stats_inc(&stats->v6_create_rule_invalid_ppe_top_tx_if);
 			goto done;
 		}
 
@@ -261,6 +287,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v6_rule(struct netfn_flowmgr_create
 	if (org_flow_flags != reply_flow_flags) {
 		netfn_flowmgr_warn("Non-matching flow flags in flow and return direction\n");
 		netfn_status = NETFN_FLOWMGR_RET_FLOW_FLAGS_MISMATCH;
+		netfn_flowmgr_stats_inc(&stats->v6_create_rule_flow_flag_mismatch);
 		goto done;
 	}
 
@@ -274,12 +301,14 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v6_rule(struct netfn_flowmgr_create
 		 * Bridged flow
 		 */
 		pd6rc->rule_flags |= PPE_DRV_V6_RULE_FLAG_BRIDGE_FLOW;
+		netfn_flowmgr_stats_inc(&stats->v6_create_rule_bridge_flow);
 		netfn_flowmgr_warn("Flow is bridged flow\n");
 	} else {
 		/*
 		 * Routed flow
 		 */
 		pd6rc->rule_flags |= PPE_DRV_V6_RULE_FLAG_ROUTED_FLOW;
+		netfn_flowmgr_stats_inc(&stats->v6_create_rule_routed_flow);
 		netfn_flowmgr_warn("Flow is routed flow\n");
 	}
 
@@ -378,12 +407,14 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v6_rule(struct netfn_flowmgr_create
 		if (pd6rc->top_rule.rx_if == -1) {
 			netfn_flowmgr_warn("Invalid PPE top rx interface index\n");
 			netfn_status = NETFN_FLOWMGR_RET_PPE_INVALID_INTERFACE_INDEX;
+			netfn_flowmgr_stats_inc(&stats->v6_create_rule_invalid_ppe_rx_if);
 			goto done;
 		}
 		pd6rc->top_rule.tx_if = ppe_drv_iface_idx_get_by_dev(top_outdev);
 		if (pd6rc->top_rule.tx_if == -1) {
 			netfn_flowmgr_warn("Invalid PPE top tx interface index\n");
 			netfn_status = NETFN_FLOWMGR_RET_PPE_INVALID_INTERFACE_INDEX;
+			netfn_flowmgr_stats_inc(&stats->v6_create_rule_invalid_ppe_tx_if);
 			goto done;
 		}
 
@@ -449,9 +480,14 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v6_rule(struct netfn_flowmgr_create
 	if (ppe_status != PPE_DRV_RET_SUCCESS) {
 		netfn_flowmgr_warn("PPE v6 rule create failed, ppe_status = %d\n", ppe_status);
 		netfn_status = NETFN_FLOWMGR_RET_CREATE_RULE_FAILED;
+		netfn_flowmgr_stats_inc(&stats->v6_create_rule_req_fail_ppe_fail);
 		goto done;
 	}
 
+	/*
+	 * Update stats
+	 */
+	netfn_flowmgr_stats_inc(&stats->v6_create_rule_ppe_success);
 	netfn_flowmgr_info("PPE v6 rule create success\n");
 done:
 	kfree(pd6rc);
@@ -467,10 +503,18 @@ done:
  */
 netfn_flowmgr_ret_t netfn_flowmgr_ppe_destroy_v6_rule(struct netfn_flowmgr_destroy_rule *original, struct netfn_flowmgr_destroy_rule *reply)
 {
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
 	struct ppe_drv_v6_rule_destroy *pd6rd;
 	netfn_tuple_type_t tuple_type;
+	struct netfn_flowmgr_debug_stats *stats;
 	ppe_drv_ret_t ppe_status = PPE_DRV_RET_SUCCESS;
 	netfn_flowmgr_ret_status_t netfn_status = NETFN_FLOWMGR_RET_SUCCESS;
+	stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_PPE];
+
+	/*
+	 * Update stats
+	 */
+	netfn_flowmgr_stats_inc(&stats->v6_destroy_ppe_rule_req);
 
 	/*
 	 * Validate PPE tuple information
@@ -478,6 +522,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_destroy_v6_rule(struct netfn_flowmgr_destr
 	netfn_status = netfn_flowmgr_ppe_validate_v6_tuple_info(original->tuple, reply->tuple);
 	if (netfn_status != NETFN_FLOWMGR_RET_SUCCESS) {
 		netfn_flowmgr_warn("Invalid v6 tuple info, PPE rule creation failed\n");
+		netfn_flowmgr_stats_inc(&stats->v6_destroy_rule_req_fail_ppe_fail);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(netfn_status, ppe_status);
 	}
 
@@ -487,6 +532,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_destroy_v6_rule(struct netfn_flowmgr_destr
 	pd6rd = (struct ppe_drv_v6_rule_destroy *)kzalloc(sizeof(struct ppe_drv_v6_rule_destroy), GFP_KERNEL);
 	if (!pd6rd) {
 		netfn_flowmgr_warn("No memory to allocate ppe ipv6 rule destroy structure\n");
+		netfn_flowmgr_stats_inc(&stats->v6_destroy_rule_req_fail_no_mem);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_NO_MEM, ppe_status);
 	}
 
@@ -538,9 +584,14 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_destroy_v6_rule(struct netfn_flowmgr_destr
 	if (ppe_status != PPE_DRV_RET_SUCCESS) {
 		netfn_flowmgr_warn("PPE v6 rule destroy failed, ppe_status = %d\n", ppe_status);
 		netfn_status = NETFN_FLOWMGR_RET_DESTROY_RULE_FAILED;
+		netfn_flowmgr_stats_inc(&stats->v6_destroy_rule_req_fail_ppe_fail);
 		goto done;
 	}
 
+	/*
+	 * Update stats
+	 */
+	netfn_flowmgr_stats_inc(&stats->v6_destroy_rule_ppe_success);
 	netfn_flowmgr_warn("PPE v6 rule destroy success\n");
 done:
 	kfree(pd6rd);
