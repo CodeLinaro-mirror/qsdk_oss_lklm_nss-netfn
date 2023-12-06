@@ -93,6 +93,185 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_destroy_rule(struct netfn_flowmgr_destroy_
 }
 
 /*
+ * netfn_flowmgr_ppe_v6_get_stats()
+ *	Get PPE IPv6 stats
+ */
+netfn_flowmgr_ret_t netfn_flowmgr_ppe_v6_get_stats(struct netfn_flowmgr_flow_conn_stats *stats)
+{
+	struct ppe_drv_v6_get_conn_stats ppe_stats;
+	netfn_tuple_type_t tuple_type;
+	ppe_drv_ret_t ppe_status;
+
+	tuple_type = stats->tuple.tuple_type;
+
+	/*
+	 * Check tuple type
+	 */
+	if (!(tuple_type == NETFN_TUPLE_3TUPLE) || (!(tuple_type == NETFN_TUPLE_5TUPLE))) {
+		netfn_flowmgr_warn("Unsupported tupple type in PPE acceleration mode, tuple_type = %d\n", tuple_type);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_UNSUPPORTED_TUPLE_TYPE, 0);
+	}
+
+	ppe_stats.tuple.protocol = stats->tuple.tuples.tuple_3.protocol;
+	memcpy(ppe_stats.tuple.flow_ip, stats->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
+	memcpy(ppe_stats.tuple.return_ip, stats->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
+        if (tuple_type == NETFN_TUPLE_5TUPLE) {
+                ppe_stats.tuple.protocol = stats->tuple.tuples.tuple_5.protocol;
+		memcpy(ppe_stats.tuple.flow_ip, stats->tuple.tuples.tuple_5.src_ip, sizeof(uint32_t) * 4);
+		memcpy(ppe_stats.tuple.return_ip, stats->tuple.tuples.tuple_5.dest_ip, sizeof(uint32_t) * 4);
+                ppe_stats.tuple.flow_ident = (uint32_t)stats->tuple.tuples.tuple_5.l4_src_ident;
+                ppe_stats.tuple.return_ident = (uint32_t)stats->tuple.tuples.tuple_5.l4_dest_ident;
+        }
+
+
+	ppe_status = ppe_drv_v6_conn_stats_get(&ppe_stats);
+	if (ppe_status != PPE_DRV_RET_SUCCESS) {
+		netfn_flowmgr_warn("PPE v6 get ppe_stats failed, ppe_status = %d\n", ppe_status);
+		netfn_flowmgr_warn("PPE v6 get ppe_stats failed for below tuples:\n"
+					"protocol = %u\n"
+					"flow_ip = %pI6\n"
+					"return_ip = %pI6\n"
+					"flow_ident = %u\n"
+					"return ident = %u\n",
+					ppe_stats.tuple.protocol,
+					&ppe_stats.tuple.flow_ip,
+					&ppe_stats.tuple.return_ip,
+					ppe_stats.tuple.flow_ident,
+					ppe_stats.tuple.return_ident);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_GET_PPE_STATS_FAILED, ppe_status);
+	}
+
+	/*
+	 * Copy ppe stats to the conn stats structure to update the user stats.
+	 */
+	stats->conn_stats.ip_version = ETH_P_IPV6;
+	stats->conn_stats.protocol = ppe_stats.conn_sync.protocol;
+
+	/*
+	 * original direction stats
+	 */
+	memcpy(stats->conn_stats.org_src_ip, ppe_stats.conn_sync.flow_ip, sizeof(uint32_t) * 4);
+	memcpy(stats->conn_stats.org_dest_ip, ppe_stats.conn_sync.return_ip, sizeof(uint32_t) * 4);
+	stats->conn_stats.org_src_ident = ppe_stats.conn_sync.flow_ident;
+	stats->conn_stats.org_dest_ident = ppe_stats.conn_sync.return_ident;
+	stats->conn_stats.org_tx_pkt_count = ppe_stats.conn_sync.flow_tx_packet_count;
+	stats->conn_stats.org_rx_pkt_count = ppe_stats.conn_sync.flow_rx_packet_count;
+	stats->conn_stats.org_tx_byte_count = ppe_stats.conn_sync.flow_tx_byte_count;
+	stats->conn_stats.org_rx_byte_count = ppe_stats.conn_sync.flow_rx_byte_count;
+
+	/*
+	 * reply direction stats
+	 */
+	memcpy(stats->conn_stats.reply_src_ip, ppe_stats.conn_sync.flow_ip, sizeof(uint32_t) * 4);
+	memcpy(stats->conn_stats.reply_dest_ip, ppe_stats.conn_sync.return_ip, sizeof(uint32_t) * 4);
+	stats->conn_stats.reply_src_ident = ppe_stats.conn_sync.return_ident;
+	stats->conn_stats.reply_dest_ident = ppe_stats.conn_sync.flow_ident;
+	stats->conn_stats.reply_tx_pkt_count = ppe_stats.conn_sync.return_tx_packet_count;
+	stats->conn_stats.reply_rx_pkt_count = ppe_stats.conn_sync.return_rx_packet_count;
+	stats->conn_stats.reply_tx_byte_count = ppe_stats.conn_sync.return_tx_byte_count;
+	stats->conn_stats.reply_rx_byte_count = ppe_stats.conn_sync.return_rx_byte_count;
+
+	return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_SUCCESS, ppe_status);
+}
+
+/*
+ * netfn_flowmgr_ppe_v4_get_stats()
+ *	Get PPE IPv4 stats
+ */
+netfn_flowmgr_ret_t netfn_flowmgr_ppe_v4_get_stats(struct netfn_flowmgr_flow_conn_stats *stats)
+{
+	struct ppe_drv_v4_flow_conn_stats ppe_stats;
+	netfn_tuple_type_t tuple_type;
+	ppe_drv_ret_t ppe_status;
+
+	tuple_type = stats->tuple.tuple_type;
+
+	/*
+	 * Check tuple type
+	 */
+	if (!(tuple_type == NETFN_TUPLE_3TUPLE) || (!(tuple_type == NETFN_TUPLE_5TUPLE))) {
+		netfn_flowmgr_warn("Unsupported tupple type in PPE acceleration mode, tuple_type = %d\n", tuple_type);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_UNSUPPORTED_TUPLE_TYPE, 0);
+	}
+
+	ppe_stats.tuple.protocol = stats->tuple.tuples.tuple_3.protocol;
+	ppe_stats.tuple.flow_ip = stats->tuple.tuples.tuple_3.src_ip[0];
+	ppe_stats.tuple.return_ip = stats->tuple.tuples.tuple_3.dest_ip[0];
+	if (tuple_type == NETFN_TUPLE_5TUPLE) {
+                ppe_stats.tuple.protocol = stats->tuple.tuples.tuple_5.protocol;
+                ppe_stats.tuple.flow_ip = stats->tuple.tuples.tuple_5.src_ip[0];
+                ppe_stats.tuple.return_ip = stats->tuple.tuples.tuple_5.dest_ip[0];
+                ppe_stats.tuple.flow_ident = (uint32_t)stats->tuple.tuples.tuple_5.l4_src_ident;
+                ppe_stats.tuple.return_ident = (uint32_t)stats->tuple.tuples.tuple_5.l4_dest_ident;
+        }
+
+	ppe_status = ppe_drv_v4_conn_stats_get(&ppe_stats);
+	if (ppe_status != PPE_DRV_RET_SUCCESS) {
+		netfn_flowmgr_warn("PPE v4 get ppe_stats failed, ppe_status = %d\n", ppe_status);
+		netfn_flowmgr_warn("PPE v4 get ppe_stats failed for below tuples:\n"
+					"protocol = %u\n"
+					"flow_ip = %pI4\n"
+					"return_ip = %pI4\n"
+					"flow_ident = %u\n"
+					"return ident = %u\n",
+					ppe_stats.tuple.protocol,
+					&ppe_stats.tuple.flow_ip,
+					&ppe_stats.tuple.return_ip,
+					ppe_stats.tuple.flow_ident,
+					ppe_stats.tuple.return_ident);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_GET_PPE_STATS_FAILED, ppe_status);
+	}
+
+	/*
+	 * Copy ppe stats to the conn stats structure to update the user stats.
+	 */
+	stats->conn_stats.ip_version = ETH_P_IP;
+	stats->conn_stats.protocol = ppe_stats.conn_sync.protocol;
+
+	/*
+	 * original direction stats
+	 */
+	stats->conn_stats.org_src_ip[0] = ppe_stats.conn_sync.flow_ip;
+	stats->conn_stats.org_dest_ip[0] = ppe_stats.conn_sync.return_ip;
+	stats->conn_stats.org_src_ident = ppe_stats.conn_sync.flow_ident;
+	stats->conn_stats.org_dest_ident = ppe_stats.conn_sync.return_ident;
+	stats->conn_stats.org_tx_pkt_count = ppe_stats.conn_sync.flow_tx_packet_count;
+	stats->conn_stats.org_rx_pkt_count = ppe_stats.conn_sync.flow_rx_packet_count;
+	stats->conn_stats.org_tx_byte_count = ppe_stats.conn_sync.flow_tx_byte_count;
+	stats->conn_stats.org_rx_byte_count = ppe_stats.conn_sync.flow_rx_byte_count;
+
+	/*
+	 * reply direction stats
+	 */
+	stats->conn_stats.reply_src_ip[0] = ppe_stats.conn_sync.return_ip;
+	stats->conn_stats.reply_dest_ip[0] = ppe_stats.conn_sync.flow_ip;
+	stats->conn_stats.reply_src_ident = ppe_stats.conn_sync.return_ident;
+	stats->conn_stats.reply_dest_ident = ppe_stats.conn_sync.flow_ident;
+	stats->conn_stats.reply_tx_pkt_count = ppe_stats.conn_sync.return_tx_packet_count;
+	stats->conn_stats.reply_rx_pkt_count = ppe_stats.conn_sync.return_rx_packet_count;
+	stats->conn_stats.reply_tx_byte_count = ppe_stats.conn_sync.return_tx_byte_count;
+	stats->conn_stats.reply_rx_byte_count = ppe_stats.conn_sync.return_rx_byte_count;
+
+	return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_SUCCESS, ppe_status);
+}
+
+/*
+ * netfn_flowmgr_ppe_get_stats()
+ *	Get PPE stats
+ */
+netfn_flowmgr_ret_t netfn_flowmgr_ppe_get_stats(struct netfn_flowmgr_flow_conn_stats *stats)
+{
+	if (stats->tuple.ip_version == NETFN_FLOWMGR_TUPLE_IP_VERSION_V4) {
+		return netfn_flowmgr_ppe_v4_get_stats(stats);
+	}
+	else if (stats->tuple.ip_version == NETFN_FLOWMGR_TUPLE_IP_VERSION_V6) {
+		return netfn_flowmgr_ppe_v6_get_stats(stats);
+	}
+
+	return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_INCORRECT_IP_VERSION, 0);
+}
+
+/*
  * netfn_flowmgr_ppe_dscp_pri_add()
  *	Add dscp based prioritization
  */
@@ -282,6 +461,7 @@ bool netfn_flowmgr_ppe_init(void)
 	 */
 	ppe_ops.create_rule = netfn_flowmgr_ppe_create_rule;
 	ppe_ops.destroy_rule = netfn_flowmgr_ppe_destroy_rule;
+	ppe_ops.get_stats = netfn_flowmgr_ppe_get_stats;
 
 	/*
 	 * Register the callbacks with netfn core.

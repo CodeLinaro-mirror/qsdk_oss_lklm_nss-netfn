@@ -62,6 +62,7 @@ typedef enum netfn_flowmgr_ret_status {
 	NETFN_FLOWMGR_RET_FEATURE_NOT_SUPPORTED,		/**< Failure due to unsupported feature */
 	NETFN_FLOWMGR_RET_FAIL_INVALID_PARAM,			/**< Failure due to invalid parameters */
 	NETFN_FLOWMGR_RET_INVALID_RULE,				/**< Failure due to invalid rule */
+	NETFN_FLOWMGR_RET_INVALID_CONN_STATS,			/**< Failure due to invalid conn stats */
 	NETFN_FLOWMGR_RET_INVALID_ACCEL_MODE,			/**< Failure due to invalid accel mode */
 	NETFN_FLOWMGR_RET_TUPLE_MISMATCH,			/**< Failure due to tuple mismatch between org and reply */
 	NETFN_FLOWMGR_RET_UNSUPPORTED_TUPLE_TYPE,		/**< Failure due to unsupported tuple type */
@@ -92,6 +93,8 @@ typedef enum netfn_flowmgr_ret_status {
 	NETFN_FLOWMGR_RET_DSCP_RULE_ADD_FAILED,			/**< Failure due to dscp rule add failed */
 	NETFN_FLOWMGR_RET_DSCP_RULE_DEL_FAILED,			/**< Failure due to dscp rule del failed */
 	NETFN_FLOWMGR_RET_OPS_NOT_REGISTERED,			/**< Failure due to ops not registered */
+	NETFN_FLOWMGR_RET_GET_STATS_NOT_REGISTERED,		/**< Failure due to get stats not registered */
+	NETFN_FLOWMGR_RET_GET_PPE_STATS_FAILED,			/**< Failure due to stats get failed */
 } netfn_flowmgr_ret_status_t;
 
 /**
@@ -131,6 +134,9 @@ typedef enum netfn_flowmgr_ae_type {
 struct netfn_flowmgr_conn_stats {
 	uint32_t ip_version;				/**< IPv4 or IPv6 */
 	uint32_t protocol;				/**< L4 protocol, e.g., TCP,UDP or UDP Lite */
+	/*
+	 * Original direction stats
+	 */
 	uint32_t org_src_ip[4];				/**< Source IP address */
 	uint32_t org_dest_ip[4];			/**< Destination IP address */
 	uint32_t org_src_ident;				/**< Source L4 port, e.g., TCP or UDP port */
@@ -139,6 +145,9 @@ struct netfn_flowmgr_conn_stats {
 	uint32_t org_tx_byte_count;			/**< TX byte count */
 	uint32_t org_rx_pkt_count;			/**< RX packet count */
 	uint32_t org_rx_byte_count;			/**< RX byte count */
+	/*
+	 * Reply direction stats
+	 */
 	uint32_t reply_src_ip[4];			/**< Source IP address */
 	uint32_t reply_dest_ip[4];			/**< Destination IP address */
 	uint32_t reply_src_ident;			/**< Source L4 port, e.g., TCP or UDP port */
@@ -147,8 +156,29 @@ struct netfn_flowmgr_conn_stats {
 	uint32_t reply_tx_byte_count;			/**< TX byte count */
 	uint32_t reply_rx_pkt_count;			/**< RX packet count */
 	uint32_t reply_rx_byte_count;			/**< RX byte count */
+	/*
+	 * Stats from which AE
+	 */
 	netfn_flowmgr_accel_mode_t mode;		/**< AE */
+	/*
+	 * Reason of stats
+	 */
 	netfn_flowmgr_stats_sync_reason_t reason;	/**< Reason for the sync */
+};
+
+/**
+ * netfn_flowmgr_get_conn_stats
+ *	Netfn flowmgr stats sync for single connection
+ */
+struct netfn_flowmgr_flow_conn_stats {
+	/*
+	 * Request: Tuple info for which stats to be fetched
+	 */
+	struct netfn_tuple tuple;			/**< Holds values of tuples of a single connection. */
+	/*
+	 * Response: Stats
+	 */
+	struct netfn_flowmgr_conn_stats conn_stats;	/**< Stats of the connection */
 };
 
 /**
@@ -353,6 +383,18 @@ netfn_flowmgr_ret_t netfn_flowmgr_dscp_pri_add(struct netfn_flowmgr_dscp_priorit
  */
 netfn_flowmgr_ret_t netfn_flowmgr_dscp_pri_del(int16_t rule_id, netfn_flowmgr_accel_mode_t mode);
 
+/**
+ * netfn_flowmgr_conn_stats_get
+ *	Netfn flowmgr stats get for single connection
+ *
+ * @param[in] conn_stats stats
+ * @param[in] mode accel mode.
+ *
+ * @return
+ * netfn_flowmgr_ret_t.
+ */
+netfn_flowmgr_ret_t netfn_flowmgr_conn_stats_get(struct netfn_flowmgr_flow_conn_stats *conn_stats, netfn_flowmgr_accel_mode_t mode);
+
 /*
  * IPv6 stats registration callback
  */
@@ -408,7 +450,7 @@ void netfn_flowmgr_ipv4_stats_callback_unregister(void);
  * @param[in] stats_cb user callback.
  *
  * @return
- * Status of the register operation
+ * netfn_flowmgr_ret_t
  */
 extern netfn_flowmgr_ret_t netfn_flowmgr_ipv4_stats_callback_register(void *app_data, netfn_flowmgr_ipv4_stats_callback_t stats_cb);
 
