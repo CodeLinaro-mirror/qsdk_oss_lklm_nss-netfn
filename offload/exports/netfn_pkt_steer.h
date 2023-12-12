@@ -18,18 +18,18 @@
 #define __NETFN_PKT_STEER_H
 
 /*
- * Packet steer handle
+ * Packet steer per PCU handle
  */
+struct netfn_pkt_steer_pcpu;
 struct netfn_pkt_steer;
-typedef struct netfn_pkt_steer *netfn_pkt_steer_t;
-typedef void (*netfn_pkt_steer_recv_t)(struct sk_buff_head *q_head, void *app_data);
+typedef void (*netfn_pkt_steer_recv_t)(struct netfn_pkt_steer *ps, struct sk_buff_head *q_head);
 
 /*
  * netfn_pkt_steer_info
  */
 struct netfn_pkt_steer_info {
 	netfn_pkt_steer_recv_t cb;	/* Callback to execute on remote CPU */
-	void *app_data;			/* app data to passed during callback */
+	struct net_device *dev;		/* Netdevice of the caller real or dummy */
 	uint16_t budget;		/* Budget for remote CPU process */
 	uint16_t weight;		/* weight for each queue */
 };
@@ -45,66 +45,105 @@ struct netfn_pkt_steer_stats {
 };
 
 /*
- * netfn_pkt_steer_alloc
+ * netfn_pkt_steer
+ * 	Per Core NAPI structure.
+ */
+struct netfn_pkt_steer {
+	struct netfn_pkt_steer_info info;	/* Info passed during init */
+	struct netfn_pkt_steer_pcpu __rcu __percpu *pcpu;	/* Per CPU NAPI entry */
+};
+
+/*
+ * netfn_pkt_steer_init
  *	Allocate packet steer object.
  *
  * @datatypes
- * netfn_pkt_steer_t
+ * struct netfn_pkt_steer
  * netfn_pkt_steer_info
  *
- * @param[in] name	Name to create debugfs for stats.
+ * @param[in] ps	Object to initialize
  * @param[in] info	Packet Steering information.
  *
  * @return
- * Handle to be used during send API.
+ * void
  */
-netfn_pkt_steer_t netfn_pkt_steer_alloc(struct netfn_pkt_steer_info *info);
+void netfn_pkt_steer_init(struct netfn_pkt_steer *ps, struct netfn_pkt_steer_info *info);
 
 /*
- * netfn_pkt_steer_free
- *	Free packet steer object.
+ * netfn_pkt_steer_deinit
+ *	Deinitialize packet steer object.
  *
  * @datatypes
- * netfn_pkt_steer_t
+ * struct netfn_pkt_steer
  *
- * @param[in] handle	Handle return by allocation.
+ * @param[in] ps	Object to initialize.
+ *
+ * @return
+ * void
  */
+void netfn_pkt_steer_deinit(struct netfn_pkt_steer *ps);
 
-void netfn_pkt_steer_free(netfn_pkt_steer_t handle);
+/*
+ * netfn_pkt_steer_enable
+ *	Enable steer object.
+ *
+ * @datatypes
+ * struct netfn_pkt_steer
+ *
+ * @param[in] ps	Object to enable.
+ *
+ * @return
+ * True if succesfully enabled.
+ */
+bool netfn_pkt_steer_enable(struct netfn_pkt_steer *ps);
+
+/*
+ * netfn_pkt_steer_disable()
+ *	Disable packet steer object.
+ *
+ * @datatypes
+ * struct netfn_pkt_steer
+ *
+ * @param[in] ps	Object to disable.
+ *
+ * @return
+ * void
+ */
+void netfn_pkt_steer_disable(struct netfn_pkt_steer *ps);
 
 /*
  * netfn_pkt_steer_send
  *	Send SKB to remote cpu. Caller needs to free any non-send SKBs.
  *
  * @datatypes
- * netfn_pkt_steer_t
+ * struct netfn_pkt_steer
  *
- * @param[in] handle	Packet steer object on which skb_head will be queued.
+ * @param[in] ps	Packet steer object on which skb will be queued.
  * @param[in] skb	SKB to send.
  * @param[in] cpu	Packet will be steer to this CPU.
  *
  * @return
  * 1 if packets enqueued.
  */
-int netfn_pkt_steer_send(netfn_pkt_steer_t handle, struct sk_buff *skb, int cpu);
+int netfn_pkt_steer_send(struct netfn_pkt_steer *ps, struct sk_buff *skb, int cpu);
 
 /*
  * netfn_pkt_steer_send_list
  *	Send list of SKB to remote cpu. Caller needs to free any non-send SKBs.
  *
  * @datatypes
- * netfn_pkt_steer_t
+ * struct netfn_pkt_steer
  * sk_buff_head
  *
- * @param[in] handle	Packet steer object on which skb_head will be queued.
+ * @param[in] ps	Packet steer object on which skb_head will be queued.
  * @param[in] head	SKB list head.
  * @param[in] cpu	Packet will be steer to this CPU.
  * @param[out] tx_bytes	Enqueued bytes.
  *
  * @return
- * Number of packets enqueued/consumed.
+ * Number of packets enqueued/consumed. Balance SKBs in the queue should be freed by caller.
  */
-int netfn_pkt_steer_send_list(netfn_pkt_steer_t handle, struct sk_buff_head *head, int cpu, uint64_t *tx_bytes);
+int netfn_pkt_steer_send_list(struct netfn_pkt_steer *ps, struct sk_buff_head *head, int cpu, uint64_t *tx_bytes);
 
 /*
  * netfn_pkt_steer_get_stats
@@ -114,9 +153,9 @@ int netfn_pkt_steer_send_list(netfn_pkt_steer_t handle, struct sk_buff_head *hea
  * netfn_pkt_steer_t
  * netfn_pkt_steer_stats
  *
- * @param[in] handle	Packet steer object.
+ * @param[in] ps	Packet steer obdject.
  * @param[out] stats 	Memory to dump statistics.
  */
-void netfn_pkt_steer_get_stats(netfn_pkt_steer_t handle, struct netfn_pkt_steer_stats *stats);
+void netfn_pkt_steer_get_stats(struct netfn_pkt_steer *ps, struct netfn_pkt_steer_stats *stats);
 
 #endif /* __NETFN_PKT_STEER_H */

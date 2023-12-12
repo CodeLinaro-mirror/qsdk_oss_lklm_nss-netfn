@@ -21,26 +21,30 @@
 #include <linux/netdevice.h>
 #include <netfn_pkt_steer.h>
 
-#define NETFN_PKT_STEER_FIFO_MAX 512
-#define NETFN_PKT_STEER_ROUND_UP(x) (1U << fls(x))	/* Round up to nearest sqaure */
-#define NETFN_PKT_STEER_FIFO_SZ(budget) NETFN_PKT_STEER_ROUND_UP((budget) * 2)	/* handling more than 2x burst is overkill */
-#define NETFN_PKT_STEER_FIFO_INC(i, sz) (((i) + 1) & ((sz) - 1))
+#define NETFN_PKT_STEER_INC(i) \
+	({ \
+	 BUILD_BUG_ON_NOT_POWER_OF_2(NETFN_PKT_STEER_QUEUE_DEPTH); \
+	 (((i) + 1) & ((NETFN_PKT_STEER_QUEUE_DEPTH) - 1)); \
+	 })
 
-#define NETFN_PKT_STEER_IDX_SUB(i, val, max) (((i) - (val) + (max)) & ((max) - 1))
-#define NETFN_PKT_STEER_AVAIL_COUNT(head, tail, max) \
-	NETFN_PKT_STEER_IDX_SUB(head, tail, max)
+#define NETFN_PKT_STEER_SUB(i, val, max) \
+	({ \
+	 BUILD_BUG_ON_NOT_POWER_OF_2(max); \
+	 (((i) - (val) + (max)) & ((max) - 1)); \
+	 })
+
+#define NETFN_PKT_STEER_AVAIL_COUNT(head, tail) \
+		NETFN_PKT_STEER_SUB(head, tail, NETFN_PKT_STEER_QUEUE_DEPTH)
 
 /*
  * netfn_pkt_steer_fifo
  * 	skb queue for napi operations
  */
 struct netfn_pkt_steer_fifo {
-	struct sk_buff **skbs;			/* SKB FIFO */
-	size_t size;				/* FIFO size in square of 2 */
+	struct sk_buff *skbs[NETFN_PKT_STEER_QUEUE_DEPTH];
+						/* Packet queue */
 	atomic64_t prod;			/* Produce index */
 	atomic64_t cons;			/* Consumer index */
-
-	struct u64_stats_sync syncp;		/* sync for stats */
 	struct netfn_pkt_steer_stats stats;	/* statistics */
 };
 
@@ -49,22 +53,13 @@ struct netfn_pkt_steer_fifo {
  * 	Per Core NAPI structure.
  */
 struct netfn_pkt_steer_pcpu {
+	struct netfn_pkt_steer *ps;		/* Cache Parent object to be passed in cb */
+	netfn_pkt_steer_recv_t cb;		/* Cache calback */
+
 	struct napi_struct napi;		/* NAPI object */
-	netfn_pkt_steer_recv_t cb;		/* Receive calback */
-	void *app_data;				/* Callback appdata */
-	int core_id;				/* Core ID associated with NAPI */
 	call_single_data_t csd;			/* IPI descriptor */
 
 	struct netfn_pkt_steer_fifo fifo[NR_CPUS];	/* Cross CPU SKB Queue */
-};
-
-/*
- * netfn_pkt_steer
- * 	Per Core NAPI structure.
- */
-struct netfn_pkt_steer {
-	struct net_device ndev;			/* Netdevice for NAPI */
-	struct netfn_pkt_steer_pcpu __percpu *pcpu;	/* Per CPU NAPI entry */
 };
 
 #endif /* __NETFN_PKT_STEER_PRIV_H */
