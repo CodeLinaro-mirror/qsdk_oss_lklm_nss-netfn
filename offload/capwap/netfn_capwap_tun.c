@@ -27,6 +27,8 @@
 #include <linux/bitmap.h>
 #include <linux/if_arp.h>
 
+#include <ppe_vp_public.h>
+
 #include "netfn_capwap.h"
 #include "netfn_capwap_priv.h"
 #include "netfn_capwap_hdr.h"
@@ -211,6 +213,85 @@ static const struct file_operations file_ops = {
 };
 
 /*
+ * netfn_capap_tun_vp_err()
+ *	VP callback for outer exception.
+ */
+bool netfn_capwap_tun_vp_err(struct net_device *dev, struct sk_buff *skb, void *cb_data)
+{
+	struct netfn_capwap_tun_stats *tun_stats;
+	struct netfn_capwap_tun *nct = cb_data;
+
+	tun_stats = &nct->stats;
+	NETFN_CAPWAP_TUN_STATS_INC(&tun_stats->pkts.tx_failures);
+	dev_kfree_skb(skb);
+	return true;
+}
+
+/*
+ * netfn_capap_tun_vp_rx()
+ *	VP callback for receiving packets.
+ */
+bool netfn_capwap_tun_vp_rx(struct net_device *dev, struct sk_buff *skb, void *cb_data)
+{
+	BUG_ON(1);
+
+	return true;
+}
+
+/*
+ * netfn_capwap_tun_vp_attach()
+ *	Allocate VP corresponding to netdev
+ */
+static struct net_device *netfn_capwap_tun_vp_attach(struct net_device *dev)
+{
+	struct netfn_capwap_tun *nct = netdev_priv(dev);
+	struct ppe_vp_ai vpai = {0};
+	struct net_device *vp_dev;
+
+	/*
+	 * Allocate VP.
+	 */
+	vpai.type = PPE_VP_TYPE_SW_L3;
+	vpai.usr_type = PPE_VP_USER_TYPE_ACTIVE;
+	vpai.core_mask = capwap_core;
+	vpai.dst_cb = netfn_capwap_tun_vp_rx;
+	vpai.dst_cb_data = netdev_priv(dev);
+	vpai.src_cb = netfn_capwap_tun_vp_err;
+	vpai.src_cb_data = netdev_priv(dev);
+	vpai.queue_num = 0;
+
+	vp_dev = ppe_vp_alloc_dev(dev, &vpai);
+	if (!vp_dev) {
+		pr_warn("%p, Unable to create VP\n", dev);
+		return NULL;
+	}
+
+	pr_info("%px: Tun(%s), vp(%s) alloc and bind suceess\n", dev, dev->name, vp_dev->name);
+	return vp_dev;
+}
+
+/*
+ * netfn_capwap_tun_vp_detach()
+ *	Unbinds and frees the ppe-vp associated with dev.
+ */
+static void netfn_capwap_tun_vp_detach(struct net_device *dev)
+{
+	struct netfn_capwap_tun *nct = netdev_priv(dev);
+
+	BUG_ON(nct->vp_dev != nct->next_dev);
+
+	vp_dev = xchg(&nct->vp_dev, NULL);
+
+	/*
+	 * Free the vp dev
+	 */
+	ppe_vp_free_dev(vp_dev);
+
+	pr_info("%px: Tun(%s), unbinded vp dev and freed\n", dev, dev->name);
+	return;
+}
+
+/*
  * netfn_capwap_tun_alloc()
  *	Allocates a new tunnel.
  */
@@ -284,6 +365,17 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg)
 		return NULL;
 	}
 
+	/*
+	 * Add a VP for netdev.
+	 */
+	nct->vp_dev = netfn_capwap_tun_vp_attach(dev);
+	if (!nct->vp_dev) {
+		pr_warn("%px: Failed to allocate VP.\n", dev);
+		unregister_netdev(dev);
+		return NULL;
+	}
+
+	nct->next_dev = nct->vp_dev;
 	pr_info("%px: Successfully allocated tunnel(%s)\n", nct, dev->name);
 	return dev;
 }
@@ -299,6 +391,11 @@ bool netfn_capwap_tun_free(struct net_device *dev)
 	 * Check if dev is valid.
 	 */
 	BUG_ON(!dev);
+
+	/*
+	 * Free associated VP.
+	 */
+	netfn_capwap_tun_vp_detach(dev);
 
 	pr_info("%px: Unregistering tunnel.\n", &global_nc, dev->name);
 	unregister_netdev(dev);
