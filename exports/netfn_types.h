@@ -75,9 +75,9 @@ typedef struct netfn_tuple {
 	uint8_t ip_version;			/**< IPv4 or IPv6 */
 	netfn_tuple_type_t tuple_type;		/**< Valid tuple type */
 	union {
-		struct netfn_tuple_3tuple 3tuple;
-		struct netfn_tuple_4tuple 4tuple;
-		struct netfn_tuple_5tuple 5tuple;
+		struct netfn_tuple_3tuple tuple_3;
+		struct netfn_tuple_4tuple tuple_4;
+		struct netfn_tuple_5tuple tuple_5;
 	} tuples;
 } netfn_tuple_t;
 
