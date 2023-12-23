@@ -20,8 +20,8 @@
 #define __NETFN_CAPWAP_PRIV_H
 
 extern struct netfn_capwap global_nc;
-extern int fwd_cores_mask;
-extern int capwap_core;
+extern ulong fwd_cores_mask;
+extern ulong capwap_core;
 
 #define NETFN_CAPWAP_TUN_STATS_STRLEN 20	/* Stats string length. */
 #define NETFN_CAPWAP_TUN_STATS_WIDTH 82		/* Stats string width. */

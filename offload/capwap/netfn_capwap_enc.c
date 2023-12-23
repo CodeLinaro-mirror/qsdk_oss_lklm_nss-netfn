@@ -2,7 +2,7 @@
  * netfn_capwap_enc.c
  *	Network function's CAPWAP offload encapsulation.
  *
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -173,7 +173,6 @@ static void netfn_capwap_enc_80211(struct netfn_capwap_tun_enc *enc, struct sk_b
 {
 	struct netfn_capwap_prehdr *phdr = preh;
 	struct ieee80211_hdr_3addr *wlan_hdr;
-	struct netfn_capwap_winfo *winfo;
 	uint16_t fc = 0, nwireless;
 	uint8_t src_mac[ETH_ALEN];
 	uint8_t dst_mac[ETH_ALEN];

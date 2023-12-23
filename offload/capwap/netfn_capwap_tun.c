@@ -287,11 +287,9 @@ static const struct file_operations file_ops = {
  */
 bool netfn_capwap_tun_vp_err(struct net_device *dev, struct sk_buff *skb, void *cb_data)
 {
-	struct netfn_capwap_tun_stats *tun_stats;
 	struct netfn_capwap_tun *nct = cb_data;
 
-	tun_stats = &nct->stats;
-	NETFN_CAPWAP_TUN_STATS_INC(&tun_stats->pkts.tx_failures);
+	NETFN_CAPWAP_TUN_STATS_INC(&nct->stats.tx_failures);
 	dev_kfree_skb(skb);
 	return true;
 }
@@ -313,7 +311,6 @@ bool netfn_capwap_tun_vp_rx(struct net_device *dev, struct sk_buff *skb, void *c
  */
 static struct net_device *netfn_capwap_tun_vp_attach(struct net_device *dev)
 {
-	struct netfn_capwap_tun *nct = netdev_priv(dev);
 	struct ppe_vp_ai vpai = {0};
 	struct net_device *vp_dev;
 
@@ -346,6 +343,7 @@ static struct net_device *netfn_capwap_tun_vp_attach(struct net_device *dev)
 static void netfn_capwap_tun_vp_detach(struct net_device *dev)
 {
 	struct netfn_capwap_tun *nct = netdev_priv(dev);
+	struct net_device *vp_dev;
 
 	BUG_ON(nct->vp_dev != nct->next_dev);
 
@@ -557,7 +555,7 @@ bool netfn_capwap_tun_free(struct net_device *dev)
 	 */
 	netfn_capwap_tun_vp_detach(dev);
 
-	pr_info("%px: Unregistering tunnel.\n", &global_nc, dev->name);
+	pr_info("%px: Unregistering tunnel(%s).\n", &global_nc, dev->name);
 	unregister_netdev(dev);
 
 	return true;

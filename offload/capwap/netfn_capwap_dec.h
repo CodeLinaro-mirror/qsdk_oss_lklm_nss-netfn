@@ -2,7 +2,7 @@
  * netfn_capwap_dec.h
  *	Network function's CAPWAP offload decapsulation defintions.
  *
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -30,7 +30,7 @@ void netfn_capwap_dec_stats_read(struct netfn_capwap_tun_dec *dec, struct netfn_
  * netfn_capwap_dec_init()
  *	Initializes the decap object.
  */
-bool netfn_capwap_dec_init(struct netfn_capwap_tun_dec *dec, struct netfn_capwap_dec_cfg *cfg);
+bool netfn_capwap_dec_init(struct netfn_capwap_tun_dec *dec, struct netfn_capwap_dec_cfg *cfg, struct dentry *dentry);
 
 /*
  * netfn_capwap_dec_deinit()

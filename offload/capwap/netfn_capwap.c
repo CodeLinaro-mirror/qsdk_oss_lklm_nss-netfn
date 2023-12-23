@@ -37,8 +37,8 @@ struct netfn_capwap global_nc;
 /*
  * Core configuration.
  */
-int fwd_cores_mask = NETFN_CAPWAP_FWD_CORES_MASK;	/* 0100 represents core 2 */
-int capwap_core = NETFN_CAPWAP_CORE;			/* 3 represents core 3 */
+ulong fwd_cores_mask = NETFN_CAPWAP_FWD_CORES_MASK;	/* 0100 represents core 2 */
+ulong capwap_core = NETFN_CAPWAP_CORE;			/* 3 represents core 3 */
 
 /*
  * netfn_capwap_init()
@@ -82,8 +82,8 @@ void __exit netfn_capwap_exit(void)
 	debugfs_remove_recursive(nc->dentry);
 }
 
-module_param(fwd_cores_mask, int, S_IRUSR);
-module_param(capwap_core, int, S_IRUSR);
+module_param(fwd_cores_mask, ulong, S_IRUSR);
+module_param(capwap_core, ulong, S_IRUSR);
 
 module_init(netfn_capwap_init);
 module_exit(netfn_capwap_exit);

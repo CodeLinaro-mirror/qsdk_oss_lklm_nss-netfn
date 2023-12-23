@@ -69,7 +69,7 @@ static void netfn_capwap_tunid_stats(struct net_device *dev, struct rtnl_link_st
 static netdev_tx_t netfn_capwap_tunid_start_xmit(struct sk_buff *skb, struct net_device *dev)
 {
 	struct netfn_capwap_prehdr *pre = (struct netfn_capwap_prehdr *)skb->data;
-	struct netfn_capwap_tun_id *ncti = netdev_priv(dev);
+	struct netfn_capwap_tunid *ncti = netdev_priv(dev);
 	struct net_device *tun_dev;
 	uint8_t id = pre->tun_id;
 	netdev_tx_t status;
