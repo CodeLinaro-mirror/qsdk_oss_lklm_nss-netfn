@@ -2,7 +2,7 @@
  * netfn_capwap_tun.h
  *	Network function's CAPWAP offload tunnel defintions.
  *
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -110,6 +110,8 @@ struct netfn_capwap_tun {
 	netfn_pkt_steer_t tx_steer;		/* Tx packet steering handle. */
 	netfn_pkt_steer_t rx_steer;		/* Rx Packet steering handle. */
 	uint32_t flags;				/* Flags for this tunnel. */
+	uint8_t pvt[] __attribute__((aligned (sizeof(uint32_t))));
+						/* User private area pointer. */
 };
 
 #endif /* __NETFN_CAPWAP_TUN_H */

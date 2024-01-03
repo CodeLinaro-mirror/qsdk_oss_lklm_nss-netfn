@@ -2,7 +2,7 @@
  * netfn_capwap.h
  *	Network function's CAPWAP offload public APIs.
  *
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -120,7 +120,7 @@ struct netfn_capwap_tun_stats {
  * @cfg: Tunnel configuration.
  * @return: Net device associated with tunnel.
  */
-struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg);
+struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, ssize_t pvt_sz);
 
 /*
  * netfn_capwap_tun_free()
@@ -157,12 +157,20 @@ bool netfn_capwap_tun_unbind(struct net_device *dev);
 int netfn_capwap_tun_stats_get(struct net_device *dev, struct netfn_capwap_tun_stats *stats);
 
 /*
+ * netfn_capwap_tun_pvt_get()
+ *	Returns pointer to pvt area
+ * @dev: Netdevice.
+ * @return: Pointer to private area.
+ */
+void *netfn_capwap_tun_pvt_get(struct net_device *dev);
+
+/*
  * netfn_capwap_tunid_alloc()
  *	Allocates a new dummy dev.
  * @void:
  * @return: Net device.
  */
-struct net_device *netfn_capwap_tunid_alloc(void);
+struct net_device *netfn_capwap_tunid_alloc(ssize_t pvt_sz);
 
 /*
  * netfn_capwap_tunid_free()
@@ -180,7 +188,7 @@ bool netfn_capwap_tunid_free(struct net_device *dev);
  * @cfg: Tunnel configuration.
  * @return: bool.
  */
-bool netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, struct netfn_capwap_tun_cfg *cfg);
+struct net_device *netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, struct netfn_capwap_tun_cfg *cfg, ssize_t pvt_sz);
 
 /*
  * netfn_capwap_tunid_del()
@@ -218,4 +226,12 @@ bool netfn_capwap_tunid_unbind(struct net_device *dev, uint8_t id);
  * @stats: Tunnel stats object.
  */
 int netfn_capwap_tunid_stats_get(struct net_device *dev, uint8_t id, struct netfn_capwap_tun_stats *stats);
+
+/*
+ * netfn_capwap_tunid_pvt_get()
+ *	Returns pointer to pvt area
+ * @dev: Netdevice.
+ * @return: Pointer to private area.
+ */
+void *netfn_capwap_tunid_pvt_get(struct net_device *dev);
 #endif /* __NETFN_CAPWAP_H */

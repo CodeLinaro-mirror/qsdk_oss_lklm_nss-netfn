@@ -2,7 +2,7 @@
  * netfn_capwap_tunid.c
  *	Network function's CAPWAP offload tunnel ID configuration.
  *
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -136,7 +136,7 @@ static void netfn_capwap_tunid_setup(struct net_device *dev)
  * netfn_capwap_tunid_alloc()
  *	Allocates a new tunid.
  */
-struct net_device *netfn_capwap_tunid_alloc(void)
+struct net_device *netfn_capwap_tunid_alloc(ssize_t pvt_sz)
 {
 	struct netfn_capwap_tunid *ncti;
 	struct net_device *dev;
@@ -145,7 +145,7 @@ struct net_device *netfn_capwap_tunid_alloc(void)
 	/*
 	 * Allocate a new device for tunnel.
 	 */
-	dev = alloc_netdev(sizeof(*ncti), "netfn_capwap%d", NET_NAME_ENUM, netfn_capwap_tunid_setup);
+	dev = alloc_netdev(sizeof(*ncti) + pvt_sz, "netfn_capwap%d", NET_NAME_ENUM, netfn_capwap_tunid_setup);
 	if (!dev) {
 		pr_warn("%p: failed to allocate capwap dummy device\n", &global_nc);
 		return NULL;
@@ -170,7 +170,7 @@ EXPORT_SYMBOL(netfn_capwap_tunid_alloc);
  * netfn_capwap_tunid_add()
  *	Adds tunnel with specific tun id.
  */
-bool netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, struct netfn_capwap_tun_cfg *cfg)
+struct net_device *netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, struct netfn_capwap_tun_cfg *cfg, ssize_t pvt_sz)
 {
 	struct netfn_capwap_tunid *ncti;
 	struct net_device *tun_dev;
@@ -182,7 +182,7 @@ bool netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, struct netfn_cap
 
 	if (id <= 0 || id > NETFN_CAPWAP_MAX_IDS) {
 		pr_warn("%px: Invalid id(%d) allowed(1 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS);
-		return false;
+		return NULL;
 	}
 
 	ncti = netdev_priv(dev);
@@ -192,13 +192,13 @@ bool netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, struct netfn_cap
 	 */
 	if (test_and_set_bit(id, ncti->map)) {
 		pr_warn("%px: Id(%d) already in use\n", ncti, id);
-		return false;
+		return NULL;
 	}
 
-	tun_dev = netfn_capwap_tun_alloc(cfg);
+	tun_dev = netfn_capwap_tun_alloc(cfg, pvt_sz);
 	if (!tun_dev) {
 		pr_warn("%px: Unable to allocate tunnel for id(%d)\n", ncti, id);
-		return false;
+		return NULL;
 	}
 
 	ncti = netdev_priv(dev);
@@ -207,7 +207,7 @@ bool netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, struct netfn_cap
 	rcu_assign_pointer(ncti->tunnels[id], tun_dev);
 	spin_unlock_bh(&ncti->lock);
 
-	return true;
+	return tun_dev;
 }
 EXPORT_SYMBOL(netfn_capwap_tunid_add);
 
@@ -353,3 +353,15 @@ int netfn_capwap_tunid_stats_get(struct net_device *dev, uint8_t id, struct netf
 	return 0;
 }
 EXPORT_SYMBOL(netfn_capwap_tunid_stats_get);
+
+/*
+ * netfn_capwap_tunid_pvt_get()
+ *	Gets the private pointer
+ */
+void *netfn_capwap_tunid_pvt_get(struct net_device *dev)
+{
+	struct netfn_capwap_tunid *ncti = netdev_priv(dev);
+
+	return ncti->pvt;
+}
+EXPORT_SYMBOL(netfn_capwap_tunid_pvt_get);
