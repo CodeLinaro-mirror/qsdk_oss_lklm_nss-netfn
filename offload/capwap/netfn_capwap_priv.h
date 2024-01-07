@@ -29,7 +29,7 @@ extern ulong capwap_core;
 #define NETFN_CAPWAP_TUN_STATS_STRLEN 20	/* Stats string length. */
 #define NETFN_CAPWAP_TUN_STATS_WIDTH 82		/* Stats string width. */
 #define NETFN_CAPWAP_FWD_CORES_MASK 4	/* Default values for core masks */
-#define NETFN_CAPWAP_CORE 8		/* Default values for core */
+#define NETFN_CAPWAP_CORE 3		/* Default values for core */
 #define NETFN_CAPWAP_FRAG_IDX(frag_id, max) ({ \
 		BUILD_BUG_ON_NOT_POWER_OF_2(max); \
 		((frag_id) & ((max) - 1)); \
@@ -69,5 +69,5 @@ static inline void netfn_capwap_frags_init(struct netfn_capwap_frags *frags)
  * netfn_capwap_frags_add()
  *	Adds fragment to frag list.
  */
-bool netfn_capwap_frags_add(struct netfn_capwap_frags *frags, struct sk_buff *skb);
+void netfn_capwap_frags_add(struct netfn_capwap_frags *frags, struct sk_buff *skb);
 #endif /* __NETFN_CAPWAP_PRIV_H */

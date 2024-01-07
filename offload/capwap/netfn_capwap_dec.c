@@ -102,11 +102,10 @@ static struct sk_buff *netfn_capwap_dec_fast_reasm(struct netfn_capwap_dec *dec,
  */
 static struct sk_buff *netfn_capwap_dec_linearize(struct netfn_capwap_frags *frags)
 {
-	uint16_t offset = 0, skb_size;
 	struct sk_buff *iter, *skb;
-	uint8_t *data;
+	uint16_t skb_size;
 
-	skb_size = frags->tot_len + NETFN_CAPWAP_HEADROOM_RESERVE + NETFN_CAPWAP_TAILROOM_RESERVE;
+	skb_size = frags->tot_sz + NETFN_CAPWAP_HEADROOM_RESERVE + NETFN_CAPWAP_TAILROOM_RESERVE;
 	skb = dev_alloc_skb(skb_size);
 	if (!skb) {
 		pr_debug("%px: Unable to allocate skb of size(%d)\n", &frags->list, skb_size);
@@ -124,7 +123,7 @@ static struct sk_buff *netfn_capwap_dec_linearize(struct netfn_capwap_frags *fra
 		memcpy(skb->data + offset, iter->data, iter->len);
 	}
 
-	__skb_put(skb, frags->tot_len);
+	__skb_put(skb, frags->tot_sz);
 done:
 	dev_kfree_skb_list_fast(&frags->list);
 	return skb;
@@ -197,7 +196,7 @@ static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec *dec,
 		return NULL;
 	}
 
-	reasm_skb = netfn_capwap_dec_linearize(frag_list, frags->tot_sz);
+	reasm_skb = netfn_capwap_dec_linearize(frags);
 	if (!reasm_skb) {
 		NETFN_CAPWAP_TUN_STATS_INC(&stats->drop_linearize_fail);
 	}

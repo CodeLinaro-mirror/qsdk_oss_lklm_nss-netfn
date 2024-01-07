@@ -51,13 +51,13 @@ ulong capwap_core = NETFN_CAPWAP_CORE;			/* 3 represents core 3 */
 void netfn_capwap_frags_add(struct netfn_capwap_frags *frags, struct sk_buff *skb)
 {
 	struct netfn_capwap_hdr_mdata *mdata = NETFN_CAPWAP_CB(skb);
-	struct sk_buff *q_head = &frags->list;
+	struct sk_buff_head *q_head = &frags->list;
 
-	frags->rcv_len += skb->len;
-	frag->frag_id = mdata->frag_id;
+	frags->frag_sz += skb->len;
+	frags->frag_id = mdata->frag_id;
 
 	if (mdata->frag_end) {
-		frags->tot_len = mdata->frag_offset + skb->len;
+		frags->tot_sz = mdata->frag_offset + skb->len;
 	}
 
 	/*

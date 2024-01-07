@@ -178,7 +178,8 @@ static void netfn_capwap_enc_80211(struct netfn_capwap_tun_enc *enc, struct sk_b
 	uint8_t dst_mac[ETH_ALEN];
 	struct ethhdr *eth;
 
-	eth = (struct ethhdr *)__skb_pull(skb, sizeof(*eth));
+	eth = (struct ethhdr *)skb->data;
+	__skb_pull(skb, sizeof(*eth));
 	nwireless = phdr->nwireless;
 
 	/*
@@ -297,7 +298,7 @@ static bool netfn_capwap_enc_frag(struct netfn_capwap_tun_enc *enc, struct sk_bu
 		skb_reserve(skb, enc->outer_hdr_len + headroom);
 		memcpy(__skb_put(skb, frag_len), next_data, frag_len);
 		NETFN_CAPWAP_TUN_STATS_INC(&stats->num_frags);
-		__skb_queue_head(q_frag, skb);
+		__skb_queue_tail(q_frag, skb);
 		next_data += frag_len;
 	}
 
@@ -331,9 +332,10 @@ static ssize_t netfn_capwap_enc_stats_show(struct file *fp, char __user *ubuf, s
 	 * Print encap stats.
 	 */
 	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "\n------------[encap stats start]----------\n");
+	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "num_pkts", READ_ONCE(stats->num_pkts));
+	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "num_frags", READ_ONCE(stats->num_frags));
 	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "keepalive_pkt", READ_ONCE(stats->keepalive_pkts));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t = %llu\n", "num_frags", READ_ONCE(stats->num_frags));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t = %llu\n", "drop_queue_full", READ_ONCE(stats->drop_queue_full));
+	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "drop_queue_full", READ_ONCE(stats->drop_queue_full));
 	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "drop_mem_alloc", READ_ONCE(stats->drop_mem_alloc));
 	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t = %llu\n", "drop_ver_mismatch", READ_ONCE(stats->drop_ver_mis));
 	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t = %llu\n", "drop_insufficient_hroom", READ_ONCE(stats->drop_insufficient_hroom));
@@ -360,21 +362,14 @@ static const struct file_operations file_ops = {
  *	Reads encap stats.
  */
 void netfn_capwap_enc_stats_read(struct netfn_capwap_tun_enc *enc, struct netfn_capwap_tun_stats *stats)
-{
-	struct netfn_capwap_enc_stats *dest = &stats->enc;
-	struct netfn_capwap_enc_stats *src = &enc->stats;
+{  
+	uint64_t *dest = (uint64_t *)&stats->enc;
+	uint64_t *src = (uint64_t *)&enc->stats;
+	int i;
 
-	/*
-	 * Read encap stats.
-	 */
-	dest->keepalive_pkts = READ_ONCE(src->keepalive_pkts);
-	dest->num_frags = READ_ONCE(src->num_frags);
-	dest->drop_queue_full = READ_ONCE(src->drop_queue_full);
-	dest->drop_mem_alloc = READ_ONCE(src->drop_mem_alloc);
-	dest->drop_ver_mis = READ_ONCE(src->drop_ver_mis);
-	dest->drop_insufficient_hroom = READ_ONCE(src->drop_insufficient_hroom);
-	dest->drop_direct_dtls = READ_ONCE(src->drop_direct_dtls);
-	dest->drop_nwireless_len = READ_ONCE(src->drop_nwireless_len);
+	for (i = 0; i < (sizeof(enc->stats) / sizeof(uint64_t)); i++) {
+		*(uint64_t *)dest = *(uint64_t *)src;
+	}
 }
 
 /*
@@ -383,16 +378,19 @@ void netfn_capwap_enc_stats_read(struct netfn_capwap_tun_enc *enc, struct netfn_
  */
 bool netfn_capwap_enc(struct netfn_capwap_tun_enc *enc, struct sk_buff *orig_skb, struct sk_buff_head *q_frag)
 {
-	struct netfn_capwap_prehdr *phdr = (struct netfn_capwap_prehdr *)__skb_pull(orig_skb, sizeof(*phdr));
+	struct netfn_capwap_prehdr *phdr = (struct netfn_capwap_prehdr *)orig_skb->data;
 	struct netfn_capwap_enc_mdata mdata = {0};
 	uint16_t offset = 0, num_frags;
 	struct sk_buff *skb;
 	bool is_frag;
 
+	NETFN_CAPWAP_TUN_STATS_INC(&enc->stats.num_pkts);
+
 	/*
 	 * Pull the meta header.
 	 */
 	mdata.phdr = *phdr;
+	__skb_pull(orig_skb, sizeof(*phdr));
 
 	/*
 	 * If inner is 802.3 then we convert it to 802.11
@@ -500,6 +498,7 @@ bool netfn_capwap_enc_init(struct netfn_capwap_tun_enc *enc, struct netfn_capwap
 	enc->outer_hdr_len += sizeof(struct udphdr);
 	enc->outer_hdr_len += sizeof(struct netfn_capwap_hdr);
 	enc->mtu = ((cfg->mtu - enc->outer_hdr_len) & ~(sizeof(uint64_t) - 1));
+	memcpy(enc->snap_hdr, cfg->snap_hdr, NETFN_CAPWAP_SNAP_HDR_LEN);
 	hdr->ttl = cfg->ttl;
 
 	/*
