@@ -35,7 +35,7 @@ struct netfn_capwap_enc_cfg {
 	uint8_t ttl;			/**< TTL configured for tunnel. */
 	uint8_t tos;			/**< ToS for encapsulation. */
 	uint8_t bssid[ETH_ALEN];	/**< Basic service set ID. */
-	uint8_t snap[NETFN_CAPWAP_SNAP_HDR_LEN];
+	uint8_t snap_hdr[NETFN_CAPWAP_SNAP_HDR_LEN];
 					/**< Custom snap header. */
 };
 
@@ -89,7 +89,8 @@ struct netfn_capwap_dec_stats {
  *	Capwap encap stats.
  */
 struct netfn_capwap_enc_stats {
-	uint64_t num_frags;			/**< Number of segments or fragments. */
+	uint64_t num_pkts;			/**< Number of packets received. */
+	uint64_t num_frags;			/**< Number of segments or fragments generated. */
 	uint64_t keepalive_pkts;		/**< Keep alive packets recieved. */
 	/*
 	 * Drop stats.

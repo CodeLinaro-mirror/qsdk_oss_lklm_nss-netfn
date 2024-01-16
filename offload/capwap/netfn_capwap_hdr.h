@@ -365,7 +365,7 @@ static inline void netfn_capwap_hdr_set_hlen(union netfn_capwap_hdr_info *info, 
  * netfn_capwap_hdr_set_frag_offset()
  *	Set the fragment offset in capwap header.
  */
-static inline void netfn_capwap_hdr_set_frag_offset(union netfn_capwap_hdr_frag *frag, uint8_t offset)
+static inline void netfn_capwap_hdr_set_frag_offset(union netfn_capwap_hdr_frag *frag, uint16_t offset)
 {
 	frag->fields.offset = (offset >> 3);
 }

@@ -63,19 +63,17 @@ static void netfn_capwap_tunid_stats(struct net_device *dev, struct rtnl_link_st
 }
 
 /*
- * netfn_capwap_tunid_start_xmit()
+ * netfn_capwap_tunid_tx()
  *	Start transmiting using pdev.
  */
-static netdev_tx_t netfn_capwap_tunid_start_xmit(struct sk_buff *skb, struct net_device *dev)
+static netdev_tx_t netfn_capwap_tunid_tx(struct sk_buff *skb, struct net_device *dev)
 {
 	struct netfn_capwap_prehdr *pre = (struct netfn_capwap_prehdr *)skb->data;
 	struct netfn_capwap_tunid *ncti = netdev_priv(dev);
 	struct net_device *tun_dev;
-	uint8_t id = pre->tun_id;
-	netdev_tx_t status;
 
 	rcu_read_lock_bh();
-	tun_dev = rcu_dereference(ncti->tunnels[id]);
+	tun_dev = rcu_dereference(ncti->tunnels[pre->tun_id]);
 	if (!tun_dev) {
 		rcu_read_unlock_bh();
 		dev_kfree_skb(skb);
@@ -84,7 +82,7 @@ static netdev_tx_t netfn_capwap_tunid_start_xmit(struct sk_buff *skb, struct net
 
 	skb->dev = tun_dev;
 
-	status = dev_queue_xmit(skb);
+	dev_queue_xmit(skb);
 	rcu_read_unlock_bh();
 	return NETDEV_TX_OK;
 }
@@ -96,7 +94,7 @@ static netdev_tx_t netfn_capwap_tunid_start_xmit(struct sk_buff *skb, struct net
 static const struct net_device_ops netfn_capwap_tunid_ops = {
 	.ndo_open               = netfn_capwap_tunid_open,
 	.ndo_stop               = netfn_capwap_tunid_close,
-	.ndo_start_xmit         = netfn_capwap_tunid_start_xmit,
+	.ndo_start_xmit         = netfn_capwap_tunid_tx,
 	.ndo_set_mac_address    = eth_mac_addr,
 	.ndo_change_mtu         = eth_change_mtu,
 	.ndo_get_stats64        = netfn_capwap_tunid_stats,
@@ -197,6 +195,7 @@ bool netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, struct netfn_cap
 
 	tun_dev = netfn_capwap_tun_alloc(cfg);
 	if (!tun_dev) {
+		clear_bit(id, ncti->map);
 		pr_warn("%px: Unable to allocate tunnel for id(%d)\n", ncti, id);
 		return false;
 	}
@@ -273,6 +272,8 @@ bool netfn_capwap_tunid_del(struct net_device *dev, uint8_t id)
 		return false;
 	}
 
+	synchronize_rcu();
+	netfn_capwap_tun_free(tun_dev);
 	pr_info("%px: Successfully deleted tun(%d)\n", ncti, id);
 	return true;
 }

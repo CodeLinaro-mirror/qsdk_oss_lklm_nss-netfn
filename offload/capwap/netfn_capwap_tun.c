@@ -61,7 +61,7 @@ static bool netfn_capwap_tun_rx(struct netfn_capwap_tun *nct, struct sk_buff *sk
 	/*
 	 * RPS the packet to forwarding core.
 	 */
-	netfn_pkt_steer_send_list(nct->rx_steer, &q_head, NETFN_CAPWAP_RPS_CORE, &tx_bytes);
+	netfn_pkt_steer_send_list(&nct->rx_steer, &q_head, NETFN_CAPWAP_RPS_CORE, &tx_bytes);
 	if (unlikely(skb_queue_len(&q_head))) {
 		goto fail;
 	}
@@ -143,7 +143,7 @@ static netdev_tx_t netfn_capwap_tun_tx(struct sk_buff *skb, struct net_device *d
 	/*
 	 * IPI packet to desired core.
 	 */
-	if (netfn_pkt_steer_send(nct->tx_steer, skb, capwap_core)) {
+	if (netfn_pkt_steer_send(&nct->tx_steer, skb, capwap_core)) {
 		return NETDEV_TX_OK;
 	}
 fail:
@@ -166,12 +166,25 @@ static int netfn_capwap_tun_open(struct net_device *dev)
 	int i;
 
 	/*
+	 * Enable tx and rx pkt steering.
+	 */
+	if (!netfn_pkt_steer_enable(&nct->tx_steer)) {
+		pr_warn("%px: Unable to enable tx pkt steering.\n", nct);
+		return -ENOMEM;
+	}
+
+	if (!netfn_pkt_steer_enable(&nct->rx_steer)) {
+		pr_warn("%px: Unable to enable rx pkt steering.\n", nct);
+		goto fail_rx_steer;
+	}
+
+	/*
 	 * Open and close are protected by rtnl_lock()
 	 */
 	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
 	if (!ctx) {
 		pr_warn("%px: Unable to allocate memory for reassembly context.\n", nct);
-		return -ENOMEM;
+		goto fail_ctx;
 	}
 
 	/*
@@ -184,6 +197,12 @@ static int netfn_capwap_tun_open(struct net_device *dev)
 	rcu_assign_pointer(nct->dec.ctx, ctx);
 	netif_start_queue(dev);
 	return 0;
+
+fail_ctx:
+	netfn_pkt_steer_disable(&nct->rx_steer);
+fail_rx_steer:
+	netfn_pkt_steer_disable(&nct->tx_steer);
+	return -ENOMEM;
 }
 
 /*
@@ -217,6 +236,12 @@ static int netfn_capwap_tun_stop(struct net_device *dev)
 	}
 
 	kfree(ctx);
+
+	/*
+	 * Disable the tx and rx steer.
+	 */
+	netfn_pkt_steer_disable(&nct->tx_steer);
+	netfn_pkt_steer_disable(&nct->rx_steer);
 	return 0;
 }
 
@@ -274,15 +299,10 @@ static void netfn_capwap_tun_destructor(struct net_device *dev)
 	pr_info("%px: Freeing the tunnel(%s)\n", &global_nc, dev->name);
 
 	/*
-	 * Free pkt steer object.
+	 * Deinit pkt steer objects.
 	 */
-	if (nct->tx_steer) {
-		netfn_pkt_steer_free(nct->tx_steer);
-	}
-
-	if (nct->rx_steer) {
-		netfn_pkt_steer_free(nct->rx_steer);
-	}
+	netfn_pkt_steer_deinit(&nct->tx_steer);
+	netfn_pkt_steer_deinit(&nct->rx_steer);
 
 	debugfs_remove_recursive(nct->dentry);
 	free_netdev(dev);
@@ -379,7 +399,7 @@ bool netfn_capwap_tun_vp_err(struct net_device *dev, struct sk_buff *skb, void *
 }
 
 /*
- * netfn_capap_tun_vp_rx()
+ * netfn_capwap_tun_vp_rx()
  *	VP callback for receiving packets.
  */
 bool netfn_capwap_tun_vp_rx(struct net_device *dev, struct sk_buff *skb, void *cb_data)
@@ -444,9 +464,9 @@ static void netfn_capwap_tun_vp_detach(struct net_device *dev)
  * netfn_capwap_tun_tx_cb()
  *	Tx packet steering callback
  */
-static void netfn_capwap_tun_tx_cb(struct sk_buff_head *q_head, void *app_data)
+static void netfn_capwap_tun_tx_cb(struct netfn_pkt_steer *tx_steer, struct sk_buff_head *q_head)
 {
-	struct netfn_capwap_tun *nct = app_data;
+	struct netfn_capwap_tun *nct = container_of(tx_steer, struct netfn_capwap_tun, tx_steer);
 	struct netfn_capwap_pkt_stats *stats;
 	struct sk_buff *skb, *nskb;
 
@@ -456,6 +476,7 @@ static void netfn_capwap_tun_tx_cb(struct sk_buff_head *q_head, void *app_data)
 	 * Encapsulates and transmits out.
 	 */
 	skb_queue_walk_safe(q_head, skb, nskb) {
+		struct sk_buff *skb_frag, *tmp;
 		struct sk_buff_head q_frags;
 
 		__skb_queue_head_init(&q_frags);
@@ -476,14 +497,20 @@ static void netfn_capwap_tun_tx_cb(struct sk_buff_head *q_head, void *app_data)
 		/*
 		 * Trasmit the packet out.
 		 */
-		skb_queue_walk_safe(&q_frags, skb, nskb) {
-			int len = skb->len;
+		skb_queue_walk_safe(&q_frags, skb_frag, tmp) {
+			struct net_device *dev = nct->next_dev;
+			int len = skb_frag->len;
 
-			__skb_unlink(skb, &q_frags);
-			skb->dev = nct->next_dev;
+			__skb_unlink(skb_frag, &q_frags);
+			skb_frag->dev = dev;
 
-			if (dev_queue_xmit(skb) != NETDEV_TX_OK) {
+			/*
+			 * We are either sending it to VP or DTLS netdevice. Which is controlled path,
+			 * and don't require unnecessary overhead of dev_queue_xmit()
+			 */
+			if (dev->netdev_ops->ndo_start_xmit(skb_frag, dev) != NETDEV_TX_OK) {
 				NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_failures);
+				dev_kfree_skb(skb_frag);
 				continue;
 			}
 
@@ -497,9 +524,9 @@ static void netfn_capwap_tun_tx_cb(struct sk_buff_head *q_head, void *app_data)
  * netfn_capwap_tun_rx_cb()
  *	Rx packet steering callback
  */
-static void netfn_capwap_tun_rx_cb(struct sk_buff_head *q_head, void *app_data)
+static void netfn_capwap_tun_rx_cb(struct netfn_pkt_steer *rx_steer, struct sk_buff_head *q_head)
 {
-	struct netfn_capwap_tun *nct = app_data;
+	struct netfn_capwap_tun *nct = container_of(rx_steer, struct netfn_capwap_tun, rx_steer);
 	struct sk_buff *skb, *next_skb;
 
 	/*
@@ -613,27 +640,19 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg)
 	 * Allocate tx pkt steering object.
 	 */
 	info.cb = netfn_capwap_tun_tx_cb;
-	info.app_data = nct;
 	info.budget = NETFN_CAPWAP_TUN_TX_BUDGET;
 	info.weight = 1;
-	nct->tx_steer = netfn_pkt_steer_alloc(&info);
-	if (!nct->tx_steer) {
-		pr_warn("%px: Unable to allocate tx packet steering object.\n", nct);
-		goto fail;
-	}
+	info.dev = dev;
+	netfn_pkt_steer_init(&nct->tx_steer, &info);
 
 	/*
 	 * Allocate rx pkt steering object.
 	 */
 	info.cb = netfn_capwap_tun_rx_cb;
-	info.app_data = nct;
 	info.budget = NETFN_CAPWAP_TUN_RX_BUDGET;
 	info.weight = 1;
-	nct->rx_steer = netfn_pkt_steer_alloc(&info);
-	if (!nct->rx_steer) {
-		pr_warn("%px: Unable to allocate rx packet steering object.\n", nct);
-		goto fail;
-	}
+	info.dev = dev;
+	netfn_pkt_steer_init(&nct->rx_steer, &info);
 
 	pr_info("%px: Successfully allocated tunnel(%s)\n", nct, dev->name);
 	return dev;
@@ -686,7 +705,9 @@ bool netfn_capwap_tun_bind(struct net_device *dev, struct net_device *next)
 	dev_hold(next);
 	old_next_dev = xchg(&nct->next_dev, next);
 	BUG_ON(old_next_dev != nct->vp_dev);
+	rtnl_lock();
 	netdev_rx_handler_register(next, &netfn_capwap_tun_rx_handler, dev);
+	rtnl_unlock();
 
 	pr_info("%px: Successfully binded dev(%s)-->next(%s)\n", nct, dev->name, next->name);
 	return true;
@@ -709,7 +730,9 @@ bool netfn_capwap_tun_unbind(struct net_device *dev)
 	old_next_dev = xchg(&nct->next_dev, nct->vp_dev);
 	BUG_ON(old_next_dev == nct->vp_dev);
 
+	rtnl_lock();
 	netdev_rx_handler_unregister(old_next_dev);
+	rtnl_unlock();
 	dev_put(old_next_dev);
 
 	pr_info("%px: Successfully unbinded(%s)\n", nct, dev->name);
