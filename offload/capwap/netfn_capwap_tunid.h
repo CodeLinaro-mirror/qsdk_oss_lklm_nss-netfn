@@ -2,7 +2,7 @@
  * netfn_capwap_tunid.h
  *	Network function's CAPWAP offload tunnel id defintions.
  *
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -30,5 +30,6 @@ struct netfn_capwap_tunid {
 	struct net_device *tunnels[NETFN_CAPWAP_MAX_IDS];	/* Tunnel dev array. */
 	DECLARE_BITMAP(map, NETFN_CAPWAP_MAX_IDS); 		/* Mapping of active/deactive tunnels. */
 	spinlock_t lock;					/* Tunnel ID lock. */
+	uint8_t pvt[] __attribute__((aligned (sizeof(uint32_t)))); /* User private area. */
 };
 #endif /* __NETFN_CAPWAP_TUNID_H */

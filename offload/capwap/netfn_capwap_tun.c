@@ -556,7 +556,7 @@ static void netfn_capwap_tun_rx_cb(struct netfn_pkt_steer *rx_steer, struct sk_b
  * netfn_capwap_tun_alloc()
  *	Allocates a new tunnel.
  */
-struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg)
+struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, ssize_t pvt_sz)
 {
 	struct netfn_pkt_steer_info info = {0};
 	struct netfn_capwap *nc = &global_nc;
@@ -567,7 +567,7 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg)
 	/*
 	 * Allocate a new device for tunnel.
 	 */
-	dev = alloc_netdev(sizeof(*nct), "capwap%d", NET_NAME_ENUM, netfn_capwap_tun_setup);
+	dev = alloc_netdev(sizeof(*nct) + pvt_sz, "capwap%d", NET_NAME_ENUM, netfn_capwap_tun_setup);
 	if (!dev) {
 		pr_warn("%p: failed to allocate capwap tunnel device\n", nc);
 		return NULL;
@@ -773,3 +773,15 @@ int netfn_capwap_tun_stats_get(struct net_device *dev, struct netfn_capwap_tun_s
 	return 0;
 }
 EXPORT_SYMBOL(netfn_capwap_tun_stats_get);
+
+/*
+ * netfn_capwap_tun_pvt_get()
+ *	Returns the private pointer corresponding to dev.
+ */
+void *netfn_capwap_tun_pvt_get(struct net_device *dev)
+{
+	struct netfn_capwap_tun *nct = netdev_priv(dev);
+
+	return nct->pvt;
+}
+EXPORT_SYMBOL(netfn_capwap_tun_pvt_get);
