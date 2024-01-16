@@ -2,7 +2,7 @@
  * netfn_capwap_priv.h
  *	Network function's CAPWAP offload private definitions.
  *
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -19,14 +19,21 @@
 #ifndef __NETFN_CAPWAP_PRIV_H
 #define __NETFN_CAPWAP_PRIV_H
 
+#include <asm/bitops.h>
+
 extern struct netfn_capwap global_nc;
 extern ulong fwd_cores_mask;
 extern ulong capwap_core;
 
+#define NETFN_CAPWAP_RPS_CORE ((find_first_bit(&fwd_cores_mask, NR_CPUS)) % (NR_CPUS))
 #define NETFN_CAPWAP_TUN_STATS_STRLEN 20	/* Stats string length. */
 #define NETFN_CAPWAP_TUN_STATS_WIDTH 82		/* Stats string width. */
 #define NETFN_CAPWAP_FWD_CORES_MASK 4	/* Default values for core masks */
 #define NETFN_CAPWAP_CORE 8		/* Default values for core */
+#define NETFN_CAPWAP_FRAG_IDX(frag_id, max) ({ \
+		BUILD_BUG_ON_NOT_POWER_OF_2(max); \
+		((frag_id) & ((max) - 1)); \
+		})
 
 /*
  * netfn_capwap
@@ -35,4 +42,32 @@ extern ulong capwap_core;
 struct netfn_capwap {
 	struct dentry *dentry;		/* Debug entry for driver. */
 };
+
+/*
+ * netfn_capwap_frags
+ *	Fragmentation/reassembly management object.
+ */
+struct netfn_capwap_frags {
+	struct sk_buff_head list;	/* Reassembly fragment queue. */
+	int frag_id;			/* Frag-ID, associated with reasm queue */
+	uint16_t frag_sz;		/* Current size of skb received. */
+	uint16_t tot_sz;		/* Total size of the skb received. */
+};
+
+/*
+ * netfn_capwap_frags_init()
+ *	Init the frags object.
+ */
+static inline void netfn_capwap_frags_init(struct netfn_capwap_frags *frags)
+{
+	__skb_queue_head_init(&frags->list);
+	frags->frag_id = -1;
+	frags->frag_sz = frags->tot_sz = 0;
+}
+
+/*
+ * netfn_capwap_frags_add()
+ *	Adds fragment to frag list.
+ */
+bool netfn_capwap_frags_add(struct netfn_capwap_frags *frags, struct sk_buff *skb);
 #endif /* __NETFN_CAPWAP_PRIV_H */

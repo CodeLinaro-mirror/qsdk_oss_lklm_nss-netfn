@@ -2,7 +2,7 @@
  * netfn_capwap_tun.c
  *	Network function's CAPWAP offload tunnel configuration.
  *
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -37,12 +37,52 @@
 #include "netfn_capwap_dec.h"
 
 /*
- * netfn_capwap_dec_rx_skb()
+ * netfn_capwap_tun_rx()
+ *	Common rx handling for dev rx handler and VP handler.
+ */
+static bool netfn_capwap_tun_rx(struct netfn_capwap_tun *nct, struct sk_buff *skb)
+{
+	struct sk_buff_head q_head;
+	uint64_t tx_bytes = 0;
+
+	NETFN_CAPWAP_TUN_STATS_INC(&nct->stats.rx_pkts);
+	NETFN_CAPWAP_TUN_STATS_ADD(&nct->stats.rx_bytes, skb->len);
+
+	__skb_queue_head_init(&q_head);
+	__skb_queue_head(&q_head, skb);
+
+	/*
+	 * Decapsulate and reassemble the skb
+	 */
+	if (unlikely(!netfn_capwap_dec_rx_skbs(&nct->dec, &q_head))) {
+		goto fail;
+	}
+
+	/*
+	 * RPS the packet to forwarding core.
+	 */
+	netfn_pkt_steer_send_list(nct->rx_steer, &q_head, NETFN_CAPWAP_RPS_CORE, &tx_bytes);
+	if (unlikely(skb_queue_len(&q_head))) {
+		goto fail;
+	}
+
+	return true;
+fail:
+	NETFN_CAPWAP_TUN_STATS_ADD(&nct->stats.rx_failures, skb_queue_len(&q_head));
+	dev_kfree_skb_list_fast(&q_head);
+	return true;
+}
+
+/*
+ * netfn_capwap_tun_rx_handler()
  *	Receive an SKB queueu for processing.
  */
-static rx_handler_result_t netfn_capwap_tun_rx(struct sk_buff **pskb)
+static rx_handler_result_t netfn_capwap_tun_rx_handler(struct sk_buff **pskb)
 {
-	BUG_ON(1);
+	struct sk_buff *skb = *pskb;
+
+	netfn_capwap_tun_rx(netdev_priv(skb->dev), skb);
+
 	return RX_HANDLER_CONSUMED;
 }
 
@@ -121,6 +161,27 @@ fail:
  */
 static int netfn_capwap_tun_open(struct net_device *dev)
 {
+	struct netfn_capwap_tun *nct = netdev_priv(dev);
+	struct netfn_capwap_dec_ctx *ctx;
+	int i;
+
+	/*
+	 * Open and close are protected by rtnl_lock()
+	 */
+	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+	if (!ctx) {
+		pr_warn("%px: Unable to allocate memory for reassembly context.\n", nct);
+		return -ENOMEM;
+	}
+
+	/*
+	 * Initialize frags array.
+	 */
+	for (i = 0; i < NETFN_CAPWAP_TUN_MAX_REASM_WIN; i++) {
+		netfn_capwap_frags_init(&ctx->reasm_table[i]);
+	}
+
+	rcu_assign_pointer(nct->dec.ctx, ctx);
 	netif_start_queue(dev);
 	return 0;
 }
@@ -131,7 +192,31 @@ static int netfn_capwap_tun_open(struct net_device *dev)
  */
 static int netfn_capwap_tun_stop(struct net_device *dev)
 {
+	struct netfn_capwap_tun *nct = netdev_priv(dev);
+	struct netfn_capwap_dec_ctx *ctx;
+	int i;
+
+	/*
+	 * Stop the queue so that no additional SKBs queue in.
+	 */
 	netif_stop_queue(dev);
+
+	/*
+	 * There are open references to pool of SKBs sitting in reasm_table.
+	 */
+	ctx = rcu_dereference_protected(nct->dec.ctx, lockdep_rtnl_is_held());
+	RCU_INIT_POINTER(nct->dec.ctx, NULL);
+	synchronize_net();
+
+	if (ctx->reasm_cache) {
+		kfree_skb(ctx->reasm_cache);
+	}
+
+	for (i = 0; i < NETFN_CAPWAP_TUN_MAX_REASM_WIN; i++) {
+		dev_kfree_skb_list_fast(&ctx->reasm_table[i].list);
+	}
+
+	kfree(ctx);
 	return 0;
 }
 
@@ -199,7 +284,6 @@ static void netfn_capwap_tun_destructor(struct net_device *dev)
 		netfn_pkt_steer_free(nct->rx_steer);
 	}
 
-	netfn_capwap_dec_deinit(&nct->dec);
 	debugfs_remove_recursive(nct->dentry);
 	free_netdev(dev);
 	return;
@@ -300,8 +384,7 @@ bool netfn_capwap_tun_vp_err(struct net_device *dev, struct sk_buff *skb, void *
  */
 bool netfn_capwap_tun_vp_rx(struct net_device *dev, struct sk_buff *skb, void *cb_data)
 {
-	BUG_ON(1);
-
+	netfn_capwap_tun_rx(cb_data, skb);
 	return true;
 }
 
@@ -407,7 +490,6 @@ static void netfn_capwap_tun_tx_cb(struct sk_buff_head *q_head, void *app_data)
 			NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_pkts);
 			NETFN_CAPWAP_TUN_STATS_ADD(&stats->tx_bytes, len);
 		}
-
 	}
 }
 
@@ -417,7 +499,30 @@ static void netfn_capwap_tun_tx_cb(struct sk_buff_head *q_head, void *app_data)
  */
 static void netfn_capwap_tun_rx_cb(struct sk_buff_head *q_head, void *app_data)
 {
-	BUG_ON(1);
+	struct netfn_capwap_tun *nct = app_data;
+	struct sk_buff *skb, *next_skb;
+
+	/*
+	 * Walk the queue and pass onto required handler.
+	 */
+	skb_queue_walk_safe(q_head, skb, next_skb) {
+		__skb_unlink(skb, q_head);
+
+		skb_reset_mac_header(skb);
+		skb_reset_transport_header(skb);
+
+		/*
+		 * TODO: Optimize this.
+		 * Don't override skb fields in case of exception packets.
+		 */
+		if (likely(!NETFN_CAPWAP_CB(skb)->exception)) {
+			skb->dev = nct->dev;
+			skb->pkt_type = PACKET_HOST;
+			skb->skb_iif = nct->dev->ifindex;
+		}
+
+		netif_receive_skb(skb);
+	}
 }
 
 /*
@@ -581,7 +686,7 @@ bool netfn_capwap_tun_bind(struct net_device *dev, struct net_device *next)
 	dev_hold(next);
 	old_next_dev = xchg(&nct->next_dev, next);
 	BUG_ON(old_next_dev != nct->vp_dev);
-	netdev_rx_handler_register(next, &netfn_capwap_tun_rx, dev);
+	netdev_rx_handler_register(next, &netfn_capwap_tun_rx_handler, dev);
 
 	pr_info("%px: Successfully binded dev(%s)-->next(%s)\n", nct, dev->name, next->name);
 	return true;

@@ -2,7 +2,7 @@
  * netfn_capwap_tun.h
  *	Network function's CAPWAP offload tunnel defintions.
  *
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -20,6 +20,7 @@
 #define __NETFN_CAPWAP_TUN_H
 
 #include "netfn_pkt_steer.h"
+#include "netfn_capwap_dec.h"
 
 #define NETFN_CAPWAP_TUN_RX_BUDGET 64
 #define NETFN_CAPWAP_TUN_TX_BUDGET 64
@@ -28,6 +29,9 @@
 		*((uint64_t *)sptr) += value; \
 		})
 
+/*
+ * TODO: Move this to enc.h
+ */
 /*
  * netfn_capwap_tun_enc_hdr
  *	Encapsulation header
@@ -44,6 +48,9 @@ struct netfn_capwap_tun_enc_hdr {
 	__u8 csum_cov;			/* Checksum coverage. */
 };
 
+/*
+ * TODO: Move this to enc.h
+ */
 /*
  * netfn_capwap_tun_enc
  *	Encapsulation state
@@ -66,33 +73,6 @@ struct netfn_capwap_tun_enc {
 };
 
 /*
- * netfn_capwap_tun_dec_frags
- *	Decapsulation frags array.
- */
-struct netfn_capwap_tun_dec_frags {
-	struct sk_buff_head frags;	/* Reassembly fragment queue. */
-	int frag_id;			/* Frag-ID, associated with reasm queue; invalid value is -1 */
-};
-
-/*
- * netfn_capwap_tun_dec
- *	Decapsulation state
- */
-struct netfn_capwap_tun_dec {
-	struct sk_buff *fast_reasm;		/* Fast reassembly buffer. */
-	struct netfn_capwap_tun_dec_frags *slow_reasm;
-						/* Array of pending fragments. */
-	struct net_device *dev;			/* Back pointer to device. */
-	struct netfn_capwap_dec_stats stats;	/* Decap tunnel stats. */
-
-
-	uint32_t max_frags;			/* Maximum number of frags expected. */
-	uint32_t max_payload_sz;		/* Maximum size of payload buffer. */
-	uint32_t reasm_window_sz;		/* Maximum fragments array size. */
-	uint32_t features;			/* Features enabled for the tunnel. */
-};
-
-/*
  * netfn_capwap_tun
  * 	CAPWAP tunnel structure
  */
@@ -104,7 +84,7 @@ struct netfn_capwap_tun {
 
 	struct netfn_capwap_pkt_stats stats;	/* Tunnel stats. */
 	struct netfn_capwap_tun_enc enc;	/* Tunnel encap object. */
-	struct netfn_capwap_tun_dec dec;	/* Tunnel decap object. */
+	struct netfn_capwap_dec dec;		/* Tunnel decap object. */
 	struct dentry *dentry;			/* Debug entry for the tunnel. */
 
 	netfn_pkt_steer_t tx_steer;		/* Tx packet steering handle. */

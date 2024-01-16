@@ -2,7 +2,7 @@
  * netfn_capwap.c
  *	Network function's CAPWAP offload initialization.
  *
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -27,6 +27,7 @@
 #include <net/protocol.h>
 
 #include "netfn_capwap.h"
+#include "netfn_capwap_hdr.h"
 #include "netfn_capwap_priv.h"
 
 /*
@@ -39,6 +40,31 @@ struct netfn_capwap global_nc;
  */
 ulong fwd_cores_mask = NETFN_CAPWAP_FWD_CORES_MASK;	/* 0100 represents core 2 */
 ulong capwap_core = NETFN_CAPWAP_CORE;			/* 3 represents core 3 */
+
+/*
+ * netfn_capwap_frags_add()
+ *	Try to add frag to frags list
+ *
+ *	Only time we fail to insert is if there is if there is a
+ *	frag already present with same frag offset.
+ */
+void netfn_capwap_frags_add(struct netfn_capwap_frags *frags, struct sk_buff *skb)
+{
+	struct netfn_capwap_hdr_mdata *mdata = NETFN_CAPWAP_CB(skb);
+	struct sk_buff *q_head = &frags->list;
+
+	frags->rcv_len += skb->len;
+	frag->frag_id = mdata->frag_id;
+
+	if (mdata->frag_end) {
+		frags->tot_len = mdata->frag_offset + skb->len;
+	}
+
+	/*
+	 * Blindly, save the SKB as it arrived in the order.
+	 */
+	__skb_queue_tail(q_head, skb);
+}
 
 /*
  * netfn_capwap_init()
