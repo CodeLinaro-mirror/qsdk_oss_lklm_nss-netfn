@@ -414,7 +414,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v4_rule(struct netfn_flowmgr_create
 	 */
 	pd4rc->rule_flags |= PPE_DRV_V4_RULE_FLAG_RETURN_VALID | PPE_DRV_V4_RULE_FLAG_FLOW_VALID;
 
-	if(org_flow_flags & NETFN_FLOWMGR_FLOW_FLAG_BRIDGE_FLOW) {
+	if (org_flow_flags & NETFN_FLOWMGR_FLOW_FLAG_BRIDGE_FLOW) {
 		/*
 		 * Bridged flow
 		 */
@@ -429,6 +429,22 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v4_rule(struct netfn_flowmgr_create
 		pd4rc->rule_flags |= PPE_DRV_V4_RULE_FLAG_ROUTED_FLOW;
 		netfn_flowmgr_stats_inc(&stats->v4_create_rule_routed_flow);
 		netfn_flowmgr_warn("Flow is routed flow\n");
+	}
+
+	if (org_flow_flags & NETFN_FLOWMGR_FLOW_FLAG_DS_FLOW) {
+		/*
+		 * DS flow
+		 */
+		pd4rc->rule_flags |= PPE_DRV_V4_RULE_FLAG_DS_FLOW;
+		netfn_flowmgr_warn("Flow is DS flow\n");
+	}
+
+	if (org_flow_flags & NETFN_FLOWMGR_FLOW_FLAG_VP_FLOW) {
+		/*
+		 * VP flow
+		 */
+		pd4rc->rule_flags |= PPE_DRV_V4_RULE_FLAG_VP_FLOW;
+		netfn_flowmgr_warn("Flow is VP flow\n");
 	}
 
 	/*
