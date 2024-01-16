@@ -167,7 +167,7 @@ struct netfn_flowmgr_conn_stats {
 };
 
 /**
- * netfn_flowmgr_get_conn_stats
+ * netfn_flowmgr_flow_conn_stats
  *	Netfn flowmgr stats sync for single connection
  */
 struct netfn_flowmgr_flow_conn_stats {
@@ -384,8 +384,8 @@ netfn_flowmgr_ret_t netfn_flowmgr_dscp_pri_add(struct netfn_flowmgr_dscp_priorit
 netfn_flowmgr_ret_t netfn_flowmgr_dscp_pri_del(int16_t rule_id, netfn_flowmgr_accel_mode_t mode);
 
 /**
- * netfn_flowmgr_conn_stats_get
- *	Netfn flowmgr stats get for single connection
+ * netfn_flowmgr_get_conn_stats
+ *	Netfn flowmgr get stats for single connection
  *
  * @param[in] conn_stats stats
  * @param[in] mode accel mode.
@@ -393,7 +393,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_dscp_pri_del(int16_t rule_id, netfn_flowmgr_ac
  * @return
  * netfn_flowmgr_ret_t.
  */
-netfn_flowmgr_ret_t netfn_flowmgr_conn_stats_get(struct netfn_flowmgr_flow_conn_stats *conn_stats, netfn_flowmgr_accel_mode_t mode);
+netfn_flowmgr_ret_t netfn_flowmgr_get_conn_stats(struct netfn_flowmgr_flow_conn_stats *conn_stats, netfn_flowmgr_accel_mode_t mode);
 
 /*
  * IPv6 stats registration callback
