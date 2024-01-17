@@ -83,6 +83,7 @@ enum netfn_flowmgr_static_dbg_level {
 struct netfn_flowmgr_ae_ops {
 	netfn_flowmgr_ret_t (*create_rule)(struct netfn_flowmgr_create_rule *original, struct netfn_flowmgr_create_rule *reply);   /* Function pointer to create flow rule */
 	netfn_flowmgr_ret_t (*destroy_rule)(struct netfn_flowmgr_destroy_rule *original, struct netfn_flowmgr_destroy_rule *reply);  /* Function pointer to destroy flow rule */
+	netfn_flowmgr_ret_t (*get_stats)(struct netfn_flowmgr_flow_conn_stats *conn_stats);  /* Function pointer to get stats of a single flow based on 5 tuple */
 };
 
 /*

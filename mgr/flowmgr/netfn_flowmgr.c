@@ -179,6 +179,45 @@ netfn_flowmgr_ret_t netfn_flowmgr_dscp_pri_del(int16_t rule_id, netfn_flowmgr_ac
 EXPORT_SYMBOL(netfn_flowmgr_dscp_pri_del);
 
 /*
+ * netfn_flowmgr_conn_get_stats()
+ *	API to get stats of a connection based on tuple info.
+ */
+netfn_flowmgr_ret_t netfn_flowmgr_conn_get_stats(struct netfn_flowmgr_flow_conn_stats *conn_stats, netfn_flowmgr_accel_mode_t mode)
+{
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+	netfn_flowmgr_ret_t netfn_status = NETFN_FLOWMGR_RET_SUCCESS;
+
+	if (!conn_stats) {
+		netfn_flowmgr_warn("Invalid conn stats\n");
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_INVALID_CONN_STATS, 0);
+	}
+
+	if (mode != NETFN_FLOWMGR_ACCEL_MODE_PPE || mode != NETFN_FLOWMGR_ACCEL_MODE_SFE) {
+		netfn_flowmgr_warn("Invalid accel mode\n");
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_INVALID_ACCEL_MODE, 0);
+	}
+
+	if (f->ae_ops[mode] == NULL) {
+		netfn_flowmgr_warn("Ops not registerd for mode = %d\n", mode);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_OPS_NOT_REGISTERED, 0);
+	}
+
+	if (f->ae_ops[mode]->get_stats == NULL) {
+		netfn_flowmgr_warn("get stats no registered for mode = %d\n", mode);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_GET_STATS_NOT_REGISTERED, 0);
+	}
+
+	netfn_status = f->ae_ops[mode]->get_stats(conn_stats);
+	if (netfn_status) {
+		netfn_flowmgr_warn("Get stats failed\n");
+		return netfn_status;
+	}
+
+	return netfn_status;
+}
+EXPORT_SYMBOL(netfn_flowmgr_conn_get_stats);
+
+/*
  * netfn_flowmgr_ipv6_stats_callback_unregister()
  *      Unregister a notifier callback for IPv6 stats from netfn flowmgr
  */
@@ -318,6 +357,7 @@ bool netfn_flowmgr_ae_ops_register(netfn_flowmgr_ae_type_t ae_type, struct netfn
 
 	ae_ops->create_rule = ops->create_rule;
 	ae_ops->destroy_rule = ops->destroy_rule;
+	ae_ops->get_stats = ops->get_stats;
 
 	/*
 	 * Storing the ops in global structure pointer
