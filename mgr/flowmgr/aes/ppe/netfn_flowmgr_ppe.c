@@ -10,6 +10,7 @@
  *	Netfn flow manager ppe file
  */
 #include <linux/types.h>
+#include <linux/if_ether.h>
 #include <netfn_flowmgr.h>
 #include <flowmgr/netfn_flowmgr_priv.h>
 #include "netfn_flowmgr_ppe.h"
@@ -254,6 +255,16 @@ void netfn_flowmgr_ppe_deinit(void)
 	 * Unregister the callbacks with netfn core.
 	 */
 	netfn_flowmgr_ae_ops_unregister(NETFN_FLOWMGR_AE_TYPE_PPE);
+
+	/*
+	 * De-initialize ppe ipv4
+	 */
+	netfn_flowmgr_ppe_ipv4_deinit();
+
+	/*
+	 * De-initialize ppe ipv6
+	 */
+	netfn_flowmgr_ppe_ipv6_deinit();
 }
 
 /*
@@ -262,6 +273,7 @@ void netfn_flowmgr_ppe_deinit(void)
  */
 bool netfn_flowmgr_ppe_init(void)
 {
+	bool status;
 	struct netfn_flowmgr_ae_ops ppe_ops = {0};
 	netfn_flowmgr_ae_type_t ae_type = NETFN_FLOWMGR_AE_TYPE_PPE;
 
@@ -275,6 +287,18 @@ bool netfn_flowmgr_ppe_init(void)
 	 * Register the callbacks with netfn core.
 	 */
 	netfn_flowmgr_ae_ops_register(ae_type, &ppe_ops);
+
+	status = netfn_flowmgr_ppe_ipv4_init();
+	if (!status) {
+		netfn_flowmgr_warn("Netfn flowmgr PPE IPv4 initialization failed\n");
+		return false;
+	}
+
+	status = netfn_flowmgr_ppe_ipv6_init();
+	if (!status) {
+		netfn_flowmgr_warn("Netfn flowmgr PPE IPv6 initialization failed\n");
+		return false;
+	}
 
 	return true;
 }

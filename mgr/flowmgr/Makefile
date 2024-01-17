@@ -16,6 +16,7 @@ ifdef NETFN_FLOWMGR_AE_PPE_ENABLE
 qca-nss-flowmgr-objs += aes/ppe/netfn_flowmgr_ppe.o
 qca-nss-flowmgr-objs += aes/ppe/netfn_flowmgr_ppe_ipv4.o
 qca-nss-flowmgr-objs += aes/ppe/netfn_flowmgr_ppe_ipv6.o
+qca-nss-flowmgr-objs += aes/ppe/netfn_flowmgr_ppe_stats.o
 endif
 
 ccflags-y += -Wall -Werror

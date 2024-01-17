@@ -18,7 +18,16 @@
 
 #define NETFN_FLOWMGR_STATIC_DBG_LEVEL_STR_LEN 8
 
+/*
+ * Module parameter to enable/disable stats sync from AEs.
+ */
+bool enable_stats_sync = false;
+module_param(enable_stats_sync, bool, 0644);
+MODULE_PARM_DESC(enable_stats_sync, "Enable or disable stats sync for IPv4 and IPv6");
+
 uint32_t static_dbg_level = 0;
+uint16_t ipv4_stats_sync_period = 60;
+uint16_t ipv6_stats_sync_period = 60;
 static char static_dbg_level_str[NETFN_FLOWMGR_STATIC_DBG_LEVEL_STR_LEN];
 
 struct netfn_flowmgr netfn_flowmgr_gbl;
@@ -170,6 +179,80 @@ netfn_flowmgr_ret_t netfn_flowmgr_dscp_pri_del(int16_t rule_id, netfn_flowmgr_ac
 EXPORT_SYMBOL(netfn_flowmgr_dscp_pri_del);
 
 /*
+ * netfn_flowmgr_ipv6_stats_callback_unregister()
+ *      Unregister a notifier callback for IPv6 stats from netfn flowmgr
+ */
+void netfn_flowmgr_ipv6_stats_callback_unregister(void)
+{
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+
+	spin_lock_bh(&f->lock);
+	if (f->stats_sync_v6_cb) {
+                f->stats_sync_v6_cb = NULL;
+                f->stats_sync_v6_data = NULL;
+        }
+	spin_unlock_bh(&f->lock);
+
+	netfn_flowmgr_info("Netfn IPv6 stats callback unregistered successfully");
+}
+EXPORT_SYMBOL(netfn_flowmgr_ipv6_stats_callback_unregister);
+
+/*
+ * netfn_flowmgr_ipv6_stats_callback_register()
+ *      Register a notifier callback for IPv6 stats from netfn flowmgr
+ */
+netfn_flowmgr_ret_t netfn_flowmgr_ipv6_stats_callback_register(void *app_data, netfn_flowmgr_ipv6_stats_callback_t cb)
+{
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+
+	spin_lock_bh(&f->lock);
+	f->stats_sync_v6_cb = cb;
+	f->stats_sync_v6_data = app_data;
+	spin_unlock_bh(&f->lock);
+
+	netfn_flowmgr_info("Netfn IPv6 stats callback registered successfully, cb: %p", cb);
+	return NETFN_FLOWMGR_RET_SUCCESS;
+}
+EXPORT_SYMBOL(netfn_flowmgr_ipv6_stats_callback_register);
+
+/*
+ * netfn_flowmgr_ipv4_stats_callback_unregister()
+ *      Unregister a notifier callback for IPv4 stats from netfn flowmgr
+ */
+void netfn_flowmgr_ipv4_stats_callback_unregister(void)
+{
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+
+	spin_lock_bh(&f->lock);
+	if (f->stats_sync_v4_cb) {
+                f->stats_sync_v4_cb = NULL;
+                f->stats_sync_v4_data = NULL;
+        }
+	spin_unlock_bh(&f->lock);
+
+	netfn_flowmgr_info("Netfn IPv4 stats callback unregistered successfully");
+}
+EXPORT_SYMBOL(netfn_flowmgr_ipv4_stats_callback_unregister);
+
+/*
+ * netfn_flowmgr_ipv4_stats_callback_register()
+ *      Register a notifier callback for IPv4 stats from netfn flowmgr
+ */
+netfn_flowmgr_ret_t netfn_flowmgr_ipv4_stats_callback_register(void *app_data, netfn_flowmgr_ipv4_stats_callback_t cb)
+{
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+
+	spin_lock_bh(&f->lock);
+	f->stats_sync_v4_cb = cb;
+	f->stats_sync_v4_data = app_data;
+	spin_unlock_bh(&f->lock);
+
+	netfn_flowmgr_info("Netfn IPv4 stats callback registered successfully, cb: %p", cb);
+	return NETFN_FLOWMGR_RET_SUCCESS;
+}
+EXPORT_SYMBOL(netfn_flowmgr_ipv4_stats_callback_register);
+
+/*
  * netfn_flowmgr_ae_ops_unregister()
  *	Unregister AEs create/destroy callbacks
  */
@@ -247,6 +330,76 @@ bool netfn_flowmgr_ae_ops_register(netfn_flowmgr_ae_type_t ae_type, struct netfn
 EXPORT_SYMBOL(netfn_flowmgr_ae_ops_register);
 
 /*
+ * netfn_flowmgr_ipv6_stats_sync_period_handler()
+ *      Set ipv6_stats_sync_period for netfn flowmgr.
+ */
+static int netfn_flowmgr_ipv6_stats_sync_period_handler(struct ctl_table *table,
+		int write, void __user *buffer,
+		size_t *lenp, loff_t *ppos)
+{
+	int ret;
+	int current_value;
+
+	/*
+	 * Take the current value
+	 */
+	current_value = ipv6_stats_sync_period;
+
+	/*
+	 * Write the variable with user input
+	 */
+	ret = proc_dointvec(table, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return failure.
+		 */
+		return ret;
+	}
+
+	if (ipv6_stats_sync_period == current_value) {
+		netfn_flowmgr_info("New ipv6 sync timer is equal to old timer\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+/*
+ * netfn_flowmgr_ipv4_stats_sync_period_handler()
+ *      Set ipv4_stats_sync_period for netfn flowmgr.
+ */
+static int netfn_flowmgr_ipv4_stats_sync_period_handler(struct ctl_table *table,
+		int write, void __user *buffer,
+		size_t *lenp, loff_t *ppos)
+{
+	int ret;
+	int current_value;
+
+	/*
+	 * Take the current value
+	 */
+	current_value = ipv4_stats_sync_period;
+
+	/*
+	 * Write the variable with user input
+	 */
+	ret = proc_dointvec(table, write, buffer, lenp, ppos);
+	if (ret || (!write)) {
+		/*
+		 * Return failure.
+		 */
+		return ret;
+	}
+
+	if (ipv4_stats_sync_period == current_value) {
+		netfn_flowmgr_info("New ipv4 sync timer is equal to old timer\n");
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+/*
  * netfn_flowmgr_static_dbg_level_handler()
  *      Set static debug level for netfn flowmgr.
  */
@@ -302,6 +455,20 @@ static struct ctl_table netfn_flowmgr_sub[] = {
 		.maxlen         =       sizeof(char) * NETFN_FLOWMGR_STATIC_DBG_LEVEL_STR_LEN,
 		.mode           =       0644,
 		.proc_handler   =       netfn_flowmgr_static_dbg_level_handler
+	},
+	{
+		.procname       =       "ipv4_stats_sync_period",
+		.data           =       &ipv4_stats_sync_period,
+		.maxlen         =       sizeof(int),
+		.mode           =       0644,
+		.proc_handler   =       netfn_flowmgr_ipv4_stats_sync_period_handler,
+	},
+	{
+		.procname       =       "ipv6_stats_sync_period",
+		.data           =       &ipv6_stats_sync_period,
+		.maxlen         =       sizeof(int),
+		.mode           =       0644,
+		.proc_handler   =       netfn_flowmgr_ipv6_stats_sync_period_handler,
 	},
 	{}
 };
