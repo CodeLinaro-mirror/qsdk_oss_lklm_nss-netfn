@@ -112,7 +112,8 @@ typedef enum netfn_flowmgr_ret_status {
 	NETFN_FLOWMGR_RET_DSCP_RULE_DEL_FAILED,			/**< Failure due to dscp rule del failed */
 	NETFN_FLOWMGR_RET_OPS_NOT_REGISTERED,			/**< Failure due to ops not registered */
 	NETFN_FLOWMGR_RET_GET_STATS_NOT_REGISTERED,		/**< Failure due to get stats not registered */
-	NETFN_FLOWMGR_RET_GET_PPE_STATS_FAILED,			/**< Failure due to stats get failed */
+	NETFN_FLOWMGR_RET_GET_PPE_STATS_FAILED,			/**< Failure due to ppe stats get failed */
+	NETFN_FLOWMGR_RET_GET_SFE_STATS_FAILED,			/**< Failure due to sfe stats get failed */
 } netfn_flowmgr_ret_status_t;
 
 /**
@@ -193,6 +194,11 @@ struct netfn_flowmgr_flow_conn_stats {
 	 * Request: Tuple info for which stats to be fetched
 	 */
 	struct netfn_tuple tuple;			/**< Holds values of tuples of a single connection. */
+	/*
+	 * Net devices are necessary for SFE lookup functions, can be ignored for PPE
+	 */
+	struct net_device *org_netdev;			/**< Source net device */
+	struct net_device *reply_netdev;		/**< Destination net device */
 	/*
 	 * Response: Stats
 	 */
