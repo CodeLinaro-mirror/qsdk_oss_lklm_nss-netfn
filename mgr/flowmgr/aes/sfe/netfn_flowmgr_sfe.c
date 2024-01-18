@@ -24,6 +24,7 @@
  */
 netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_vlan_info(struct netfn_flowmgr_create_rule *original, struct netfn_flowmgr_create_rule *reply)
 {
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
 	uint32_t org_inner_ingress_vlan_tag;
 	uint32_t org_inner_egress_vlan_tag;
 	uint32_t org_outer_ingress_vlan_tag;
@@ -32,8 +33,10 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_vlan_info(struct netfn_flowmgr_cr
 	uint32_t reply_inner_egress_vlan_tag;
 	uint32_t reply_outer_ingress_vlan_tag;
 	uint32_t reply_outer_egress_vlan_tag;
+	struct netfn_flowmgr_debug_stats *stats;
 	netfn_flowmgr_ret_t status = NETFN_FLOWMGR_RET_SUCCESS;
 
+	stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_SFE];
 	/*
 	 * Original direction inner and outer vlan rules
 	 */
@@ -59,6 +62,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_vlan_info(struct netfn_flowmgr_cr
 						org_inner_ingress_vlan_tag, org_inner_egress_vlan_tag);
 		netfn_flowmgr_warn("reply_inner_ingress_vlan_tag = 0x%x, reply_inner_egress_vlan_tag = 0x%x\n",
 						reply_inner_ingress_vlan_tag, reply_inner_egress_vlan_tag);
+		netfn_flowmgr_stats_inc(&stats->validate_vlan_inner_mismatch);
 		status = NETFN_FLOWMGR_RET_SFE_INNER_VLAN_MISMATCH;
 	}
 
@@ -71,6 +75,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_vlan_info(struct netfn_flowmgr_cr
 						org_outer_ingress_vlan_tag, org_outer_egress_vlan_tag);
 		netfn_flowmgr_warn("reply_outer_ingress_vlan_tag = 0x%x, reply_outer_egress_vlan_tag = 0x%x\n",
 						reply_outer_ingress_vlan_tag, reply_outer_egress_vlan_tag);
+		netfn_flowmgr_stats_inc(&stats->validate_vlan_outer_mismatch);
 		status = NETFN_FLOWMGR_RET_SFE_OUTER_VLAN_MISMATCH;
 	}
 	return status;
