@@ -200,14 +200,14 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tun_get_stats(struct net_device *dev, stru
  * netfn_capwapmgr_tunid_dev_alloc()
  *	Allocate a CAPWAP tunid dev.
  * @void:
- * @return: Master CAPWAP net device.
+ * @return: tunid CAPWAP net device.
  */
 struct net_device *netfn_capwapmgr_tunid_dev_alloc(void);
 
 /*
  * netfn_capwapmgr_tunid_dev_free()
  *	Free CAPWAP tunid dev.
- * @dev: Master capwap net device.
+ * @dev: tunid capwap net device.
  * @return: capwap manager return status.
  */
 netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_dev_free(struct net_device *dev);
@@ -225,7 +225,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_add(struct net_device *dev, uint8_t 
 /*
  * netfn_capwapmgr_tunid_del()
  *	Deletes the tunnel with a specific ID under the tunid dev.
- * @dev: Master CAPWAP dev
+ * @dev: tunid CAPWAP dev
  * @return: capwap manager return type.
  */
 netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_del(struct net_device *dev, uint8_t tun_id);
@@ -233,7 +233,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_del(struct net_device *dev, uint8_t 
 /*
  * netfn_capwapmgr_tunid_get_dtls_dev()
  *	Get DTLS dev associated with the tunnel
- * @dev: Master CAPWAP dev
+ * @dev: tunid CAPWAP dev
  * @tun_id: Tunnel Id
  * @return: DTLS device associated with the tunnel id.
  */
@@ -242,20 +242,30 @@ struct net_device *netfn_capwapmgr_tunid_get_dtls_dev(struct net_device *dev, ui
 /*
  * netfn_capwapmgr_tunid_update()
  *	Update tunnel configuration
- * @dev: Master CAPWAP dev.
+ * @dev: tunid CAPWAP dev.
  * @tun_id: Tunnel ID.
  * @cfg: Tunnel update configuration.
  * @return: CAPWAP manager return status.
  */
-netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_update(struct net_device *dev, uint8_t tun_id, struct netfn_capwapmgr_tun_cfg *cfg);
+netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_update(struct net_device *dev, uint8_t tun_id, struct netfn_capwapmgr_tun_update *cfg);
 
 /*
  * netfn_capwapmgr_tunid_get_stats()
  *	Get stats associated with the tunnel ID
- * @dev: Master CAPWAP dev
+ * @dev: tunid CAPWAP dev
  * @tun_id: Tunnel ID.
  * @stats: Tunnel stats to be filled.
  * @return: CAPWAP manager return status.
  */
 netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_get_stats(struct net_device *dev, uint8_t tun_id, struct netfn_capwapmgr_tun_stats *stats);
+
+/*
+ * netfn_capwapmgr_tunid_toggle_state()
+ *	Enable/disable a tunid tunnel
+ *@dev: Tunnel ID dev.
+ *@tun_id: Tunnel ID
+ *@enable: Swith to enable/disable the tunnel
+ *@return: CAPWAP manager return status
+ */
+netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_toggle_state(struct net_device *dev, uint8_t tun_id, bool enable);
 #endif /* __NETFN_CAPWAPMGR_H */
