@@ -47,13 +47,19 @@
 					/**< DTLS rule is configured for this tunnel */
 #define NETFN_CAPWAPMGR_TUN_STATE_DTLS_BIND 0x0010
 					/**< DTLS dev is bound to capwap dev for this tunnel */
+#define NETFN_CAPWAPMGR_TUN_STATE_DEINIT_IN_PROGRESS 0x0020
+					/**< Tunnel deinit in progress */
+#define NETFN_CAPWAPMGR_TUN_STATE_DEINIT_DONE 0x0040
+					/**< Tunnel deinit done */
+
+#define NETFN_CAPWAPMGR_TUN_STATE_MAX 24
+					/**< Max tunnel states */
 
 /*
  * netfn_cawpapmgr_tun_ctx.
  *	Private tunnel context associated with the tunnel.
  */
 struct netfn_capwapmgr_tun_ctx {
-	spinlock_t lock;			/*< Lock to prevent concurrent config changes */
 	struct netfn_capwapmgr *mgr;		/*< Pointer to Manager context */
 	struct net_device *capwap_dev;		/*< CAPWAP net device associated with this tunnel */
 	struct net_device *dtls_dev;		/*< DTLS net device assocaited with this tunnel */
@@ -62,7 +68,26 @@ struct netfn_capwapmgr_tun_ctx {
 	struct timer_list stats_sync;		/*< Stats sync timer associated with this tunnel */
 	struct netfn_capwapmgr_flow_stats stats;
 						/*< Flow manager stats */
-	bool timer_attach;			/*< Flag to indicate if the stats sync timer can be re-attached */
-	uint32_t state;				/*< State of the tunnel */
+	atomic64_t timer_resched;		/*< Flag to indicate if the stats sync timer can be re-attached */
+	DECLARE_BITMAP(state, NETFN_CAPWAPMGR_TUN_STATE_MAX);
+						/*< State of the tunnel */
 };
+
+/*
+ * netfn_capwapmgr_tun_init_cfg
+ *	Validate tunnel configuration.
+ */
+extern netfn_capwapmgr_ret_t netfn_capwapmgr_tun_init_cfg(struct netfn_capwapmgr_tun_cfg *cfg);
+
+/*
+ * netfn_capwapmgr_tun_init()
+ * 	Initialize the tunnel.
+ */
+extern bool netfn_capwapmgr_tun_init(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_capwapmgr_tun_cfg *cfg);
+
+/*
+ * netfn_capwapmgr_tun_deinint()
+ *	Deinitialize the tunnel
+ */
+extern bool netfn_capwapmgr_tun_deinit(struct netfn_capwapmgr_tun_ctx *ctx);
 #endif /* __NETFN_CAPWAPMGR_TUN_H */

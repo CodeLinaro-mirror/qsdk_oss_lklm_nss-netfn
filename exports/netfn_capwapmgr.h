@@ -37,7 +37,7 @@
  */
 struct netfn_capwapmgr_tun_cfg {
 	netfn_tuple_t tuple;		/**< 5 tuple information */
-	struct netfn_capwapmgr_flow_info flow;
+	struct netfn_flowmgr_flow_info flow;
 					/**< Flow rule */
 	struct netfn_capwap_tun_cfg capwap;
 					/**< CAPWAP rule */
@@ -68,7 +68,7 @@ struct netfn_capwapmgr_tun_cfg {
 typedef enum {
 	NETFN_CAPWAPMGR_UPDATE_CAPWAP_VER,	/**< Update CAPWAP version */
 	NETFN_CAPWAPMGR_UPDATE_DEST_MAC,	/**< Update Destination MAC address */
-	NETFN_CAPWAPMGR_UDPATE_MTU,		/**< Update PATH MTU */
+	NETFN_CAPWAPMGR_UPDATE_MTU,		/**< Update PATH MTU */
 	NETFN_CAPWAPMGR_UPDATE_SRC_INTERFACE,	/**< Update Source Interface */
 	NETFN_CAPWAPMGR_UPDATE_DTLS_ENABLE,	/**< Add DTLS config */
 	NETFN_CAPWAPMGR_UPDATE_DTLS_DISABLE,	/**< Add DTLS config */
@@ -82,21 +82,24 @@ typedef enum {
  * netfn_capwapmgr_tun_update
  *	Tunnel Configuration update.
  */
-union netfn_capwapmgr_tun_update {
-	struct {
-		struct netfn_dtls_cfg enc;
-				/**< DTLS encap session */
-		struct netfn_dtls_cfg dec;
-				/**< DTLS decap session */
-	} dtls;
+struct netfn_capwapmgr_tun_update {
+	netfn_capwapmgr_tun_update_t type;
+	union {
+		struct {
+			struct netfn_dtls_cfg enc;
+					/**< DTLS encap session */
+			struct netfn_dtls_cfg dec;
+					/**< DTLS decap session */
+		} dtls;
 
-	struct net_device *dev;
-				/**< Source interface */
-	uint32_t mtu;		/**< Path MTU */
-	uint8_t dest_mac[ETH_ALEN];
-				/**< Destination MAC */
-	uint8_t ver;		/**< CAPWAP version */
-	uint8_t reserved[7];	/**< Reserved */
+		struct net_device *dev;
+					/**< Source interface */
+		uint32_t mtu;		/**< Path MTU */
+		uint8_t dest_mac[ETH_ALEN];
+					/**< Destination MAC */
+		uint8_t ver;		/**< CAPWAP version */
+		uint8_t reserved[7];	/**< Reserved */
+	} update_cfg;
 };
 
 /*
@@ -118,10 +121,10 @@ struct netfn_capwapmgr_flow_stats {
 };
 
 /**
- * netfn_capwapmgr_stats
+ * netfn_capwapmgr_tun_stats
  *	Tunnel Packet statistics.
  */
-struct netfn_capwapmgr_stats {
+struct netfn_capwapmgr_tun_stats {
 	struct netfn_capwapmgr_flow_stats flow;	/**< Flow offload statistics */
 	struct netfn_capwap_tun_stats capwap;	/**< CAPWAP offload statistics */
 };
@@ -173,7 +176,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tun_free(struct net_device *dev);
  * @cfg: Update tunnel configuration
  * @return: Net device associated with the tunnel.
  */
-netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update(struct net_device *dev, union netfn_capwapmgr_tun_update *cfg);
+netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update(struct net_device *dev, struct netfn_capwapmgr_tun_update *cfg);
 
 /*
  * netfn_capwapmgr_tun_get_dtls_dev()
@@ -191,7 +194,7 @@ struct net_device *netfn_capwapmgr_tun_get_dtls_dev(struct net_device *dev);
  * @stats: Tunnel stats to be filled.
  * @return: CAPWAP manager return status.
  */
-netfn_capwapmgr_ret_t netfn_capwapmgr_tun_get_stats(struct net_device *dev, struct netfn_capwapmgr_stats *stats);
+netfn_capwapmgr_ret_t netfn_capwapmgr_tun_get_stats(struct net_device *dev, struct netfn_capwapmgr_tun_stats *stats);
 
 /*
  * netfn_capwapmgr_tunid_dev_alloc()
@@ -217,7 +220,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_dev_free(struct net_device *dev);
  * @cfg: Tunnel confgiruation.
  * @return: capwap manager return type
  */
-netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_add(struct net_device *dev, uint8_t tun_id, netfn_capwapmgr_tun_cfg *cfg);
+netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_add(struct net_device *dev, uint8_t tun_id, struct netfn_capwapmgr_tun_cfg *cfg);
 
 /*
  * netfn_capwapmgr_tunid_del()
@@ -244,7 +247,7 @@ struct net_device *netfn_capwapmgr_tunid_get_dtls_dev(struct net_device *dev, ui
  * @cfg: Tunnel update configuration.
  * @return: CAPWAP manager return status.
  */
-netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_update(struct net_device *dev, uint8_t tun_id, union netfn_capwapmgr_tun_cfg_update *cfg);
+netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_update(struct net_device *dev, uint8_t tun_id, struct netfn_capwapmgr_tun_cfg *cfg);
 
 /*
  * netfn_capwapmgr_tunid_get_stats()
@@ -254,5 +257,5 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_update(struct net_device *dev, uint8
  * @stats: Tunnel stats to be filled.
  * @return: CAPWAP manager return status.
  */
-netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_get_stats(struct net_device *dev, uint8_t tun_id, struct netfn_capwapmgr_stats *stats);
+netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_get_stats(struct net_device *dev, uint8_t tun_id, struct netfn_capwapmgr_tun_stats *stats);
 #endif /* __NETFN_CAPWAPMGR_H */

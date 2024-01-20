@@ -25,7 +25,7 @@
 #include <linux/kref.h>
 
 #include <netfn_capwap.h>
-#include <netfn_flow.h>
+#include <netfn_flowmgr.h>
 #include <netfn_dtls.h>
 
 /*
@@ -38,13 +38,16 @@
 #endif
 
 /*
- * If dynamic debug is enabled, use pr_debug.
+ * If dynamic debug is enabled, use pr_warn.
  */
-#define netfn_capwapmgr_warn(s, ...) pr_debug("%s[%d]:" s, __FUNCTION__, __LINE__, ##__VA_ARGS__)
+#define netfn_capwapmgr_warn(s, ...) pr_warn("%s[%d]:" s, __FUNCTION__, __LINE__, ##__VA_ARGS__)
 #define netfn_capwapmgr_info(s, ...) pr_debug("%s[%d]:" s, __FUNCTION__, __LINE__, ##__VA_ARGS__)
 #define netfn_capwapmgr_trace(s, ...) pr_debug("%s[%d]:" s, __FUNCTION__, __LINE__, ##__VA_ARGS__)
 
-#define NETFN_CAPWAPMGR_STATS_SYNC_TIMER_CORE 3	/* Default value for stats sync timer core */
+/*
+ * Mask to check if dtls is enabled.
+ */
+#define NETFN_CAPWAPMGR_EXT_VALID_DTLS (NETFN_CAPWAPMGR_EXT_VALID_DTLS_ENC | NETFN_CAPWAPMGR_EXT_VALID_DTLS_DEC)
 
 /*
  * netfn_capwapmgr_stats
@@ -75,20 +78,20 @@ extern struct netfn_capwapmgr g_mgr;	/* Global manager object */
 extern void netfn_capwapmgr_final(struct kref *kref);
 
 /*
- * netfn_capwapmgr_drv_ref()
+ * netfn_capwapmgr_ref()
  * 	Increment driver object reference
  */
-static inline struct netfn_capwapmgr *netfn_capwapmgr_drv_ref(struct netfn_capwapmgr *mgr)
+static inline struct netfn_capwapmgr *netfn_capwapmgr_ref(struct netfn_capwapmgr *mgr)
 {
 	kref_get(&mgr->ref);
 	return mgr;
 }
 
 /*
- * netfn_capwapmgr_drv_deref()
+ * netfn_capwapmgr_deref()
  * 	Decrement driver object reference
  */
-static inline void netfn_capwapmgr_drv_deref(struct netfn_capwapmgr *mgr)
+static inline void netfn_capwapmgr_deref(struct netfn_capwapmgr *mgr)
 {
 	kref_put(&mgr->ref, netfn_capwapmgr_final);
 }

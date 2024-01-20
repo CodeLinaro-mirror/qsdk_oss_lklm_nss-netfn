@@ -22,7 +22,7 @@
 #include <linux/debugfs.h>
 #include <linux/bitmap.h>
 
-#include "netfn_capwapmgr.h"
+#include <netfn_capwapmgr.h>
 #include "netfn_capwapmgr_priv.h"
 
 /*
@@ -31,10 +31,10 @@
 struct netfn_capwapmgr g_mgr;
 
 /*
- * netfn_capwapmgr_error_stats_str
+ * netfn_capwapmgr_stats_str
  *	Stats strings.
  */
-static const char *netfn_capwapmgr_error_stats_str[] = {
+static const char *netfn_capwapmgr_stats_str[] = {
 	"WAN Net device NULL",
 					/**< NULL WAN net device */
 	"Top Net Device NULL",
@@ -59,6 +59,10 @@ static const char *netfn_capwapmgr_error_stats_str[] = {
 					/**< Failed to get tunnel context from offload engine */
 	"CAPWAP offlaod tunid dev free failed",
 					/**< Failed to free capwap tunid dev in offload engine */
+	"CAPWAP offlaod tunid dtls alloc failed",
+					/**< Failed to free capwap tunid dev in offload engine */
+	"CAPWAP offlaod tunid dev bind failed",
+					/**< Failed to free capwap tunid dev in offload engine */
 };
 
 /*
@@ -67,37 +71,57 @@ static const char *netfn_capwapmgr_error_stats_str[] = {
  */
 void netfn_capwapmgr_final(struct kref *kref)
 {
-	BUG_ON(1);
-	return;
+        struct netfn_capwapmgr *mgr = container_of(kref, struct netfn_capwapmgr, ref);
+
+        complete(&mgr->completion);
 }
 
 /*
- * netfn_capwapmgr_error_stats_print
+ * netfn_capwapmgr_stats_print
  *	API to print error statistics.
  */
-static int netfn_capwapmgr_error_stats_print(struct seq_file *sf, void *ptr)
+static int netfn_capwapmgr_stats_print(struct seq_file *sf, void *ptr)
 {
-	BUG_ON(1);
-	return 0;
 
+          struct netfn_capwapmgr *mgr = &g_mgr;
+          uint64_t error_count;
+          int i = 0;
+
+          seq_puts(sf, "\n################ CAPWAPMGR statistics Start ################\n");
+          seq_printf(sf, "\tTunnels allocated: %u\n", atomic_read(&mgr->stats.tun_dev_alloc));
+          seq_printf(sf, "\tTunnels freed: %u\n", atomic_read(&mgr->stats.tun_dev_free));
+          seq_printf(sf, "\tTunid dev allocated : %u\n", atomic_read(&mgr->stats.tunid_dev_alloc));
+          seq_printf(sf, "\tTunid dev freed: %u\n", atomic_read(&mgr->stats.tunid_dev_free));
+          seq_puts(sf, "\n");
+
+          seq_puts(sf, "Error Statistics\n");
+
+          for (i = 1; i < NETFN_CAPWAPMGR_ERROR_MAX; i++) {
+                  error_count = atomic64_read(&mgr->stats.error_stats[i]);
+                  seq_printf(sf, "\t[%s]: %llu\n", netfn_capwapmgr_stats_str[i-1],
+                                                                  error_count);
+          }
+
+          seq_puts(sf, "\n################ CAPWAPMGR Statistics End  ################\n");
+
+          return 0;
 }
 
 /*
- * netfn_capwapmgr_error_stats_open
+ * netfn_capwapmgr_stats_open
  *	Open file handler for common stats debugfs.
  */
-static int netfn_capwapmgr_error_stats_open(struct inode *inode, struct file *file)
+static int netfn_capwapmgr_stats_open(struct inode *inode, struct file *file)
 {
-	BUG_ON(1);
-	return 0;
+	return single_open(file, netfn_capwapmgr_stats_print, inode->i_private);
 }
 
 /*
- * netfn_capwapmgr_error_stats_file_ops
+ * netfn_capwapmgr_stats_ops
  *	File operations for capwapmanager common stats
  */
-const struct file_operations netfn_capwapmgr_error_stats_file_ops = {
-	.open = netfn_capwapmgr_error_stats_open,
+const struct file_operations netfn_capwapmgr_stats_ops = {
+	.open = netfn_capwapmgr_stats_open,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,
@@ -109,8 +133,30 @@ const struct file_operations netfn_capwapmgr_error_stats_file_ops = {
  */
 int __init netfn_capwapmgr_init_module(void)
 {
-	BUG_ON(1);
-	return 0;
+	struct netfn_capwapmgr *mgr = &g_mgr;
+
+	/*
+	 * Deref: netfn_capwapmgr_exit_module().
+	 */
+	init_completion(&mgr->completion);
+	spin_lock_init(&mgr->lock);
+
+        /*
+         * Create a debugfs entry for capwap netfn engine.
+         */
+        mgr->dentry = debugfs_create_dir("qca-nss-netfn-capwapmgr", NULL);
+        if (!mgr->dentry) {
+                netfn_capwapmgr_warn("%p, Unable to create debugsfs entry for NETFN capwapmgr\n", mgr);
+        }
+
+	if (!debugfs_create_file("Error_stats", S_IRUGO, mgr->dentry,
+                NULL, &netfn_capwapmgr_stats_ops)) {
+		netfn_capwapmgr_warn("%p: Unable to create error statistics file entry in debugfs\n", mgr);
+	}
+
+	kref_init(&mgr->ref);
+	netfn_capwapmgr_info("NETFN CAPWAPMGR loaded: (%s)\n", NETFN_CAPWAPMGR_BUILD_ID);
+        return 0;
 }
 
 /*
@@ -119,7 +165,23 @@ int __init netfn_capwapmgr_init_module(void)
  */
 void __exit netfn_capwapmgr_exit_module(void)
 {
-	BUG_ON(1);
+	struct netfn_capwapmgr *mgr = &g_mgr;
+
+	/*
+	 * Ref: netfn_capwapmgr_init_module().
+	 */
+	netfn_capwapmgr_deref(mgr);
+
+	/*
+	 * Wait for all the derefs.
+	 * Reference is taken on driver during tunnel allocations.
+	 */
+	wait_for_completion(&mgr->completion);
+
+	/*
+	 * Remove debugfs entries
+	 */
+	debugfs_remove_recursive(mgr->dentry);
 }
 
 module_init(netfn_capwapmgr_init_module);
