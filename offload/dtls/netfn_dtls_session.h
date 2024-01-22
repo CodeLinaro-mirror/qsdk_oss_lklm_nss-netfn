@@ -36,7 +36,6 @@ struct netfn_dtls_session_stats {
  * DTLS Session object.
  */
 struct netfn_dtls_session {
-	struct list_head node;		/* Node in device list */
 	struct netfn_dtls_tun *tun;	/* Tunnel device */
 
 	netfn_tuple_t tuple;		/* session tuple */
