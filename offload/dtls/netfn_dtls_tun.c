@@ -23,6 +23,9 @@
 #include <linux/if_arp.h>
 #include <linux/etherdevice.h>
 #include <linux/rtnetlink.h>
+#include <linux/ip.h>
+#include <linux/ipv6.h>
+#include <linux/udp.h>
 
 #include <ppe_vp_public.h>
 #include "netfn_dtls_priv.h"
@@ -104,6 +107,7 @@ static ssize_t netfn_dtls_tun_print_stats(struct file *fp, char __user *ubuf, si
 	len += snprintf(buf + len, max_len - len, "\tRx bytes: %llu\n", stats.rx_bytes);
 	len += snprintf(buf + len, max_len - len, "\tRx Error: %llu\n", stats.rx_fail);
 	len += snprintf(buf + len, max_len - len, "\tRx Fail linearization: %llu\n", stats.rx_fail_linearize);
+	len += snprintf(buf + len, max_len - len, "\tRx Fail control: %llu\n", stats.rx_fail_ctrl);
 	len += snprintf(buf + len, max_len - len, "\tRx Fail session: %llu\n", stats.rx_fail_session);
 
 	len = simple_read_from_buffer(ubuf, sz, ppos, buf, len);
@@ -209,6 +213,74 @@ bool netfn_dtls_tun_vp_err(struct net_device *dev, struct sk_buff *skb, void *cb
 	tun_stats = this_cpu_ptr(tun->stats_pcpu);
 	tun_stats->tx_fail++;
 	consume_skb(skb);
+	return true;
+}
+
+/*
+ * netfn_dtls_tun_rcv()
+ *	Handle UDP/UDPlite encapsulated DTLS+CAPWAP packets.
+ */
+bool netfn_dtls_tun_rcv(struct net_device *dev, struct sk_buff *skb, void *cb_data)
+{
+	struct netfn_dtls_tun_stats *tun_stats;
+	struct netfn_dtls_tun *tun = cb_data;
+	struct netfn_dtls_session *ses;
+	struct eip_dtls_hdr *dtls_hdr;
+	size_t hdr_len, dtls_offst;
+
+	tun_stats = this_cpu_ptr(tun->stats_pcpu);
+
+	/*
+	 * In case of non-linear SKB, Linearize if the first segment cannot hold headers.
+	 * TODO: Non-CAPWAP mode?
+	 */
+	hdr_len = (skb->protocol == htons(ETH_P_IP)) ? sizeof(struct iphdr) : sizeof(struct ipv6hdr);
+	hdr_len += sizeof(struct udphdr);
+	hdr_len += sizeof(struct eip_capwap_hdr);
+	hdr_len += sizeof(struct eip_dtls_hdr);
+	if (skb_is_nonlinear(skb) && (skb_headlen(skb) < hdr_len)) {
+		if (skb_linearize(skb)) {
+			tun_stats->rx_fail_linearize++;
+			goto drop;
+		}
+	}
+
+	skb_reset_network_header(skb);
+	dtls_offst = hdr_len -  sizeof(struct eip_dtls_hdr);
+	dtls_hdr = (struct eip_dtls_hdr *)(skb->data +  dtls_offst);
+
+	if (unlikely(dtls_hdr->type != EIP_DTLS_TYPE_APP_DATA)) {
+		/*
+		 * TODO: CC: Just Exchange pending & Active pointer and free older active state.
+		 * We need to change from Mutex to spinlock for this?
+		 */
+		tun_stats->rx_fail_ctrl++;
+		goto drop;
+	}
+
+	rcu_read_lock_bh();
+
+	/*
+	 * Fetch the active decap session.
+	 * Epoch is stored in network format and hence ntohs is not needed.
+	 */
+	ses = rcu_dereference_bh(tun->dec.active);
+	if (!ses || (ses->epoch != dtls_hdr->epoch)) {
+		pr_debug("DTLS session not found tun(%p) epoch(%x)\n", dev, dtls_hdr->epoch);
+		tun_stats->rx_fail_session++;
+
+		rcu_read_unlock_bh();
+		goto drop;
+	}
+
+	netfn_dtls_dec(ses, skb);
+
+	rcu_read_unlock_bh();
+	return true;
+
+drop:
+	tun_stats->rx_fail++;
+	dev_kfree_skb_any(skb);
 	return true;
 }
 
@@ -617,6 +689,7 @@ struct net_device *netfn_dtls_tun_alloc(ssize_t pvt_sz)
 
 	/*
 	 * Set netdevice to UP state.
+	 * Unregister invokes the destructor.
 	 */
 	rtnl_lock();
 	status = dev_open(dev, NULL);
