@@ -137,7 +137,6 @@ static void netfn_dtls_session_fill_tr(struct netfn_dtls_cfg *cfg, netfn_tuple_t
 	base->auth.key_len = cfg->base.auth.key_len;
 	base->nonce = cfg->base.nonce;
 
-	dtls->icv_len = cfg->base.icv_len;
 	dtls->flags |= (flags & NETFN_DTLS_FLAG_ENC) ? EIP_TR_DTLS_FLAG_ENC : 0;
 	dtls->flags |= (flags & NETFN_DTLS_FLAG_IPV6) ? EIP_TR_DTLS_FLAG_IPV6 : 0;
 	dtls->flags |= (flags & NETFN_DTLS_FLAG_UDPLITE) ? EIP_TR_DTLS_FLAG_UDPLITE : 0;
@@ -238,8 +237,8 @@ struct netfn_dtls_session *netfn_dtls_session_alloc(struct netfn_dtls_cfg *cfg, 
 	capwap = (cfg->flags & NETFN_DTLS_FLAG_CAPWAP);
 	udplite = (cfg->flags & NETFN_DTLS_FLAG_UDPLITE);
 
-	pr_debug("%p: algo_name %s, icv_len %u, flags %u replay_win %u df %u dscp %u hop_limit %u\n",
-		dev, cfg->base.algo_name, cfg->base.icv_len, cfg->flags, cfg->replay_win, cfg->df,
+	pr_debug("%p: algo_name %s, flags %u replay_win %u df %u dscp %u hop_limit %u\n",
+		dev, cfg->base.algo_name, cfg->flags, cfg->replay_win, cfg->df,
 		cfg->dscp, cfg->hop_limit);
 
 	if (t->ip_version == IPVERSION) {
@@ -294,10 +293,13 @@ struct netfn_dtls_session *netfn_dtls_session_alloc(struct netfn_dtls_cfg *cfg, 
 	/*
 	 * Set completion handler.
 	 */
-	if (encap)
+	if (encap) {
 		netfn_dtls_enc_init(ses, &tr_info);
-	else
+		snprintf(name, sizeof(name), "enc%u", cfg->epoch);
+	} else {
 		netfn_dtls_dec_init(ses, &tr_info);
+		snprintf(name, sizeof(name), "dec%u", cfg->epoch);
+	}
 
 	ses->tr = eip_tr_alloc(drv->ctx, &tr_info);
 	if (!ses->tr) {
@@ -308,7 +310,6 @@ struct netfn_dtls_session *netfn_dtls_session_alloc(struct netfn_dtls_cfg *cfg, 
 	/*
 	 * create debugfs
 	 */
-	snprintf(name, sizeof(name), "epoch%u", cfg->epoch);
 	ses->dentry = debugfs_create_file(name, S_IRUGO, tun->dentry, ses, &netfn_dtls_ses_file_ops);
 
 	return ses;

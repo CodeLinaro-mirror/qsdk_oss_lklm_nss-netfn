@@ -29,11 +29,12 @@
 #include <linux/mutex.h>
 
 #include <ppe_vp_public.h>
+#include <ppe_drv.h>
 #include "netfn_dtls_priv.h"
 
-static int netfn_dtls_rcv_map = 0x8;
-module_param(netfn_dtls_rcv_map, int, 0644);
-MODULE_PARM_DESC(netfn_dtls_rcv_map, "DTLS receive core Map");
+static int netfn_dtls_core_id = 0x2;
+module_param(netfn_dtls_core_id, int, 0644);
+MODULE_PARM_DESC(netfn_dtls_core_id, "DTLS receive core Map");
 
 /*
  * netfn_dtls_tun_get_stats()
@@ -124,18 +125,10 @@ static ssize_t netfn_dtls_tun_print_stats(struct file *fp, char __user *ubuf, si
  */
 static int netfn_dtls_tun_open(struct net_device *dev)
 {
-	struct netfn_dtls_tun *tun = netdev_priv(dev);
-	int err;
-
 	/*
-	 * Set VP netdevice to UP state.
+	 * TODO: dev_open() on vp_dev. Functionally not needed but this
+	 * is needed for architecturally correctness.
 	 */
-	err = dev_open(tun->vp_dev, NULL);
-	if (err < 0) {
-		pr_err("%s: Failed to Open netdevce, error(%d)\n", dev->name, err);
-		return err;
-	}
-
 	netif_start_queue(dev);
 	return 0;
 }
@@ -146,9 +139,6 @@ static int netfn_dtls_tun_open(struct net_device *dev)
  */
 static int netfn_dtls_tun_stop(struct net_device *dev)
 {
-	struct netfn_dtls_tun *tun = netdev_priv(dev);
-
-	dev_close(tun->vp_dev);
 	netif_stop_queue(dev);
 	return 0;
 }
@@ -299,13 +289,12 @@ static struct net_device *netfn_dtls_tun_alloc_vp(struct net_device *dev)
 	 * Allocate new VP
 	 */
 	vpai.type = PPE_VP_TYPE_SW_L3;
-	vpai.usr_type = PPE_VP_USER_TYPE_ACTIVE;
-	vpai.core_mask = netfn_dtls_rcv_map;
 	vpai.dst_cb = netfn_dtls_tun_rcv;
 	vpai.dst_cb_data = netdev_priv(dev);
 	vpai.src_cb = netfn_dtls_tun_vp_err;
 	vpai.src_cb_data = netdev_priv(dev);
-	vpai.queue_num = 0;
+	vpai.queue_num = ppe_drv_queue_from_core(netfn_dtls_core_id);
+	vpai.flags |= PPE_VP_FLAG_REDIR_ENABLE;
 
 	vp_dev = ppe_vp_alloc_dev(dev, &vpai);
 	if (!vp_dev) {
@@ -329,11 +318,6 @@ static void netfn_dtls_tun_destructor(struct net_device *dev)
 	 * Conditionally free the resources as this may be called
 	 * during partial cleanup on dev setup failure.
 	 */
-	if (tun->vp_dev) {
-		ppe_vp_free_dev(tun->vp_dev);
-		tun->vp_dev = NULL;
-	}
-
 	if (tun->stats_pcpu) {
 		free_percpu(tun->stats_pcpu);
 		tun->stats_pcpu = NULL;
@@ -684,6 +668,12 @@ void netfn_dtls_tun_free(struct net_device *dev)
 		netfn_dtls_session_free(dec_pending);
 
 	/*
+	 * Issue VP deallocation. So, No more packets are being sent by VP.
+	 */
+	ppe_vp_free_dev(tun->vp_dev);
+	tun->vp_dev = NULL;
+
+	/*
 	 * Bring down the device and unregister from linux.
 	 */
 	unregister_netdev(dev);
@@ -766,12 +756,14 @@ struct net_device *netfn_dtls_tun_alloc(ssize_t pvt_sz)
 		return NULL;
 	}
 
-	tun->dentry = debugfs_create_file(dev->name, S_IRUGO, drv->dentry, tun, &netfn_dtls_tun_file_ops);
+	tun->dentry = debugfs_create_dir(dev->name, drv->dentry);
 	if (!tun->dentry) {
 		pr_err("%px: Failed to create debugfs\n", dev);
 		unregister_netdev(dev);
 		return NULL;
 	}
+
+	debugfs_create_file("stats", S_IRUGO, tun->dentry, tun, &netfn_dtls_tun_file_ops);
 
 	return dev;
 }
