@@ -85,7 +85,7 @@
 /*
  * TODO: This needs to move to common file once capwapmgr is up.
  */
-#define NETFN_CAPWAP_PKT_TYPE_INVALID		-1
+#define NETFN_CAPWAP_PKT_TYPE_INVALID		0x1000
 #define NETFN_CAPWAP_PKT_TYPE_CTRL		0x0001
 #define NETFN_CAPWAP_PKT_TYPE_DATA		0x0002
 #define NETFN_CAPWAP_PKT_TYPE_DTLS		0x0004
