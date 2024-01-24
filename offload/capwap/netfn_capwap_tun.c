@@ -583,28 +583,28 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, ssiz
 	memset(&nct->stats, 0, sizeof(nct->stats));
 
 	/*
-	 * Create debug entry for tunnel.
-	 */
-	nct->dentry = debugfs_create_dir(dev->name, nc->dentry);
-	if (!nct->dentry) {
-		pr_warn("%p: failed to create debugfs entry for capwap(%s)\n", nct, dev->name);
-		dev->priv_destructor(dev);
-		return NULL;
-	}
-
-	if (!debugfs_create_file("stats", S_IRUGO, nct->dentry, nct, &file_ops)) {
-		pr_warn("%p: Unable to create file for capwap(%s) stats.\n", nct, dev->name);
-		dev->priv_destructor(dev);
-		return NULL;
-	}
-
-	/*
 	 * Register netdevice
 	 * On failure destructor is invoked by linux.
 	 */
 	err = register_netdev(dev);
 	if (err) {
 		pr_warn("%p: failed to register capwap(%s) netdev with err(%d)\n", dev, dev->name, err);
+		return NULL;
+	}
+
+	/*
+	 * Create debug entry for tunnel.
+	 */
+	nct->dentry = debugfs_create_dir(dev->name, nc->dentry);
+	if (!nct->dentry) {
+		pr_warn("%p: failed to create debugfs entry for capwap(%s)\n", nct, dev->name);
+		unregister_netdev(dev);
+		return NULL;
+	}
+
+	if (!debugfs_create_file("stats", S_IRUGO, nct->dentry, nct, &file_ops)) {
+		pr_warn("%p: Unable to create file for capwap(%s) stats.\n", nct, dev->name);
+		unregister_netdev(dev);
 		return NULL;
 	}
 
@@ -738,6 +738,7 @@ bool netfn_capwap_tun_unbind(struct net_device *dev)
 	pr_info("%px: Successfully unbinded(%s)\n", nct, dev->name);
 	return true;
 }
+EXPORT_SYMBOL(netfn_capwap_tun_unbind);
 
 /*
  * netfn_capwap_tun_stats_get()
