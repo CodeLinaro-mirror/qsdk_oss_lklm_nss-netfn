@@ -35,6 +35,87 @@
 #include "netfn_capwap_dec.h"
 
 /*
+ * netfn_capwap_dec_convert()
+ *	Converts 802.11 to 802.3 pkt and adds meta header
+ */
+static bool netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buff *skb)
+{
+	struct ieee80211_hdr_3addr *wlan_hdr;
+	struct netfn_capwap_hdr_mdata *mdata;
+	struct netfn_capwap_prehdr *phdr;
+	uint8_t *start, *next_hdr;
+	uint8_t smac[ETH_ALEN];
+	uint8_t dmac[ETH_ALEN];
+	struct ethhdr *eth;
+	__le16 frame_ctrl;
+	uint16_t protocol;
+
+	start = next_hdr = skb->data;
+	mdata = NETFN_CAPWAP_CB(skb);
+	phdr = &mdata->phdr;
+
+	/*
+	 * Check if it needs conversion, else add meta header and exit.
+	 */
+	if (!mdata->type_80211) {
+		goto add_prehdr;
+	}
+
+	/*
+	 * We only convert 802.11 DATA frame. In case of non-data packets
+	 * we add meta header and punt to host.
+	 */
+	wlan_hdr = (struct ieee80211_hdr_3addr *)next_hdr;
+	frame_ctrl = ntohs(wlan_hdr->frame_control);
+	if (!unlikely(ieee80211_is_data(frame_ctrl))) {
+		goto add_prehdr;
+	}
+
+	/*
+	 * Save mac addresses for constructing 802.3 frame.
+	 */
+	ether_addr_copy((u8 *)smac, (u8 *)wlan_hdr->addr1);
+	ether_addr_copy((u8 *)dmac, (u8 *)wlan_hdr->addr3);
+
+	next_hdr += sizeof(*wlan_hdr);
+
+	/*
+	 * Strip the Qos header (802.11e)
+	 */
+	if (likely(ieee80211_is_data_qos(frame_ctrl))) {
+		phdr->wlan_qos = *(uint16_t *)next_hdr;
+		next_hdr += sizeof(phdr->wlan_qos);
+	}
+
+	next_hdr += NETFN_CAPWAP_SNAP_HDR_LEN;
+
+	skb->protocol = protocol = *(uint16_t *)next_hdr;
+	next_hdr += sizeof(uint16_t);
+
+	/*
+	 * Start writing the new ethernet header
+	 */
+	next_hdr -= sizeof(*eth);
+
+	eth = (struct ethhdr *)next_hdr;
+	ether_addr_copy((u8 *)eth->h_dest, (u8 *)dmac);
+	ether_addr_copy((u8 *)eth->h_source, (u8 *)smac);
+	eth->h_proto = protocol;
+	phdr->type |= NETFN_CAPWAP_PKT_TYPE_8023;
+
+add_prehdr:
+	/*
+	 * Add preheader.
+	 */
+	next_hdr -= sizeof(*phdr);
+	phdr = (struct netfn_capwap_prehdr *)next_hdr;
+	*phdr = mdata->phdr;
+
+	__skb_push(skb, start - next_hdr);
+	return true;
+}
+
+/*
  * netfn_capwap_dec_fast_reasm()
  *	Verify if given 2 skbs can be reassembled.
  */
@@ -92,6 +173,15 @@ static struct sk_buff *netfn_capwap_dec_fast_reasm(struct netfn_capwap_dec *dec,
 	dev_kfree_skb(skb2);
 
 	ctx->reasm_cache = NULL;
+
+	/*
+	 * Convert to 802.11 if needed and attach meta header.
+	 */
+	if (!netfn_capwap_dec_convert(dec, skb1)) {
+		dev_kfree_skb(skb1);
+		return NULL;
+	}
+
 	NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.fast_reasm);
 	return skb1;
 }
@@ -102,6 +192,7 @@ static struct sk_buff *netfn_capwap_dec_fast_reasm(struct netfn_capwap_dec *dec,
  */
 static struct sk_buff *netfn_capwap_dec_linearize(struct netfn_capwap_frags *frags)
 {
+	struct netfn_capwap_hdr_mdata *mdata;
 	struct sk_buff *iter, *skb;
 	uint16_t skb_size;
 
@@ -113,6 +204,7 @@ static struct sk_buff *netfn_capwap_dec_linearize(struct netfn_capwap_frags *fra
 	}
 
 	skb_reserve(skb, NETFN_CAPWAP_HEADROOM_RESERVE);
+	mdata = NETFN_CAPWAP_CB(skb);
 
 	/*
 	 * TODO: Handle offset corruption case.
@@ -120,6 +212,10 @@ static struct sk_buff *netfn_capwap_dec_linearize(struct netfn_capwap_frags *fra
 
 	skb_queue_walk(&frags->list, iter) {
 		uint16_t offset = NETFN_CAPWAP_CB(iter)->frag_offset;
+		if (offset == 0) { /* first fragment */
+			*mdata = *NETFN_CAPWAP_CB(iter);
+		}
+
 		memcpy(skb->data + offset, iter->data, iter->len);
 	}
 
@@ -201,75 +297,18 @@ static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec *dec,
 		NETFN_CAPWAP_TUN_STATS_INC(&stats->drop_linearize_fail);
 	}
 
+	/*
+	 * Convert to 802.11 if needed and attach meta header.
+	 */
+	if (!netfn_capwap_dec_convert(dec, reasm_skb)) {
+		dev_kfree_skb(reasm_skb);
+		goto done;
+	}
+
 	NETFN_CAPWAP_TUN_STATS_INC(&stats->slow_reasm);
 done:
 	netfn_capwap_frags_init(frags);
 	return reasm_skb;
-}
-
-/*
- * netfn_capwap_dec_80211_to_8023()
- *	Converts 802.11 packets to 802.3 packets.
- *	-----------------------------------------
- *	|CAPWAP HDR | WIRELESS INFO | 802.11 PKT|
- *	-----------------------------------------
- */
-static uint8_t netfn_capwap_dec_80211_to_8023(struct netfn_capwap_dec *dec, struct netfn_capwap_prehdr *preh, uint8_t *start)
-{
-	struct ieee80211_hdr_3addr *wlan_hdr;
-	uint8_t smac[ETH_ALEN];
-	uint8_t dmac[ETH_ALEN];
-	uint8_t next_hdr = 0;
-	struct ethhdr *eth;
-	__le16 frame_ctrl;
-	uint16_t protocol;
-
-	/*
-	 * We only convert 802.11 DATA frame.
-	 */
-	wlan_hdr = (struct ieee80211_hdr_3addr *)start;
-	frame_ctrl = ntohs(wlan_hdr->frame_control);
-
-	/*
-	 * Save mac addresses for constructing 802.3 frame.
-	 */
-	ether_addr_copy((u8 *)smac, (u8 *)wlan_hdr->addr1);
-	ether_addr_copy((u8 *)dmac, (u8 *)wlan_hdr->addr3);
-
-	next_hdr += sizeof(*wlan_hdr);
-
-	/*
-	 * Strip the Qos header (802.11e)
-	 */
-	if (likely(ieee80211_is_data_qos(frame_ctrl))) {
-		preh->wlan_qos = *(uint16_t *)(start + next_hdr);
-		next_hdr += sizeof(preh->wlan_qos);
-	}
-
-	next_hdr += NETFN_CAPWAP_SNAP_HDR_LEN;
-
-	/*
-	 * TODO: Handle trustsec check.
-	 */
-	if (dec->features & NETFN_CAPWAP_FEATURES_INNER_SGT) {
-		BUG_ON(1);
-	}
-
-	protocol = *(uint16_t *)(start + next_hdr);
-	next_hdr += sizeof(uint16_t);
-
-
-	/*
-	 * Start writing the new ethernet header
-	 */
-	next_hdr -= sizeof(*eth);
-
-	eth = (struct ethhdr *)(start + next_hdr);
-	ether_addr_copy((u8 *)eth->h_dest, (u8 *)dmac);
-	ether_addr_copy((u8 *)eth->h_source, (u8 *)smac);
-	eth->h_proto = protocol;
-
-	return next_hdr;
 }
 
 /*
@@ -300,6 +339,7 @@ static uint8_t *netfn_capwap_dec_capwap(struct netfn_capwap_dec *dec, struct sk_
 	mdata->frag = netfn_capwap_hdr_has_fbit(info);
 	mdata->frag_end = netfn_capwap_hdr_has_lbit(info);
 	mdata->keep_alive = netfn_capwap_hdr_has_kbit(info);
+	mdata->type_80211 = netfn_capwap_hdr_has_tbit(info);
 
 	mdata->frag_id = netfn_capwap_hdr_get_frag_id(frag);
 	mdata->frag_offset = netfn_capwap_hdr_get_frag_offset(frag);
@@ -340,7 +380,7 @@ static uint8_t *netfn_capwap_dec_capwap(struct netfn_capwap_dec *dec, struct sk_
 		 * If wireless info exceeds the max sections then we punt inner packet to host.
 		 */
 		nwireless = cw_hlen - sizeof(*nch);
-		if (unlikely(nwireless > NETFN_CAPWAP_MAX_NWIRELESS)) {
+		if (unlikely((nwireless / sizeof(*winfo)) > NETFN_CAPWAP_MAX_NWIRELESS)) {
 			return start + next_hdr;
 		}
 
@@ -355,21 +395,10 @@ static uint8_t *netfn_capwap_dec_capwap(struct netfn_capwap_dec *dec, struct sk_
 	}
 
 	/*
-	 * If inner is 802.11 packet than we convert it to 802.3.
+	 * As this is first frag copy the meta header. That will be used post reassembly
+	 * to add to reassembled skb.
 	 */
-	if (netfn_capwap_hdr_has_tbit(info)) {
-		struct ieee80211_hdr_3addr *wlan_hdr = (struct ieee80211_hdr_3addr *)(start + next_hdr);
-
-		if (!unlikely(ieee80211_is_data(ntohs(wlan_hdr->frame_control)))) {
-			return (start + next_hdr);
-		}
-
-		/*
-		 * Convert inner 802.11 packet to 802.3 packet.
-		 */
-		next_hdr += netfn_capwap_dec_80211_to_8023(dec, preh, (start + next_hdr));
-		preh->type |= NETFN_CAPWAP_PKT_TYPE_8023;
-	}
+	mdata->phdr = *preh;
 
 	return (start + next_hdr);
 }
@@ -427,7 +456,6 @@ static uint8_t *netfn_capwap_dec_l3(struct netfn_capwap_dec *dec, struct sk_buff
 static bool netfn_capwap_dec(struct netfn_capwap_dec *dec, struct sk_buff *skb, bool *is_frag)
 {
 	struct netfn_capwap_prehdr preh = {0};
-	struct netfn_capwap_prehdr *pkt_preh;
 	struct netfn_capwap_hdr_mdata *mdata;
 	uint8_t *start, *next_hdr;
 	uint8_t exception = 0;
@@ -460,14 +488,6 @@ static bool netfn_capwap_dec(struct netfn_capwap_dec *dec, struct sk_buff *skb, 
 skip_headers:
 
 	/*
-	 * Sanity check to see if we didn't overflow.
-	 */
-	if (unlikely(next_hdr > skb_tail_pointer(skb))) {
-		NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.drop_malformed);
-		return false;
-	}
-
-	/*
 	 * We exception packets if:
 	 * 1. If its keepalive.
 	 * 2. If its a invalid packet.
@@ -481,21 +501,6 @@ skip_headers:
 		goto done;
 	}
 
-	/*
-	 * We don't add preheader if its not first frag.
-	 */
-	if (mdata->frag && mdata->frag_offset) {
-		goto skip_phdr_add;
-	}
-
-	/*
-	 * Add preheader.
-	 */
-	next_hdr -= sizeof(preh);
-	pkt_preh = (struct netfn_capwap_prehdr *)next_hdr;
-	*pkt_preh = preh;
-
-skip_phdr_add:
 	__skb_pull(skb, next_hdr - start);
 	*is_frag = !!mdata->frag;
 
@@ -668,6 +673,14 @@ bool netfn_capwap_dec_init(struct netfn_capwap_dec *dec, struct netfn_capwap_dec
 	dec->max_frags = cfg->max_frags;
 	dec->max_payload_sz = cfg->max_payload_sz;
 	dec->features = cfg->features;
+
+	/*
+	 * TODO: Remove this once inner sgt is enabled.
+	 */
+	if (dec->features & NETFN_CAPWAP_FEATURES_INNER_SGT) {
+		pr_warn("%px: Unsupported feature inner sgt.\n", dec);
+		return false;
+	}
 
 	/*
 	 * Allocate debugfs entry.
