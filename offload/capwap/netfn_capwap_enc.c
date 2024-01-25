@@ -30,6 +30,22 @@
 #include "netfn_capwap_enc.h"
 
 /*
+ * netfn_capwap_enc_winfo()
+ *	Encapsulate with winfo
+ */
+static inline void netfn_capwap_enc_winfo(struct netfn_capwap_tun_enc *enc, struct sk_buff *skb, struct netfn_capwap_enc_mdata *mdata)
+{
+	struct netfn_capwap_winfo *winfo = (struct netfn_capwap_winfo *)mdata->phdr.winfo;
+
+	/*
+	 * Add winfo only if set in winfo.
+	 */
+	if (mdata->phdr.type & NETFN_CAPWAP_PKT_TYPE_WINFO) {
+		memcpy(__skb_push(skb, sizeof(*winfo)), winfo, sizeof(*winfo));
+	}
+}
+
+/*
  * netfn_capwap_enc_capwap()
  *	Encapsulate the CAPWAP header
  */
@@ -235,13 +251,6 @@ static void netfn_capwap_enc_80211(struct netfn_capwap_enc *enc, struct sk_buff 
 	 */
 	wlan_hdr->duration_id = htons(0);
 	wlan_hdr->seq_ctrl = htons(phdr->vapid);
-
-	/*
-	 * Insert wlan info.
-	 */
-	if (nwireless) {
-		memcpy(__skb_push(skb, sizeof(phdr->winfo)), phdr->winfo, sizeof(phdr->winfo));
-	}
 }
 
 /*
@@ -397,7 +406,7 @@ bool netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, st
 	 */
 	if (phdr->type & NETFN_CAPWAP_PKT_TYPE_8023) {
 		netfn_capwap_enc_80211(enc, orig_skb, &mdata.phdr);
-		mdata.phdr.type = NETFN_CAPWAP_PKT_TYPE_80211;
+		mdata.phdr.type |= NETFN_CAPWAP_PKT_TYPE_80211;
 	}
 
 	/*
@@ -430,6 +439,16 @@ bool netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, st
 		}
 
 		offset += skb->len;
+
+		/*
+		 * We insert winfo if preheader has winfo type set and if:
+		 * 1. If its first frag OR
+		 * 2. If its a non-fragmented packet
+		 */
+		if (mdata.first_frag || !is_frag) {
+			netfn_capwap_enc_winfo(enc, skb, &mdata);
+		}
+
 		netfn_capwap_enc_capwap(enc, skb, &mdata);
 
 		/*
