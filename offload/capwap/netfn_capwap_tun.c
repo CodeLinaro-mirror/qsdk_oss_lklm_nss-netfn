@@ -539,7 +539,6 @@ static void netfn_capwap_tun_rx_cb(struct netfn_pkt_steer *rx_steer, struct sk_b
 	 */
 	skb_queue_walk_safe(q_head, skb, next_skb) {
 		__skb_unlink(skb, q_head);
-
 		skb_reset_mac_header(skb);
 		skb_reset_transport_header(skb);
 
@@ -590,6 +589,7 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, ssiz
 	 */
 	nct->nc = nc;
 	nct->dev = dev;
+	nct->id = cfg->id;
 	memset(&nct->stats, 0, sizeof(nct->stats));
 
 	/*
@@ -633,7 +633,7 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, ssiz
 	/*
 	 * Encap init.
 	 */
-	if (!netfn_capwap_enc_init(&nct->enc, &cfg->enc, nct->dentry)) {
+	if (!netfn_capwap_enc_init(&nct->enc, &cfg->enc, nct)) {
 		pr_warn("%px: Encapsulation init failed.\n", dev);
 		goto fail;
 	}
@@ -641,7 +641,7 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, ssiz
 	/*
 	 * Decap init.
 	 */
-	if (!netfn_capwap_dec_init(&nct->dec, &cfg->dec, nct->dentry)) {
+	if (!netfn_capwap_dec_init(&nct->dec, &cfg->dec, nct)) {
 		pr_warn("%px: Decapsulation init failed.\n", dev);
 		goto fail;
 	}

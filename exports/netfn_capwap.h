@@ -57,6 +57,7 @@ struct netfn_capwap_dec_cfg {
 struct netfn_capwap_tun_cfg {
 	struct netfn_capwap_enc_cfg enc;	/**< Encap configuration of tunnel. */
 	struct netfn_capwap_dec_cfg dec;	/**< Decap configuration of tunnel. */
+	uint16_t id;				/**< Tunnel identifier. */
 	uint8_t capwap_ver;			/**< Capwap version. */
 	uint8_t features;			/**< Features enabled for tunnel. */
 };

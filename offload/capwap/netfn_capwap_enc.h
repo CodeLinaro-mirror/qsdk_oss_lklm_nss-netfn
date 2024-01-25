@@ -23,6 +23,8 @@
 #define NETFN_CAPWAP_ENC_STATS_STRLEN 20
 #define NETFN_CAPWAP_ENC_STATS_WIDTH 82
 
+struct netfn_capwap_tun;
+
 /*
  * netfn_capwap_enc_hdr
  *	Encapsulation header
@@ -69,7 +71,7 @@ void netfn_capwap_enc_stats_read(struct netfn_capwap_enc *enc, struct netfn_capw
  * netfn_capwap_enc_init()
  *	Encapsulation initialization.
  */
-bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc_cfg *cfg, struct dentry *dentry);
+bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc_cfg *cfg, struct netfn_capwap_tun *nct);
 
 /*
  * netfn_capwap_enc()

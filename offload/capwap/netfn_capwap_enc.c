@@ -452,7 +452,7 @@ bool netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, st
  * netfn_capwap_enc_init()
  *	Encapsulation initialization.
  */
-bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc_cfg *cfg, struct dentry *parent)
+bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc_cfg *cfg, struct netfn_capwap_tun *nct)
 {
 	struct netfn_tuple_5tuple *tuple = &cfg->tuple.tuples.tuple_5;
 	struct netfn_capwap_enc_hdr *hdr = &enc->hdr;
@@ -506,7 +506,7 @@ bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc
 	/*
 	 * Allocate debugfs entry.
 	 */
-	if (!debugfs_create_file("encap", S_IRUGO, parent, enc, &file_ops)) {
+	if (!debugfs_create_file("encap", S_IRUGO, nct->dentry, enc, &file_ops)) {
 		pr_warn("%p: Failed to create encap debug entry.\n", enc);
 		return false;
 	}

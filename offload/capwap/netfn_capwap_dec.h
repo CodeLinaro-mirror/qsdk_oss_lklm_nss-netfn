@@ -23,6 +23,8 @@
 #define NETFN_CAPWAP_DEC_STATS_STRLEN 20
 #define NETFN_CAPWAP_DEC_STATS_WIDTH 82
 
+struct netfn_capwap_tun;
+
 /*
  * netfn_capwap_dec_ctx
  *	Reassembly context
@@ -44,6 +46,7 @@ struct netfn_capwap_dec {
 	uint32_t max_frags;			/* Maximum number of frags expected. */
 	uint32_t max_payload_sz;		/* Maximum size of payload buffer. */
 	uint32_t features;			/* Features enabled for the tunnel. */
+	uint32_t id;				/* Tunnel identifier. */
 };
 
 /*
@@ -62,5 +65,5 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
  * netfn_capwap_dec_init()
  *	Initializes the decap object.
  */
-bool netfn_capwap_dec_init(struct netfn_capwap_dec *dec, struct netfn_capwap_dec_cfg *cfg, struct dentry *dentry);
+bool netfn_capwap_dec_init(struct netfn_capwap_dec *dec, struct netfn_capwap_dec_cfg *cfg, struct netfn_capwap_tun *nct);
 #endif /* __NETFN_CAPWAP_DEC_H */

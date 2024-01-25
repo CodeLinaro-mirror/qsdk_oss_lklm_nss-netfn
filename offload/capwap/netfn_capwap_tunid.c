@@ -229,6 +229,7 @@ struct net_device *netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, st
 		return NULL;
 	}
 
+	cfg->id = id;
 	ncti = netdev_priv(dev);
 
 	/*
