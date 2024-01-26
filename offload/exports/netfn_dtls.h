@@ -32,7 +32,6 @@ struct netfn_dtls_crypto {
 
 	uint32_t nonce;				/* nonce value for certain cipher algorithm */
 	const int8_t *algo_name;		/* AEAD algorithm name for cipher operation */
-	uint8_t icv_len;			/* DTLS MAC tag length */
 };
 
 /*
