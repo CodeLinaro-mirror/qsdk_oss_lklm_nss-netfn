@@ -201,17 +201,17 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_v4_get_stats(struct netfn_flowmgr_flow_con
 	sfe_stats.tuple.flow_ident = 0;
 	sfe_stats.tuple.return_ident = 0;
 	if (tuple_type == NETFN_TUPLE_3TUPLE) {
-		sfe_stats.tuple.protocol = stats->tuple.tuples.tuple_3.protocol;
-		sfe_stats.tuple.flow_ip = stats->tuple.tuples.tuple_3.src_ip[0];
-		sfe_stats.tuple.return_ip = stats->tuple.tuples.tuple_3.dest_ip[0];
+		sfe_stats.tuple.protocol = conn_stats->tuple.tuples.tuple_3.protocol;
+		sfe_stats.tuple.flow_ip = conn_stats->tuple.tuples.tuple_3.src_ip[0];
+		sfe_stats.tuple.return_ip = conn_stats->tuple.tuples.tuple_3.dest_ip[0];
 	} else if (tuple_type == NETFN_TUPLE_4TUPLE) {
-		sfe_stats.tuple.protocol = stats->tuple.tuples.tuple_4.protocol;
-		sfe_stats.tuple.flow_ip = stats->tuple.tuples.tuple_4.src_ip[0];
-		sfe_stats.tuple.return_ip = stats->tuple.tuples.tuple_4.dest_ip[0];
-		if (stats->tuple.tuples.tuple_4.ident_type == NETFN_4TUPLE_VALID_SRC_PORT) {
-			sfe_stats.tuple.flow_ident = stats->tuple.tuples.tuple_4.l4_ident;
+		sfe_stats.tuple.protocol = conn_stats->tuple.tuples.tuple_4.protocol;
+		sfe_stats.tuple.flow_ip = conn_stats->tuple.tuples.tuple_4.src_ip[0];
+		sfe_stats.tuple.return_ip = conn_stats->tuple.tuples.tuple_4.dest_ip[0];
+		if (conn_stats->tuple.tuples.tuple_4.ident_type == NETFN_4TUPLE_VALID_SRC_PORT) {
+			sfe_stats.tuple.flow_ident = conn_stats->tuple.tuples.tuple_4.l4_ident;
 		} else {
-			sfe_stats.tuple.return_ident = stats->tuple.tuples.tuple_4.l4_ident;
+			sfe_stats.tuple.return_ident = conn_stats->tuple.tuples.tuple_4.l4_ident;
 		}
 	} else if (tuple_type == NETFN_TUPLE_5TUPLE) {
                 sfe_stats.tuple.protocol = conn_stats->tuple.tuples.tuple_5.protocol;
@@ -506,13 +506,13 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_v6_get_stats(struct netfn_flowmgr_flow_con
 		sfe_stats.tuple.flow_ident = 0;
 		sfe_stats.tuple.return_ident = 0;
 	} else if (tuple_type == NETFN_TUPLE_4TUPLE) {
-		sfe_stats.tuple.protocol = stats->tuple.tuples.tuple_4.protocol;
-		memcpy(sfe_stats.tuple.flow_ip, stats->tuple.tuples.tuple_4.src_ip, sizeof(uint32_t) * 4);
-		memcpy(sfe_stats.tuple.return_ip, stats->tuple.tuples.tuple_4.dest_ip, sizeof(uint32_t) * 4);
-		if (stats->tuple.tuples.tuple_4.ident_type == NETFN_4TUPLE_VALID_SRC_PORT) {
-			sfe_stats.tuple.flow_ident = stats->tuple.tuples.tuple_4.l4_ident;
+		sfe_stats.tuple.protocol = conn_stats->tuple.tuples.tuple_4.protocol;
+		memcpy(sfe_stats.tuple.flow_ip, conn_stats->tuple.tuples.tuple_4.src_ip, sizeof(uint32_t) * 4);
+		memcpy(sfe_stats.tuple.return_ip, conn_stats->tuple.tuples.tuple_4.dest_ip, sizeof(uint32_t) * 4);
+		if (conn_stats->tuple.tuples.tuple_4.ident_type == NETFN_4TUPLE_VALID_SRC_PORT) {
+			sfe_stats.tuple.flow_ident = conn_stats->tuple.tuples.tuple_4.l4_ident;
 		} else {
-			sfe_stats.tuple.return_ident = stats->tuple.tuples.tuple_4.l4_ident;
+			sfe_stats.tuple.return_ident = conn_stats->tuple.tuples.tuple_4.l4_ident;
 		}
 	} else if (tuple_type == NETFN_TUPLE_5TUPLE) {
                 sfe_stats.tuple.protocol = conn_stats->tuple.tuples.tuple_5.protocol;
