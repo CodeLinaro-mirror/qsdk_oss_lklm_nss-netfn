@@ -28,6 +28,7 @@
 #include <linux/if_arp.h>
 
 #include <ppe_vp_public.h>
+#include <ppe_drv.h>
 
 #include "netfn_capwap.h"
 #include "netfn_capwap_priv.h"
@@ -421,13 +422,12 @@ static struct net_device *netfn_capwap_tun_vp_attach(struct net_device *dev)
 	 * Allocate VP.
 	 */
 	vpai.type = PPE_VP_TYPE_SW_L3;
-	vpai.usr_type = PPE_VP_USER_TYPE_ACTIVE;
-	vpai.core_mask = capwap_core;
 	vpai.dst_cb = netfn_capwap_tun_vp_rx;
 	vpai.dst_cb_data = netdev_priv(dev);
 	vpai.src_cb = netfn_capwap_tun_vp_err;
 	vpai.src_cb_data = netdev_priv(dev);
-	vpai.queue_num = 0;
+	vpai.queue_num = ppe_drv_queue_from_core(capwap_core);
+	vpai.flags |= PPE_VP_FLAG_REDIR_ENABLE;
 
 	vp_dev = ppe_vp_alloc_dev(dev, &vpai);
 	if (!vp_dev) {
