@@ -29,15 +29,6 @@
 #include <netfn_dtls.h>
 
 /*
- * CAPWAP manager debug macros
- */
-#if (NETFN_CAPWAPMGR_DEBUG_LEVEL == 3)
-#define netfn_capwapmgr_assert(c, s, ...)
-#else
-#define netfn_capwapmgr_assert(c, s, ...) if (!(c)) { printk(KERN_CRIT "%s[%d]:" s, __FUNCTION__, __LINE__, ##__VA_ARGS__); BUG_ON(!(c)); }
-#endif
-
-/*
  * If dynamic debug is enabled, use pr_warn.
  */
 #define netfn_capwapmgr_warn(s, ...) pr_warn("%s[%d]:" s, __FUNCTION__, __LINE__, ##__VA_ARGS__)
