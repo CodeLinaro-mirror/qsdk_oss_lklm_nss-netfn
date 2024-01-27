@@ -77,6 +77,10 @@ struct netfn_capwapmgr {
 extern struct netfn_capwapmgr g_mgr;	/* Global manager object */
 extern void netfn_capwapmgr_final(struct kref *kref);
 
+#if defined(NETFN_CAPWAPMGR_ONE_NETDEV)
+extern struct net_device *netfn_capwapmgr_dev;
+#endif
+
 /*
  * netfn_capwapmgr_ref()
  * 	Increment driver object reference

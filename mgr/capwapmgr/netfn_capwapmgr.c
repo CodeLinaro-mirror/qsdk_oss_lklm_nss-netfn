@@ -135,11 +135,21 @@ int __init netfn_capwapmgr_init_module(void)
 {
 	struct netfn_capwapmgr *mgr = &g_mgr;
 
+
 	/*
 	 * Deref: netfn_capwapmgr_exit_module().
 	 */
 	init_completion(&mgr->completion);
+	kref_init(&mgr->ref);
 	spin_lock_init(&mgr->lock);
+
+#if defined(NETFN_CAPWAPMGR_ONE_NETDEV)
+	netfn_capwapmgr_dev = netfn_capwapmgr_tunid_dev_alloc();
+	if (!netfn_capwapmgr_dev) {
+		netfn_capwapmgr_warn("Failed to Capwap Net Device\n");
+		return -1;
+	}
+#endif
 
         /*
          * Create a debugfs entry for capwap netfn engine.
@@ -149,12 +159,11 @@ int __init netfn_capwapmgr_init_module(void)
                 netfn_capwapmgr_warn("%p, Unable to create debugsfs entry for NETFN capwapmgr\n", mgr);
         }
 
-	if (!debugfs_create_file("Error_stats", S_IRUGO, mgr->dentry,
+	if (!debugfs_create_file("stats", S_IRUGO, mgr->dentry,
                 NULL, &netfn_capwapmgr_stats_ops)) {
 		netfn_capwapmgr_warn("%p: Unable to create error statistics file entry in debugfs\n", mgr);
 	}
 
-	kref_init(&mgr->ref);
 	netfn_capwapmgr_info("NETFN CAPWAPMGR loaded: (%s)\n", NETFN_CAPWAPMGR_BUILD_ID);
         return 0;
 }
@@ -167,6 +176,9 @@ void __exit netfn_capwapmgr_exit_module(void)
 {
 	struct netfn_capwapmgr *mgr = &g_mgr;
 
+#if defined(NETFN_CAPWAPMGR_ONE_NETDEV)
+	netfn_capwapmgr_tunid_dev_free(netfn_capwapmgr_dev);
+#endif
 	/*
 	 * Ref: netfn_capwapmgr_init_module().
 	 */
