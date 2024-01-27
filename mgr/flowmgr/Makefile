@@ -19,6 +19,11 @@ qca-nss-flowmgr-objs += aes/ppe/netfn_flowmgr_ppe_ipv4.o
 qca-nss-flowmgr-objs += aes/ppe/netfn_flowmgr_ppe_ipv6.o
 qca-nss-flowmgr-objs += aes/ppe/netfn_flowmgr_ppe_stats.o
 endif
+ifdef NETFN_FLOWMGR_AE_SFE_ENABLE
+qca-nss-flowmgr-objs += aes/sfe/netfn_flowmgr_sfe.o
+qca-nss-flowmgr-objs += aes/sfe/netfn_flowmgr_sfe_ipv4.o
+qca-nss-flowmgr-objs += aes/sfe/netfn_flowmgr_sfe_ipv6.o
+endif
 
 ccflags-y += -Wall -Werror
 ccflags-y += -DNETFN_FLOWMGR_DEBUG_LEVEL=3

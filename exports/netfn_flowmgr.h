@@ -49,6 +49,7 @@ typedef uint16_t netfn_flowmgr_ret_t;
 #define NETFN_FLOWMGR_VALID_RULE_FLAG_SRC_NAT				0x0800  /**< Src NAT rule is valid */
 #define NETFN_FLOWMGR_VALID_RULE_FLAG_DST_NAT				0x1000  /**< Dst NAT rule is valid */
 #define NETFN_FLOWMGR_VALID_RULE_FLAG_MAC				0x2000  /**< MAC rule is valid */
+#define NETFN_FLOWMGR_VALID_RULE_FLAG_TCP				0x4000  /**< TCP rule is valid */
 
 /**
  * enum netfn_flowmgr_ret_status
@@ -89,6 +90,23 @@ typedef enum netfn_flowmgr_ret_status {
 	NETFN_FLOWMGR_RET_PPE_NAT_WITH_BRIDGE_UNSUPPORTED,	/**< Failure due to NAT with bridge */
 	NETFN_FLOWMGR_RET_PPE_INVALID_DEV_IN_FLOW_RULE,		/**< Failure due to invalid netdevs */
 	NETFN_FLOWMGR_RET_PPE_INVALID_TOP_DEV_IN_FLOW_RULE,	/**< Failure due to invalid top netdevs */
+	NETFN_FLOWMGR_RET_SFE_UNSUPPORTED_TUPLE_TYPE,		/**< Failure due to unsupported tuple type */
+	NETFN_FLOWMGR_RET_SFE_PROTOCOL_MISMATCH,		/**< Failure due to protocol mismatch between org and reply */
+	NETFN_FLOWMGR_RET_SFE_PORT_MISMATCH,			/**< Failure due to port mismatch between org and reply */
+	NETFN_FLOWMGR_RET_SFE_IP_ADDR_MISMATCH,			/**< Failure due to IP address mismatch between org and reply */
+	NETFN_FLOWMGR_RET_SFE_TUPLE_MISMATCH,			/**< Failure due to tuple mismatch between org and reply */
+	NETFN_FLOWMGR_RET_SFE_INVALID_RULE,			/**< Failure due to invalid rule */
+	NETFN_FLOWMGR_RET_SFE_INVALID_INTERFACE_INDEX,		/**< Failure due to invalid interface index */
+	NETFN_FLOWMGR_RET_SFE_SIMUL_SNAT_DNAT,			/**< Failure due to simultaneous SNAT and DNAT */
+	NETFN_FLOWMGR_RET_SFE_INVALID_SNAT_IP_CONFIGURATION,	/**< Failure due to incorrect SNAT information */
+	NETFN_FLOWMGR_RET_SFE_INVALID_SNAT_PORT_CONFIGURATION,	/**< Failure due to incorrect SNAT information */
+	NETFN_FLOWMGR_RET_SFE_INVALID_DNAT_IP_CONFIGURATION,	/**< Failure due to incorrect SNAT information */
+	NETFN_FLOWMGR_RET_SFE_INVALID_DNAT_PORT_CONFIGURATION,	/**< Failure due to incorrect SNAT information */
+	NETFN_FLOWMGR_RET_SFE_INNER_VLAN_MISMATCH,		/**< Failure due to PPE inner VLAN mismatch in org and reply */
+	NETFN_FLOWMGR_RET_SFE_OUTER_VLAN_MISMATCH,		/**< Failure due to PPE outer VLAN mismatch in org and reply */
+	NETFN_FLOWMGR_RET_SFE_NAT_WITH_BRIDGE_UNSUPPORTED,	/**< Failure due to NAT with bridge */
+	NETFN_FLOWMGR_RET_SFE_INVALID_DEV_IN_FLOW_RULE,		/**< Failure due to invalid netdevs */
+	NETFN_FLOWMGR_RET_SFE_INVALID_TOP_DEV_IN_FLOW_RULE,	/**< Failure due to invalid top netdevs */
 	NETFN_FLOWMGR_RET_INVALID_DSCP_RULE,			/**< Failure due to invalid dscp rule */
 	NETFN_FLOWMGR_RET_DSCP_RULE_ADD_FAILED,			/**< Failure due to dscp rule add failed */
 	NETFN_FLOWMGR_RET_DSCP_RULE_DEL_FAILED,			/**< Failure due to dscp rule del failed */
@@ -253,6 +271,8 @@ struct netfn_flowmgr_vlan_info {
 struct netfn_flowmgr_vlan_rule {
         struct netfn_flowmgr_vlan_info inner;		/* Inner VLAN info */
         struct netfn_flowmgr_vlan_info outer;		/* Outer VLAN info */
+	uint16_t inner_vlan_tpid;			/* Inner VLAN tag protocol id */
+	uint16_t outer_vlan_tpid;			/* Outer VLAN tag protocol id */
 };
 
 /**
@@ -291,6 +311,17 @@ struct netfn_flowmgr_qdisc_rule {
 	struct net_device *qdisc_dev;		/**< Netdevice on which qdisc is applied */
 };
 
+/*
+ * netfn_flowmgr_tcp_rule
+ *      Information for TCP ACK Window Sizes
+ */
+struct netfn_flowmgr_tcp_rule {
+	uint8_t window_scale;	/**< window scaling factor. */
+	uint32_t window_max;	/**< largest seen window. */
+	uint32_t end;		/**< larget seen sequence + segment length. */
+	uint32_t max_end;	/**< largest seen ack + max(1, win). */
+};
+
 /**
  * netfn_flowmgr_dscp_priority
  *	Netfn flowmgr dscp priority info
@@ -312,6 +343,7 @@ struct netfn_flowmgr_dscp_priority {
  */
 struct netfn_flowmgr_rule_info {
 	uint32_t rule_valid_flags;					/**< Bit flags associated with the validity of rule parameters */
+	struct netfn_flowmgr_tcp_rule tcp_rule;				/**< Holds information regarding TCP window sizes for SFE */
 	struct netfn_flowmgr_ip_xlate_rule ip_xlate_rule;		/**< Holds information about the NAT rule */
 	struct netfn_flowmgr_mac_xlate_rule mac_xlate_rule;		/**< Holds information about the MAC rule */
 	struct netfn_flowmgr_vlan_rule vlan_rule;			/**< VLAN-related acceleration parameters */
