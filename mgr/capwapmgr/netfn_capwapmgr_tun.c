@@ -1,6 +1,6 @@
 /*
- * netfn_capwapmgr_tun.c
- *	Network function's CAPWAP manager's tunnel configuration.
+ * netfn_capwapmgr.c
+ *	Network function's CAPWAP manager tunnel config APIs.
  *
  * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
@@ -17,102 +17,625 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include <linux/debugfs.h>
 #include <linux/ip.h>
-#include <linux/ipv6.h>
-#include <linux/netdevice.h>
-#include <linux/seq_file.h>
 #include <linux/skbuff.h>
+#include <linux/debugfs.h>
+#include <linux/ipv6.h>
 #include <linux/timer.h>
+#include <linux/seq_file.h>
+#include <linux/rtnetlink.h>
+#include <linux/bitmap.h>
 
 #include <netfn_capwapmgr.h>
-#include <netfn_capwapmgr_metaheader.h>
 #include "netfn_capwapmgr_priv.h"
+#include "netfn_capwapmgr_tun.h"
+
+/*
+ * netfn_capwapmgr_tun_stats_sync
+ *	Stats sync timer callback.
+ */
+static void netfn_capwapmgr_tun_stats_sync(struct timer_list *t)
+{
+	struct netfn_capwapmgr_tun_ctx *ctx = from_timer(ctx, t, stats_sync);
+	unsigned long next_timer_jiffies;
+
+	struct netfn_flowmgr_flow_conn_stats stats = {0};
+	struct netfn_flowmgr_conn_stats *conn_stats = NULL;
+	struct netfn_capwapmgr_flow_stats *tun_stats = &ctx->stats;
+
+	/*
+	 * Copy the tuple information.
+	 * Flow manager uses original tuple information
+	 * to lookup per connection stats.
+	 *
+	 * FIXME:Flow manager currently expects ip addresses
+	 * in network order whereas the other parameters in
+	 * host order. Update this once its fixed.
+	 */
+	memcpy(&stats.tuple, &ctx->cfg.tuple, sizeof(netfn_tuple_t));
+
+	/*
+	 * Get the stats associated with the tuple information from the flowmgr.
+	 */
+	netfn_flowmgr_conn_get_stats(&stats, NETFN_FLOWMGR_ACCEL_MODE_PPE);
+
+	/*
+	 * Update the per tunnel stats counters.
+	 */
+	conn_stats = &stats.conn_stats;
+	tun_stats->flow_tx_pkts += conn_stats->org_tx_pkt_count;
+	tun_stats->flow_tx_bytes += conn_stats->org_tx_byte_count;
+	tun_stats->flow_rx_pkts += conn_stats->org_rx_pkt_count;
+	tun_stats->flow_rx_bytes += conn_stats->org_rx_byte_count;
+
+	tun_stats->return_tx_pkts += conn_stats->reply_tx_pkt_count;
+	tun_stats->return_tx_bytes += conn_stats->reply_tx_byte_count;
+	tun_stats->return_rx_pkts += conn_stats->reply_rx_pkt_count;
+	tun_stats->return_rx_bytes += conn_stats->reply_rx_byte_count;
+
+	/*
+	 * If tunnel free is not in progress, re-attach the timer.
+	 *
+	 */
+	if (atomic64_read(&ctx->timer_resched)) {
+		next_timer_jiffies = jiffies + msecs_to_jiffies(NETFN_CAPWAPMGR_STATS_SYNC_FREQ);
+		mod_timer(&ctx->stats_sync, next_timer_jiffies);
+	}
+}
 
 /*
  * netfn_capwapmgr_tun_stats_print()
- *	API to print the CAPWAP offload stats associated with the tunnel.
+ *	API to print tunnel stats
  */
-static void netfn_capwapmgr_tun_stats_print(struct seq_file *sf, struct net_device *dev)
+static int netfn_capwapmgr_tun_stats_print(struct seq_file *sf, void *ptr)
 {
-	BUG_ON(1);
+	struct netfn_capwapmgr_tun_ctx *ctx = (struct netfn_capwapmgr_tun_ctx *)sf->private;
+	struct netfn_capwapmgr_flow_stats *flow_stats = NULL;
+	struct netfn_capwap_tun_stats stats = {0};
+	struct netfn_capwap_pkt_stats *pkt_stats;
+	struct netfn_tuple_5tuple *ftuple = NULL;
+	uint8_t ip_version;
+	int ret = 0;
+
+	ip_version = ctx->cfg.tuple.ip_version;
+	ftuple = &ctx->cfg.tuple.tuples.tuple_5;
+
+	/*
+	 * Get the stats associated with the capwap device from the offload engine.
+	 */
+	ret = netfn_capwap_tun_stats_get(ctx->capwap_dev, &stats);
+	if (ret) {
+		netfn_capwapmgr_warn("Failed to get capwap offload stats with error %d\n", ret);
+		return 0;
+	}
+
+	seq_puts(sf, "\n Tunnel Flow rule \n");
+		seq_printf(sf, "\tIP Version:%d\n", ip_version);
+		seq_printf(sf, "\tSource Port:0x%d\n", ftuple->l4_src_ident);
+		seq_printf(sf, "\tDestination Port:0x%d\n", ftuple->l4_dest_ident);
+	if (ip_version == NETFN_FLOWMGR_TUPLE_IP_VERSION_V4) {
+		seq_printf(sf, "\tSource IP:%pI4h\n", ftuple->src_ip);
+		seq_printf(sf, "\tDestination IP:%pI4h\n", ftuple->dest_ip);
+	} else {
+		seq_printf(sf, "\tSource IP:%pI6h\n", ftuple->src_ip);
+		seq_printf(sf, "\tDestination IP:%pI6h\n", ftuple->dest_ip);
+	}
+
+	seq_puts(sf, "\n CAPWAP offload stats \n");
+
+	pkt_stats = &stats.pkts;
+	seq_printf(sf, "\t[%s]: %llu\n", "Tx Packets", pkt_stats->tx_pkts);
+	seq_printf(sf, "\t[%s]: %llu\n", "Tx Bytes", pkt_stats->tx_bytes);
+	seq_printf(sf, "\t[%s]: %llu\n", "Tx Failures", pkt_stats->tx_failures);
+	seq_printf(sf, "\t[%s]: %llu\n", "Rx Packets", pkt_stats->rx_pkts);
+	seq_printf(sf, "\t[%s]: %llu\n", "Rx Bytes", pkt_stats->rx_bytes);
+	seq_printf(sf, "\t[%s]: %llu\n", "Rx Failures", pkt_stats->rx_failures);
+	seq_puts(sf, "\n");
+
+	seq_puts(sf, "\n Flow stats \n");
+
+	seq_puts(sf, "\n Ingress interface \n");
+	seq_printf(sf, "\t[%s]: %llu\n", "Tx Packets", flow_stats->flow_tx_pkts);
+	seq_printf(sf, "\t[%s]: %llu\n", "Tx Bytes", flow_stats->flow_tx_bytes);
+	seq_printf(sf, "\t[%s]: %llu\n", "Rx packets", flow_stats->flow_rx_pkts);
+	seq_printf(sf, "\t[%s]: %llu\n", "Rx Bytes", flow_stats->flow_rx_bytes);
+
+	seq_puts(sf, "\n");
+
+	seq_puts(sf, "\n Capwap Interface \n");
+	seq_printf(sf, "\t[%s]: %llu\n", "Tx Packets", flow_stats->return_tx_pkts);
+	seq_printf(sf, "\t[%s]: %llu\n", "Tx Bytes", flow_stats->return_tx_bytes);
+	seq_printf(sf, "\t[%s]: %llu\n", "Rx packets", flow_stats->return_rx_pkts);
+	seq_printf(sf, "\t[%s]: %llu\n", "Rx Bytes", flow_stats->return_rx_bytes);
+
+	seq_puts(sf, "\n\n");
+	return 0;
 }
 
 /*
- * netfn_capwapmgr_tun_get_reply_tuple()
- *	Get reply direction tuple from tunnel cfg.
+ * netfn_capwapmgr_tun_stats_open
+ *	Open file handler for tunnel statistics debugfs.
  */
-static inline void netfn_capwapmgr_tun_get_reply_tuple(struct netfn_capwapmgr_tun_cfg *cfg, netfn_tuple_t *tuple)
+static int netfn_capwapmgr_tun_stats_open(struct inode *inode, struct file *file)
 {
-	BUG_ON(1);
+	return single_open(file, netfn_capwapmgr_tun_stats_print, inode->i_private);
 }
 
 /*
- * netfn_capwapmgr_tun_cfg2destroy_rule()
- *	API to get original and reply flow destroy rule from tun cfg
+ * netfn_capwapmgr_tun_stats_ops
+ *	File operations for tunnel specific statistics
  */
-static inline void netfn_capwapmgr_tun_cfg2destroy_rule(struct netfn_capwapmgr_tun_cfg *cfg, struct netfn_flowmgr_destroy_rule *original, struct netfn_flowmgr_destroy_rule *reply)
+const struct file_operations netfn_capwapmgr_tun_stats_ops = {
+	.open = netfn_capwapmgr_tun_stats_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = seq_release,
+};
+
+/*
+ * netfn_capwapmgr_tun_get_reply
+ *	Get reply directiction tuple
+ */
+static void netfn_capwapmgr_tun_get_reply(netfn_tuple_t *orig, netfn_tuple_t *reply)
 {
-	BUG_ON(1);
+	BUG_ON(orig == reply);
+
+	reply->ip_version = orig->ip_version;
+	reply->tuple_type = orig->tuple_type;
+	reply->tuples.tuple_5.protocol = orig->tuples.tuple_5.protocol;
+
+	reply->tuples.tuple_5.src_ip[0] = orig->tuples.tuple_5.dest_ip[0];
+	if (orig->ip_version == IPVERSION) {
+		reply->tuples.tuple_5.src_ip[1] = orig->tuples.tuple_5.dest_ip[1];
+		reply->tuples.tuple_5.src_ip[2] = orig->tuples.tuple_5.dest_ip[2];
+		reply->tuples.tuple_5.src_ip[3] = orig->tuples.tuple_5.dest_ip[3];
+	}
+
+	reply->tuples.tuple_5.dest_ip[0] = orig->tuples.tuple_5.src_ip[0];
+	if (orig->ip_version == 6) {
+		reply->tuples.tuple_5.dest_ip[1] = orig->tuples.tuple_5.src_ip[1];
+		reply->tuples.tuple_5.dest_ip[2] = orig->tuples.tuple_5.src_ip[2];
+		reply->tuples.tuple_5.dest_ip[3] = orig->tuples.tuple_5.src_ip[3];
+	}
+
+	reply->tuples.tuple_5.l4_src_ident = orig->tuples.tuple_5.l4_dest_ident;
+	reply->tuples.tuple_5.l4_dest_ident = orig->tuples.tuple_5.l4_src_ident;
 }
 
 /*
- * netfn_capwapmgr_tun_flow_stats_sync()
- *	Timer function to handle stats sync from flow manager.
- */
-static void netfn_capwapmgr_tun_flow_stats_sync(netfn_tuple_t *tuple, struct netfn_capwapmgr_flow_stats *stats)
-{
-	BUG_ON(1);
-}
-
-/*
- * netfn_capwamgr_tun_flow_rule_create()
+ * netfn_capwapmgr_flow_rule_create
  *	Create flow rule.
  *
  * This API creates flow rule based on the tunnel configuration.
  */
-static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_flow_rule_create(struct netfn_capwapmgr_tun_cfg *cfg)
+static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_rule_create(struct netfn_capwapmgr_tun_cfg *cfg)
 {
-	BUG_ON(1);
-	return 1;
+	struct netfn_flowmgr_create_rule original = {0};
+	struct netfn_flowmgr_create_rule reply = {0};
+	struct netfn_flowmgr_flow_info *flow = &cfg->flow;
+	netfn_flowmgr_ret_t netfn_status = NETFN_FLOWMGR_RET_SUCCESS;
+	uint32_t ext_valid_flags = cfg->ext_cfg.ext_valid_flags;
+
+	/*
+	 * The tuple we get as a part of configuration message will be in the DownLink(DL) direction.
+	 * The DL direction will be the original direction for the flow rule.
+	 * Flow rule's Reply direction will the Uplink(UL) direction.
+	 *
+	 * Original flow rule will route the UL capwap packets from WAN netdevice to CAPWAP netdevice.
+	 * Reply flow rule will route the packets from CAPWAP netdevice to WAN netdevice.
+	 */
+
+	/*
+	 * Get original and reply directions tuple information from tunnel configuration.
+	 */
+	memcpy(&original.tuple, &cfg->tuple, sizeof(netfn_tuple_t));
+	netfn_capwapmgr_tun_get_reply(&cfg->tuple, &reply.tuple);
+
+	/*
+	 * If tunnel config has VLAN enabled, update flow rule accordingly.
+	 */
+	if (ext_valid_flags & NETFN_CAPWAPMGR_EXT_VALID_VLAN) {
+		struct netfn_flowmgr_vlan_rule *vlan = &cfg->ext_cfg.vlan;
+		original.rule_info.rule_valid_flags |= NETFN_FLOWMGR_VALID_RULE_FLAG_VLAN;
+		memcpy(&original.rule_info.vlan_rule, vlan, sizeof(struct netfn_flowmgr_vlan_rule));
+
+		/*
+		 * For the reply direction, update the egress VLAN tags.
+		 */
+		reply.rule_info.rule_valid_flags |= NETFN_FLOWMGR_VALID_RULE_FLAG_VLAN;
+		reply.rule_info.vlan_rule.inner.egress_vlan_tag = vlan->inner.ingress_vlan_tag;
+		reply.rule_info.vlan_rule.outer.egress_vlan_tag = vlan->outer.ingress_vlan_tag;
+	}
+
+	/*
+	 * If tunnel config has PPPoE enalbed, update flow rule accordingly.
+	 * We only update the original direction's rule in this case.
+	 */
+	if (ext_valid_flags & NETFN_CAPWAPMGR_EXT_VALID_PPPOE) {
+		original.rule_info.rule_valid_flags |= NETFN_FLOWMGR_VALID_RULE_FLAG_PPPOE;
+		memcpy(&original.rule_info.pppoe_rule, &cfg->ext_cfg.pppoe, sizeof(struct netfn_flowmgr_pppoe_rule));
+	}
+
+	/*
+	 * Update flow rules for both the directions.
+	 */
+	memcpy(&original.flow_info, flow, sizeof(struct netfn_flowmgr_flow_info));
+
+	reply.flow_info.in_dev = flow->out_dev;
+	reply.flow_info.out_dev = flow->in_dev;
+	reply.flow_info.top_indev = flow->top_indev;
+	reply.flow_info.top_outdev = flow->top_outdev;
+	reply.flow_info.flow_mtu = flow->flow_mtu;
+
+	/*
+	 * Mark the flow type as VP for both original and reply direction flows.
+	 */
+	original.flow_flags |= NETFN_FLOWMGR_FLOW_FLAG_VP_FLOW;
+	reply.flow_flags |= NETFN_FLOWMGR_FLOW_FLAG_VP_FLOW;
+
+	/*
+	 * Create flow rule.
+	 */
+	netfn_status =	netfn_flowmgr_rule_accel(&original, &reply, NETFN_FLOWMGR_ACCEL_MODE_PPE);
+	if (NETFN_FLOWMGR_GET_NETFN_ERROR_CODE(netfn_status) != NETFN_FLOWMGR_RET_SUCCESS) {
+		netfn_capwapmgr_warn("%px: Failed to push flow rule flow_mgr_error %d,ae_error %d",
+				cfg,
+				NETFN_FLOWMGR_GET_NETFN_ERROR_CODE(netfn_status),
+				NETFN_FLOWMGR_GET_AE_ERROR_CODE(netfn_status));
+		return NETFN_CAPWAPMGR_ERROR_FLOW_RULE_CREATE;
+	}
+
+	return NETFN_CAPWAPMGR_SUCCESS;
 }
 
 /*
- * netfn_capwapmgr_tun_flow_rule_destroy().
+ * netfn_capwapmgr_flow_rule_destroy.
  *	Destroy flow rule assocaited with the tunnel.
  */
-static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_flow_rule_destroy(struct netfn_capwapmgr_tun_cfg *cfg)
+static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_rule_destroy(struct netfn_capwapmgr_tun_cfg *cfg)
 {
-	BUG_ON(1);
-	return 1;
+	struct netfn_flowmgr_destroy_rule original = {0};
+	struct netfn_flowmgr_destroy_rule reply = {0};
+	netfn_flowmgr_ret_t netfn_status = NETFN_FLOWMGR_RET_SUCCESS;
+
+	/*
+	 * Get original and reply directions tuple information from tunnel configuration.
+	 */
+	memcpy(&original.tuple, &cfg->tuple, sizeof(netfn_tuple_t));
+	netfn_capwapmgr_tun_get_reply(&cfg->tuple, &reply.tuple);
+
+	/*
+	 * Destroy flow rule.
+	 */
+	netfn_status = netfn_flowmgr_rule_decel(&original, &reply, NETFN_FLOWMGR_ACCEL_MODE_PPE);
+	if (NETFN_FLOWMGR_GET_NETFN_ERROR_CODE(netfn_status) != NETFN_FLOWMGR_RET_SUCCESS) {
+		netfn_capwapmgr_warn("%px: Failed to push flow rule flow_mgr_error %d,ae_error %d",
+				cfg,
+				NETFN_FLOWMGR_GET_NETFN_ERROR_CODE(netfn_status),
+				NETFN_FLOWMGR_GET_AE_ERROR_CODE(netfn_status));
+		return NETFN_CAPWAPMGR_ERROR_FLOW_RULE_DESTROY;
+	}
+
+	return NETFN_CAPWAPMGR_SUCCESS;
 }
 
 /*
- * netfn_capwapmgr_tun_dtls_tunnel_alloc()
- *	Allocate a DTLS netdevice.
- *
- * This API Allocates the DTLS netdevice in the offload engine.
- * Also creates Encap and Decap sessions under the netdevice.
+ * netfn_capwapmgr_tun_init_cfg
+ *	Validate tunnel configuration.
  */
-static struct net_device *netfn_capwapmgr_tun_dtls_tunnel_alloc(struct netfn_dtls_cfg *encap, struct netfn_dtls_cfg *decap, netfn_tuple_t *tuple)
+netfn_capwapmgr_ret_t netfn_capwapmgr_tun_init_cfg(struct netfn_capwapmgr_tun_cfg *cfg)
 {
-	BUG_ON(1);
+	netfn_tuple_t *tuple;
+	uint32_t valid_ext;
+	uint8_t protocol;
 
-	return NULL;
+	/*
+	 * We start by assuming this a pure CAPWAP flow. Then switch the tuple if
+	 * extended features are enabled.
+	 */
+	tuple = &cfg->tuple;
+	valid_ext = cfg->ext_cfg.ext_valid_flags;
+	if (!cfg->flow.in_dev) {
+		netfn_capwapmgr_warn("%px: NULL Wan netdevice\n", cfg);
+		return NETFN_CAPWAPMGR_ERROR_NULL_WAN_NDEV;
+	}
+
+	if ((valid_ext & NETFN_CAPWAPMGR_EXT_VALID_VLAN) || (valid_ext & NETFN_CAPWAPMGR_EXT_VALID_PPPOE)) {
+		if (!cfg->flow.top_indev) {
+			netfn_capwapmgr_warn("%px: NULL top netdevice\n", cfg);
+			return NETFN_CAPWAPMGR_ERROR_NULL_TOP_NDEV;
+		}
+	}
+
+	if (tuple->tuple_type != NETFN_TUPLE_5TUPLE) {
+		netfn_capwapmgr_warn("%px:Unsupported tuple type %d\n", cfg, tuple->tuple_type);
+		return NETFN_CAPWAPMGR_ERROR_UNSUPPORTED_TUPLE_TYPE;
+	}
+
+	protocol = tuple->tuples.tuple_5.protocol;
+	if((protocol != IPPROTO_UDP) && (protocol != IPPROTO_UDPLITE)) {
+		netfn_capwapmgr_warn("%px:Unsupported l4 protocol %d\n", cfg, protocol);
+		return NETFN_CAPWAPMGR_ERROR_UNSUPPORTED_L4_PROTO;
+	}
+
+	/*
+	 * We only support dtls tunnel creation with both encap and decap sessions
+	 * since its DTLS + CAPWAP
+	 */
+	if (valid_ext & NETFN_CAPWAPMGR_EXT_VALID_DTLS) {
+		if (!(valid_ext & NETFN_CAPWAPMGR_EXT_VALID_DTLS_ENC)) {
+			netfn_capwapmgr_warn("%px: Unidirectional DTLS session not supported(%x) \n", cfg, valid_ext);
+			return NETFN_CAPWAPMGR_ERROR_MAX;
+		}
+
+		if (!(valid_ext & NETFN_CAPWAPMGR_EXT_VALID_DTLS_DEC)) {
+			netfn_capwapmgr_warn("%px: Unidirectional DTLS session not supported(%x) \n", cfg, valid_ext);
+			return NETFN_CAPWAPMGR_ERROR_MAX;
+		}
+	}
+
+	/*
+	 * Update CAPWAP rule to specify any optional l2 rules enabled that might
+	 * affect the MTU.
+	 *
+	 * TODO: When capwap offload exposes netfn_capwap_types.h
+	 * Update the flags exposed by capwap offload instead.
+	 */
+	valid_ext = cfg->ext_cfg.ext_valid_flags;
+	if ( valid_ext & NETFN_CAPWAPMGR_EXT_VALID_VLAN) {
+		cfg->capwap.enc.flags |= NETFN_CAPWAPMGR_EXT_VALID_VLAN;
+	}
+
+	if (valid_ext & NETFN_CAPWAPMGR_EXT_VALID_PPPOE) {
+		cfg->capwap.enc.flags |= NETFN_CAPWAPMGR_EXT_VALID_PPPOE;
+	}
+
+	return NETFN_CAPWAPMGR_SUCCESS;
 }
 
 /*
- * netfn_capwapmgr_tun_dtls_tunnel_free()
- *	Free DTLS netdevice.
- *
- * This API deletes encap and decap sessions.
- * It also frees the DTLS netdevice.
+ * netfn_capwapmgr_tun_init()
+ *	Common handling for creating Default and Tunid tunnels
  */
-static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_dtls_tunnel_free(struct net_device *dev)
+bool netfn_capwapmgr_tun_init(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_capwapmgr_tun_cfg *cfg)
 {
-	BUG_ON(1);
+	struct net_device *capwap_dev = ctx->capwap_dev;
+	struct netfn_capwapmgr *mgr = &g_mgr;
+	struct timer_list *timer = NULL;
+	netfn_tuple_t enc_tuple = {0};
+	long bit_pos;
+	int ret = 0;
 
-	return 1;
+	cfg->flow.out_dev = capwap_dev;
+	cfg->flow.top_outdev = capwap_dev;
+
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_CAPWAP_CONFIGURED) - 1;
+	set_bit(bit_pos, ctx->state);
+
+	/*
+	 * If DTLS is enabled on this tunnel, configure DTLS offload accordingly.
+	 * We onyl check for encap flag as in tunnel config validation,
+	 * It is made sure that both encap and decap sessions are enabled.
+	 */
+	if (!(cfg->ext_cfg.ext_valid_flags & NETFN_CAPWAPMGR_EXT_VALID_DTLS_ENC))
+		goto skip_dtls;
+
+	ctx->dtls_dev = netfn_dtls_tun_alloc(0);
+	if (!ctx->dtls_dev) {
+		netfn_capwapmgr_warn("%p:Failed to allocate dtls tunnel in DTLS offload engine\n", capwap_dev);
+		goto fail;
+	}
+
+	/*
+	 * TODO: Check if we can push the uplink as the original direction
+	 * The input tuple will be in DL direction.
+	 */
+	dev_hold(ctx->dtls_dev);
+	netfn_capwapmgr_tun_get_reply(&cfg->tuple, &enc_tuple);
+
+	/*
+	 * When DTLS is enabled, the out dev for flow rule will be the dtls dev.
+	 */
+	cfg->flow.out_dev = ctx->dtls_dev;
+	cfg->flow.top_outdev = ctx->dtls_dev;
+
+	/*
+	 * Create Encap and decap sessions.
+	 */
+	ret = netfn_dtls_tun_session_add(ctx->dtls_dev, &cfg->ext_cfg.enc, &enc_tuple);
+	if (ret) {
+		netfn_capwapmgr_warn("Failed to add Encap dtls session %d\n", ret);
+		goto fail;
+	}
+
+	ret = netfn_dtls_tun_session_add(ctx->dtls_dev, &cfg->ext_cfg.dec, &cfg->tuple);
+	if (ret) {
+		netfn_capwapmgr_warn("Failed to add Decap dtls session %d\n", ret);
+		netfn_dtls_tun_session_del(ctx->dtls_dev, true, cfg->ext_cfg.enc.epoch);
+		goto fail;
+	}
+
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_CONFIGURED) - 1;
+	set_bit(bit_pos, ctx->state);
+
+	if (!netfn_capwap_tun_bind(ctx->capwap_dev, ctx->dtls_dev)) {
+		netfn_capwapmgr_warn("%px: Failed to bind DTLS netdevice\n", cfg);
+		goto fail;
+	}
+
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_BIND) - 1;
+	set_bit(bit_pos, ctx->state);
+
+skip_dtls:
+
+	/*
+	 * Configure flow rule.
+	 *
+	 * If Top Indev is not passed to us,
+	 * It means WAN interface does not have an interface
+	 * heirarchy.
+	 */
+	if (!cfg->flow.top_indev) {
+		cfg->flow.top_indev = cfg->flow.in_dev;
+	}
+
+	if (netfn_capwapmgr_flow_rule_create(cfg) != NETFN_CAPWAPMGR_SUCCESS) {
+		netfn_capwapmgr_warn("%px:Failed to configure flow rule\n", cfg);
+		goto fail;
+
+	}
+
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_FLOW_CONFIGURED) - 1;
+	set_bit(bit_pos, ctx->state);
+
+	/*
+	 * Create debugfs stats entry for the tunnel.
+	 */
+	ctx->dentry = debugfs_create_file(capwap_dev->name,S_IRUGO,mgr->dentry,ctx,&netfn_capwapmgr_tun_stats_ops);
+	if (!ctx->dentry) {
+		netfn_capwapmgr_warn("%px: Failed to create stats file for the tunnel\n", cfg);
+	}
+
+	/*
+	 * Keep a reference to the global manager context.
+	 */
+	netfn_capwapmgr_ref(mgr);
+	ctx->mgr = mgr;
+
+	/*
+	 * Setup the timer to sync stats from flowmgr.
+	 * Attach the timer on the current core.
+	 */
+	atomic64_set(&ctx->timer_resched, 1);
+	timer = &ctx->stats_sync;
+	timer_setup(timer, netfn_capwapmgr_tun_stats_sync, TIMER_PINNED);
+	timer->expires = jiffies + msecs_to_jiffies(NETFN_CAPWAPMGR_STATS_SYNC_FREQ);
+	add_timer_on(timer, smp_processor_id());
+
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_TIMER_CONFIGURED) - 1;
+	set_bit(bit_pos, ctx->state);
+
+	/*
+	 * Keep a copy of tunnel configuration in tunnel context.
+	 */
+	memcpy(&ctx->cfg, cfg, sizeof(struct netfn_capwapmgr_tun_cfg));
+	return true;
+fail:
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_FLOW_CONFIGURED) - 1;
+	if (test_and_clear_bit(bit_pos, ctx->state)) {
+		netfn_capwapmgr_flow_rule_destroy(cfg);
+	}
+
+	/*
+	 * Unwind the DTLS interface unbind
+	 */
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_BIND) - 1;
+	if (test_and_clear_bit(bit_pos, ctx->state)) {
+		netfn_capwap_tun_unbind(ctx->capwap_dev);
+	}
+
+	/*
+	 * Unwind the DTLS configuration
+	 */
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_CONFIGURED) - 1;
+	if (test_and_clear_bit(bit_pos, ctx->state)) {
+		netfn_dtls_tun_session_del(ctx->dtls_dev, false, cfg->ext_cfg.dec.epoch);
+		netfn_dtls_tun_session_del(ctx->dtls_dev, true, cfg->ext_cfg.enc.epoch);
+	}
+
+	/*
+	 * Free the DTLS device
+	 */
+	if (ctx->dtls_dev) {
+		dev_put(ctx->dtls_dev);
+		netfn_dtls_tun_free(ctx->dtls_dev);
+	}
+
+	return false;
+}
+
+/*
+ * netfn_capwapmgr_tun_deinit
+ *	De-initialize the tunnel.
+ */
+bool netfn_capwapmgr_tun_deinit(struct netfn_capwapmgr_tun_ctx *ctx)
+{
+	netfn_capwapmgr_ret_t status = NETFN_CAPWAPMGR_SUCCESS;
+	long bit_pos;
+
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DEINIT_DONE) - 1;
+	if (test_bit(bit_pos, ctx->state)) {
+		return true;
+	}
+
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DEINIT_IN_PROGRESS) - 1;
+	if (test_and_set_bit(bit_pos, ctx->state)) {
+		netfn_capwapmgr_warn("%px: Tunnel deinit in progress \n", ctx);
+		return false;
+	}
+
+	/*
+	 * Remove stats debugfs associated with the tunnel.
+	 */
+	if(ctx->dentry) {
+		debugfs_remove(ctx->dentry);
+		ctx->dentry = NULL;
+	}
+
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_TIMER_CONFIGURED) - 1;
+	if (test_and_clear_bit(bit_pos, ctx->state)) {
+		/*
+		 * Delete the stats sync timer.
+		 *
+		 * del_timer_sync is used to make sure that we block till
+		 * the ongoing timer is done executing. As we will be freeing the
+		 * tunnel context after this.
+		 */
+		atomic64_set(&ctx->timer_resched, 0);
+		del_timer_sync(&ctx->stats_sync);
+	}
+
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_FLOW_CONFIGURED) - 1;
+	if (test_and_clear_bit(bit_pos, ctx->state)) {
+		/*
+		 * Destroy flow rule.
+		 */
+		status = netfn_capwapmgr_flow_rule_destroy(&ctx->cfg);
+		if (status != NETFN_CAPWAPMGR_SUCCESS) {
+			netfn_capwapmgr_warn("%px:Failed to destroy flow rule\n", ctx);
+			set_bit(bit_pos, ctx->state);
+			goto fail;
+		}
+	}
+
+	/*
+	 * Unbind DTLS dev if bound.
+	 */
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_BIND) - 1;
+	if (test_and_clear_bit(bit_pos, ctx->state)) {
+		if(!netfn_capwap_tun_unbind(ctx->capwap_dev)) {
+			netfn_capwapmgr_warn("%px: Failed to unbind dtls node\n", ctx);
+			set_bit(bit_pos, ctx->state);
+			goto fail;
+		}
+	}
+
+	/*
+	 * Destroy DTLS sessions.
+	 */
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_CONFIGURED) - 1;
+	if (test_and_clear_bit(bit_pos, ctx->state)) {
+		netfn_dtls_tun_session_del(ctx->dtls_dev, false, ctx->cfg.ext_cfg.dec.epoch);
+		netfn_dtls_tun_session_del(ctx->dtls_dev, true, ctx->cfg.ext_cfg.enc.epoch);
+	}
+
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DEINIT_DONE) - 1;
+	set_bit(bit_pos, ctx->state);
+	return true;
+fail:
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DEINIT_IN_PROGRESS) - 1;
+	clear_bit(bit_pos, ctx->state);
+	return false;
 }
 
 /*
@@ -121,30 +644,126 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_dtls_tunnel_free(struct net_dev
  */
 struct net_device *netfn_capwapmgr_tun_alloc(struct netfn_capwapmgr_tun_cfg *cfg)
 {
-	BUG_ON(1);
-	return NULL;
+	struct net_device *capwap_dev = NULL;
+	struct netfn_capwapmgr_tun_ctx *ctx = NULL;
+	struct netfn_capwapmgr *mgr = &g_mgr;
+
+	if (netfn_capwapmgr_tun_init_cfg(cfg) != NETFN_CAPWAPMGR_SUCCESS) {
+		netfn_capwapmgr_warn("%px: Failed to valiate the configuration\n", cfg);
+		return NULL;
+	}
+
+	/*
+	 * Create dev tunnel.
+	 */
+	capwap_dev = netfn_capwap_tun_alloc(&cfg->capwap, sizeof(struct netfn_capwapmgr_tun_ctx));
+	if (!capwap_dev) {
+		netfn_capwapmgr_warn("%px:Failed to create capwap tunnel\n", cfg);
+		return NULL;
+	}
+
+	/*
+	 * Update the flow rule's destination as capwap.
+	 */
+	dev_hold(capwap_dev);
+	ctx = netfn_capwap_tun_pvt_get(capwap_dev);
+	ctx->capwap_dev = capwap_dev;
+	cfg->flow.out_dev = capwap_dev;
+
+	if (!netfn_capwapmgr_tun_init(ctx, cfg)) {
+		netfn_capwapmgr_warn("%px:Failed to initialize the capwap tunnel\n", cfg);
+		dev_put(capwap_dev);
+		netfn_capwap_tun_free(capwap_dev);
+		return NULL;
+
+	}
+
+	/*
+	 * deref:netfn_capwapmgr_tun_free.
+	 */
+	netfn_capwapmgr_ref(mgr);
+	return capwap_dev;
 }
 EXPORT_SYMBOL(netfn_capwapmgr_tun_alloc);
 
 /*
  * netfn_capwapmgr_tun_free()
  *	Free the CAPWAP tunnel.
+ *
+ * NOTE:rtnl lock should be held before calling this API
  */
-bool netfn_capwapmgr_tun_free(struct net_device *dev)
+netfn_capwapmgr_ret_t netfn_capwapmgr_tun_free(struct net_device *dev)
 {
-	BUG_ON(1);
+	struct netfn_capwapmgr *mgr = &g_mgr;
+	struct netfn_capwapmgr_tun_ctx *ctx = NULL;
+
+	BUG_ON(!rtnl_is_locked());
+
+	ctx = netfn_capwap_tun_pvt_get(dev);
+
+	/*
+	 * Deinit tunnel.
+	 */
+	if (netfn_capwapmgr_tun_deinit(ctx)) {
+		netfn_capwapmgr_warn("%px: Tunnel De-init failed \n", dev);
+		return NETFN_CAPWAPMGR_ERROR_MAX;
+	}
+
+	/*
+	 * Free capwap tunnel.
+	 */
+	if (netfn_capwap_tun_free(ctx->capwap_dev)) {
+		netfn_capwapmgr_warn("%px: Failed to free capwap tun \n", dev);
+		return NETFN_CAPWAPMGR_ERROR_MAX;
+	}
+
+	/*
+	 * ref:netfn_capwapmgr_tun_alloc.
+	 */
+	netfn_capwapmgr_deref(mgr);
+	return NETFN_CAPWAPMGR_SUCCESS;
 }
 EXPORT_SYMBOL(netfn_capwapmgr_tun_free);
 
 /*
  * netfn_capwapmgr_tun_update()
  *	Update tunnel configuration.
+ *
+ * NOTE:rtnl lock should be held before calling this API.
  */
-netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update(struct net_device *dev, union netfn_capwapmgr_tun_update *cfg)
+netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update(struct net_device *dev, struct netfn_capwapmgr_tun_update *cfg)
 {
-	BUG_ON(1);
+	netfn_capwapmgr_ret_t status = NETFN_CAPWAPMGR_SUCCESS;
+	struct netfn_capwapmgr_tun_ctx *ctx = NULL;
+
+	BUG_ON(!rtnl_is_locked());
+
+	ctx = netfn_capwap_tun_pvt_get(dev);
+
+	switch (cfg->type) {
+	case NETFN_CAPWAPMGR_UPDATE_CAPWAP_VER:
+		break;
+	case NETFN_CAPWAPMGR_UPDATE_DEST_MAC:
+		break;
+	case NETFN_CAPWAPMGR_UPDATE_MTU:
+		break;
+	case NETFN_CAPWAPMGR_UPDATE_SRC_INTERFACE:
+		break;
+	case NETFN_CAPWAPMGR_UPDATE_DTLS_ENABLE:
+		break;
+	case NETFN_CAPWAPMGR_UPDATE_DTLS_DISABLE:
+		break;
+	case NETFN_CAPWAPMGR_UPDATE_DTLS_ENCAP_SESSION:
+		break;
+	case NETFN_CAPWAPMGR_UPDATE_DTLS_DECAP_SESSION:
+		break;
+	default:
+		netfn_capwapmgr_warn("%px: Unknown cfg update type received", dev);
+		return NETFN_CAPWAPMGR_ERROR_MAX;
+	}
+	return status;
 }
-EXPORT_SYMBOL(netfn_capwapmgr_tun_cfg_update);
+EXPORT_SYMBOL(netfn_capwapmgr_tun_update);
 
 /*
  * netfn_capwapmgr_tun_get_dtls_dev()
@@ -152,7 +771,8 @@ EXPORT_SYMBOL(netfn_capwapmgr_tun_cfg_update);
  */
 struct net_device *netfn_capwapmgr_tun_get_dtls_dev(struct net_device *dev)
 {
-	BUG_ON(1);
+	struct netfn_capwapmgr_tun_ctx *ctx = netfn_capwap_tun_pvt_get(dev);
+	return ctx->dtls_dev;
 }
 EXPORT_SYMBOL(netfn_capwapmgr_tun_get_dtls_dev);
 
@@ -160,8 +780,24 @@ EXPORT_SYMBOL(netfn_capwapmgr_tun_get_dtls_dev);
  * netfn_capwapmgr_tun_get_stats()
  *	Get stats associated with capwap tunnel
  */
-netfn_capwapmgr_ret_t netfn_capwapmgr_tun_get_stats(struct net_device *dev, struct netfn_capwapmgr_stats *stats)
+netfn_capwapmgr_ret_t netfn_capwapmgr_tun_get_stats(struct net_device *dev, struct netfn_capwapmgr_tun_stats *stats)
 {
-	BUG_ON(1);
+	struct netfn_capwapmgr_tun_ctx *ctx = netfn_capwap_tun_pvt_get(dev);
+
+	/*
+	 * Copy flow stats.
+	 */
+	memcpy(&stats->flow, &ctx->stats, sizeof(struct netfn_capwapmgr_flow_stats));
+
+	/*
+	 * Copy capwap stats.
+	 * TODO: Use error specific return codes.
+	 */
+	if (netfn_capwap_tun_stats_get(dev, &stats->capwap)) {
+		netfn_capwapmgr_warn("%px: Failed to capwap offload stats\n", dev);
+		return NETFN_CAPWAPMGR_ERROR_MAX;
+	}
+
+	return NETFN_CAPWAPMGR_SUCCESS;
 }
 EXPORT_SYMBOL(netfn_capwapmgr_tun_get_stats);
