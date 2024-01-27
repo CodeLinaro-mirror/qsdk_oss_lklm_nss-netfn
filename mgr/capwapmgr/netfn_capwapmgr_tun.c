@@ -24,7 +24,6 @@
 #include <linux/timer.h>
 #include <linux/seq_file.h>
 #include <linux/rtnetlink.h>
-#include <linux/bitmap.h>
 
 #include <netfn_capwapmgr.h>
 #include "netfn_capwapmgr_priv.h"
@@ -47,17 +46,20 @@ static void netfn_capwapmgr_tun_stats_sync(struct timer_list *t)
 	 * Copy the tuple information.
 	 * Flow manager uses original tuple information
 	 * to lookup per connection stats.
-	 *
-	 * FIXME:Flow manager currently expects ip addresses
-	 * in network order whereas the other parameters in
-	 * host order. Update this once its fixed.
 	 */
 	memcpy(&stats.tuple, &ctx->cfg.tuple, sizeof(netfn_tuple_t));
 
 	/*
+	 * TODO: Flow manager currently expects source and destination port in
+	 * host order. Once its fixed, update this.
+	 */
+	stats.tuple.tuples.tuple_5.l4_src_ident = ntohs(stats.tuple.tuples.tuple_5.l4_src_ident);
+	stats.tuple.tuples.tuple_5.l4_dest_ident = ntohs(stats.tuple.tuples.tuple_5.l4_dest_ident);
+
+	/*
 	 * Get the stats associated with the tuple information from the flowmgr.
 	 */
-	netfn_flowmgr_conn_get_stats(&stats, NETFN_FLOWMGR_ACCEL_MODE_PPE);
+	netfn_flowmgr_get_conn_stats(&stats, NETFN_FLOWMGR_ACCEL_MODE_PPE);
 
 	/*
 	 * Update the per tunnel stats counters.
@@ -111,14 +113,14 @@ static int netfn_capwapmgr_tun_stats_print(struct seq_file *sf, void *ptr)
 
 	seq_puts(sf, "\n Tunnel Flow rule \n");
 		seq_printf(sf, "\tIP Version:%d\n", ip_version);
-		seq_printf(sf, "\tSource Port:0x%d\n", ftuple->l4_src_ident);
-		seq_printf(sf, "\tDestination Port:0x%d\n", ftuple->l4_dest_ident);
+		seq_printf(sf, "\tSource Port:0x%d\n", ntohs(ftuple->l4_src_ident));
+		seq_printf(sf, "\tDestination Port:0x%d\n", ntohs(ftuple->l4_dest_ident));
 	if (ip_version == NETFN_FLOWMGR_TUPLE_IP_VERSION_V4) {
-		seq_printf(sf, "\tSource IP:%pI4h\n", ftuple->src_ip);
-		seq_printf(sf, "\tDestination IP:%pI4h\n", ftuple->dest_ip);
+		seq_printf(sf, "\tSource IP:%pI4n\n", ftuple->src_ip);
+		seq_printf(sf, "\tDestination IP:%pI4n\n", ftuple->dest_ip);
 	} else {
-		seq_printf(sf, "\tSource IP:%pI6h\n", ftuple->src_ip);
-		seq_printf(sf, "\tDestination IP:%pI6h\n", ftuple->dest_ip);
+		seq_printf(sf, "\tSource IP:%pI6n\n", ftuple->src_ip);
+		seq_printf(sf, "\tDestination IP:%pI6n\n", ftuple->dest_ip);
 	}
 
 	seq_puts(sf, "\n CAPWAP offload stats \n");
@@ -134,6 +136,7 @@ static int netfn_capwapmgr_tun_stats_print(struct seq_file *sf, void *ptr)
 
 	seq_puts(sf, "\n Flow stats \n");
 
+	flow_stats = &ctx->stats;
 	seq_puts(sf, "\n Ingress interface \n");
 	seq_printf(sf, "\t[%s]: %llu\n", "Tx Packets", flow_stats->flow_tx_pkts);
 	seq_printf(sf, "\t[%s]: %llu\n", "Tx Bytes", flow_stats->flow_tx_bytes);
@@ -185,7 +188,7 @@ static void netfn_capwapmgr_tun_get_reply(netfn_tuple_t *orig, netfn_tuple_t *re
 	reply->tuples.tuple_5.protocol = orig->tuples.tuple_5.protocol;
 
 	reply->tuples.tuple_5.src_ip[0] = orig->tuples.tuple_5.dest_ip[0];
-	if (orig->ip_version == IPVERSION) {
+	if (orig->ip_version == 6) {
 		reply->tuples.tuple_5.src_ip[1] = orig->tuples.tuple_5.dest_ip[1];
 		reply->tuples.tuple_5.src_ip[2] = orig->tuples.tuple_5.dest_ip[2];
 		reply->tuples.tuple_5.src_ip[3] = orig->tuples.tuple_5.dest_ip[3];
@@ -229,7 +232,15 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_rule_create(struct netfn_capwa
 	 * Get original and reply directions tuple information from tunnel configuration.
 	 */
 	memcpy(&original.tuple, &cfg->tuple, sizeof(netfn_tuple_t));
-	netfn_capwapmgr_tun_get_reply(&cfg->tuple, &reply.tuple);
+
+	/*
+	 * TODO: Flow manager currently expects source and destination port in
+	 * host order. Once its fixed, update this.
+	 */
+	original.tuple.tuples.tuple_5.l4_src_ident = ntohs(cfg->tuple.tuples.tuple_5.l4_src_ident);
+	original.tuple.tuples.tuple_5.l4_dest_ident = ntohs(cfg->tuple.tuples.tuple_5.l4_dest_ident);
+
+	netfn_capwapmgr_tun_get_reply(&original.tuple, &reply.tuple);
 
 	/*
 	 * If tunnel config has VLAN enabled, update flow rule accordingly.
@@ -302,7 +313,15 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_rule_destroy(struct netfn_capw
 	 * Get original and reply directions tuple information from tunnel configuration.
 	 */
 	memcpy(&original.tuple, &cfg->tuple, sizeof(netfn_tuple_t));
-	netfn_capwapmgr_tun_get_reply(&cfg->tuple, &reply.tuple);
+
+	/*
+	 * TODO: Flow manager currently expects source and destination port in
+	 * host order. Once its fixed, update this.
+	 */
+	original.tuple.tuples.tuple_5.l4_src_ident = ntohs(cfg->tuple.tuples.tuple_5.l4_src_ident);
+	original.tuple.tuples.tuple_5.l4_dest_ident = ntohs(cfg->tuple.tuples.tuple_5.l4_dest_ident);
+
+	netfn_capwapmgr_tun_get_reply(&original.tuple, &reply.tuple);
 
 	/*
 	 * Destroy flow rule.
@@ -410,7 +429,7 @@ bool netfn_capwapmgr_tun_init(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_
 	cfg->flow.top_outdev = capwap_dev;
 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_CAPWAP_CONFIGURED) - 1;
-	set_bit(bit_pos, ctx->state);
+	__set_bit(bit_pos, ctx->state);
 
 	/*
 	 * If DTLS is enabled on this tunnel, configure DTLS offload accordingly.
@@ -451,12 +470,12 @@ bool netfn_capwapmgr_tun_init(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_
 	ret = netfn_dtls_tun_session_add(ctx->dtls_dev, &cfg->ext_cfg.dec, &cfg->tuple);
 	if (ret) {
 		netfn_capwapmgr_warn("Failed to add Decap dtls session %d\n", ret);
-		netfn_dtls_tun_session_del(ctx->dtls_dev, true, cfg->ext_cfg.enc.epoch);
+		netfn_dtls_tun_session_del(ctx->dtls_dev, true, htons(cfg->ext_cfg.enc.epoch));
 		goto fail;
 	}
 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_CONFIGURED) - 1;
-	set_bit(bit_pos, ctx->state);
+	__set_bit(bit_pos, ctx->state);
 
 	if (!netfn_capwap_tun_bind(ctx->capwap_dev, ctx->dtls_dev)) {
 		netfn_capwapmgr_warn("%px: Failed to bind DTLS netdevice\n", cfg);
@@ -464,7 +483,7 @@ bool netfn_capwapmgr_tun_init(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_
 	}
 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_BIND) - 1;
-	set_bit(bit_pos, ctx->state);
+	__set_bit(bit_pos, ctx->state);
 
 skip_dtls:
 
@@ -486,7 +505,7 @@ skip_dtls:
 	}
 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_FLOW_CONFIGURED) - 1;
-	set_bit(bit_pos, ctx->state);
+	__set_bit(bit_pos, ctx->state);
 
 	/*
 	 * Create debugfs stats entry for the tunnel.
@@ -496,10 +515,6 @@ skip_dtls:
 		netfn_capwapmgr_warn("%px: Failed to create stats file for the tunnel\n", cfg);
 	}
 
-	/*
-	 * Keep a reference to the global manager context.
-	 */
-	netfn_capwapmgr_ref(mgr);
 	ctx->mgr = mgr;
 
 	/*
@@ -513,7 +528,7 @@ skip_dtls:
 	add_timer_on(timer, smp_processor_id());
 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_TIMER_CONFIGURED) - 1;
-	set_bit(bit_pos, ctx->state);
+	__set_bit(bit_pos, ctx->state);
 
 	/*
 	 * Keep a copy of tunnel configuration in tunnel context.
@@ -522,7 +537,7 @@ skip_dtls:
 	return true;
 fail:
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_FLOW_CONFIGURED) - 1;
-	if (test_and_clear_bit(bit_pos, ctx->state)) {
+	if (__test_and_clear_bit(bit_pos, ctx->state)) {
 		netfn_capwapmgr_flow_rule_destroy(cfg);
 	}
 
@@ -530,7 +545,7 @@ fail:
 	 * Unwind the DTLS interface unbind
 	 */
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_BIND) - 1;
-	if (test_and_clear_bit(bit_pos, ctx->state)) {
+	if (__test_and_clear_bit(bit_pos, ctx->state)) {
 		netfn_capwap_tun_unbind(ctx->capwap_dev);
 	}
 
@@ -538,9 +553,9 @@ fail:
 	 * Unwind the DTLS configuration
 	 */
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_CONFIGURED) - 1;
-	if (test_and_clear_bit(bit_pos, ctx->state)) {
-		netfn_dtls_tun_session_del(ctx->dtls_dev, false, cfg->ext_cfg.dec.epoch);
-		netfn_dtls_tun_session_del(ctx->dtls_dev, true, cfg->ext_cfg.enc.epoch);
+	if (__test_and_clear_bit(bit_pos, ctx->state)) {
+		netfn_dtls_tun_session_del(ctx->dtls_dev, false, htons(cfg->ext_cfg.dec.epoch));
+		netfn_dtls_tun_session_del(ctx->dtls_dev, true, htons(cfg->ext_cfg.enc.epoch));
 	}
 
 	/*
@@ -569,7 +584,7 @@ bool netfn_capwapmgr_tun_deinit(struct netfn_capwapmgr_tun_ctx *ctx)
 	}
 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DEINIT_IN_PROGRESS) - 1;
-	if (test_and_set_bit(bit_pos, ctx->state)) {
+	if (__test_and_set_bit(bit_pos, ctx->state)) {
 		netfn_capwapmgr_warn("%px: Tunnel deinit in progress \n", ctx);
 		return false;
 	}
@@ -583,7 +598,7 @@ bool netfn_capwapmgr_tun_deinit(struct netfn_capwapmgr_tun_ctx *ctx)
 	}
 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_TIMER_CONFIGURED) - 1;
-	if (test_and_clear_bit(bit_pos, ctx->state)) {
+	if (__test_and_clear_bit(bit_pos, ctx->state)) {
 		/*
 		 * Delete the stats sync timer.
 		 *
@@ -596,14 +611,14 @@ bool netfn_capwapmgr_tun_deinit(struct netfn_capwapmgr_tun_ctx *ctx)
 	}
 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_FLOW_CONFIGURED) - 1;
-	if (test_and_clear_bit(bit_pos, ctx->state)) {
+	if (__test_and_clear_bit(bit_pos, ctx->state)) {
 		/*
 		 * Destroy flow rule.
 		 */
 		status = netfn_capwapmgr_flow_rule_destroy(&ctx->cfg);
 		if (status != NETFN_CAPWAPMGR_SUCCESS) {
 			netfn_capwapmgr_warn("%px:Failed to destroy flow rule\n", ctx);
-			set_bit(bit_pos, ctx->state);
+			__set_bit(bit_pos, ctx->state);
 			goto fail;
 		}
 	}
@@ -612,10 +627,10 @@ bool netfn_capwapmgr_tun_deinit(struct netfn_capwapmgr_tun_ctx *ctx)
 	 * Unbind DTLS dev if bound.
 	 */
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_BIND) - 1;
-	if (test_and_clear_bit(bit_pos, ctx->state)) {
+	if (__test_and_clear_bit(bit_pos, ctx->state)) {
 		if(!netfn_capwap_tun_unbind(ctx->capwap_dev)) {
 			netfn_capwapmgr_warn("%px: Failed to unbind dtls node\n", ctx);
-			set_bit(bit_pos, ctx->state);
+			__set_bit(bit_pos, ctx->state);
 			goto fail;
 		}
 	}
@@ -624,17 +639,23 @@ bool netfn_capwapmgr_tun_deinit(struct netfn_capwapmgr_tun_ctx *ctx)
 	 * Destroy DTLS sessions.
 	 */
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_CONFIGURED) - 1;
-	if (test_and_clear_bit(bit_pos, ctx->state)) {
-		netfn_dtls_tun_session_del(ctx->dtls_dev, false, ctx->cfg.ext_cfg.dec.epoch);
-		netfn_dtls_tun_session_del(ctx->dtls_dev, true, ctx->cfg.ext_cfg.enc.epoch);
+	if (__test_and_clear_bit(bit_pos, ctx->state)) {
+		netfn_dtls_tun_session_del(ctx->dtls_dev, false, htons(ctx->cfg.ext_cfg.dec.epoch));
+		netfn_dtls_tun_session_del(ctx->dtls_dev, true, htons(ctx->cfg.ext_cfg.enc.epoch));
+
+		/*
+		 * Free the DTLS net device.
+		 */
+		dev_put(ctx->dtls_dev);
+		netfn_dtls_tun_free(ctx->dtls_dev);
 	}
 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DEINIT_DONE) - 1;
-	set_bit(bit_pos, ctx->state);
+	__set_bit(bit_pos, ctx->state);
 	return true;
 fail:
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DEINIT_IN_PROGRESS) - 1;
-	clear_bit(bit_pos, ctx->state);
+	__clear_bit(bit_pos, ctx->state);
 	return false;
 }
 
@@ -689,15 +710,11 @@ EXPORT_SYMBOL(netfn_capwapmgr_tun_alloc);
 /*
  * netfn_capwapmgr_tun_free()
  *	Free the CAPWAP tunnel.
- *
- * NOTE:rtnl lock should be held before calling this API
  */
 netfn_capwapmgr_ret_t netfn_capwapmgr_tun_free(struct net_device *dev)
 {
 	struct netfn_capwapmgr *mgr = &g_mgr;
 	struct netfn_capwapmgr_tun_ctx *ctx = NULL;
-
-	BUG_ON(!rtnl_is_locked());
 
 	ctx = netfn_capwap_tun_pvt_get(dev);
 

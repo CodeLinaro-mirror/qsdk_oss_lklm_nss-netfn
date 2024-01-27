@@ -309,20 +309,20 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		/*
 		 * Copy over the 5 tuple.
 		 */
-		tuple->tuples.tuple_5.protocol = (uint8_t)v4->protocol;
+		tuple->tuples.tuple_5.protocol = (uint8_t)v6->protocol;
 		tuple->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V6;
 		tuple->tuple_type = NETFN_TUPLE_5TUPLE;
 		tuple->tuples.tuple_5.src_ip[0] = ntohl(v6->src_ip[0]);
 		tuple->tuples.tuple_5.src_ip[1] = ntohl(v6->src_ip[1]);
 		tuple->tuples.tuple_5.src_ip[2] = ntohl(v6->src_ip[2]);
 		tuple->tuples.tuple_5.src_ip[3] = ntohl(v6->src_ip[3]);
-		tuple->tuples.tuple_5.l4_src_ident = (uint16_t)v6->src_port;
+		tuple->tuples.tuple_5.l4_src_ident = htons((uint16_t)v6->src_port);
 
 		tuple->tuples.tuple_5.dest_ip[0] = ntohl(v6->dest_ip[0]);
 		tuple->tuples.tuple_5.dest_ip[1] = ntohl(v6->dest_ip[1]);
 		tuple->tuples.tuple_5.dest_ip[2] = ntohl(v6->dest_ip[2]);
 		tuple->tuples.tuple_5.dest_ip[3] = ntohl(v6->dest_ip[3]);
-		tuple->tuples.tuple_5.l4_dest_ident = (uint16_t)v6->dest_port;
+		tuple->tuples.tuple_5.l4_dest_ident = htons((uint16_t)v6->dest_port);
 	}
 
 	/*
@@ -393,7 +393,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		/*
 		 * Update config specifying this is encap session configuration.
 		 */
-		netfn_dtls_cfg->flags |= 1 << NETFN_DTLS_FLAG_ENC;
+		netfn_dtls_cfg->flags = NETFN_DTLS_FLAG_ENC | NETFN_DTLS_FLAG_CAPWAP;
 
 		/*
 		 * Decap Specific configuration.
@@ -407,13 +407,20 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 			return status;
 		}
 
+		netfn_dtls_cfg->flags = NETFN_DTLS_FLAG_CAPWAP;
+
 		/*
 		 * TODO:Once netfn DTLS config structure is updated. Make sure this is still needed.
 		 * Currently the netfn dtls config takes encap and deacp specific parameters for a
 		 * decap session as well as for an encap session.
 		 */
 		netfn_dtls_cfg->version = netfn_capwapmgr_dtls_version_enum_to_netfn[dtls_data->encap.ver];
-		netfn_dtls_cfg->epoch = dtls_data->encap.epoch;
+
+		/*
+		 * TODO: Once DTLS supports using single epoch value for both encap and decap sessions.
+		 * This can be removed.
+		 */
+		netfn_dtls_cfg->epoch = ((dtls_data->encap.epoch + 1) << 8);
 
 		netfn_dtls_cfg->replay_win = dtls_data->decap.window_size;
 

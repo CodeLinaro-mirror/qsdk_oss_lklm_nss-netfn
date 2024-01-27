@@ -612,18 +612,17 @@ static inline nss_capwapmgr_status_t nss_capwapmgr_ipv4_tunnel_create(struct net
 {
 	struct netfn_capwapmgr_tun_cfg netfn_cfg = {0};
 	netfn_capwapmgr_ret_t netfn_ret = NETFN_CAPWAPMGR_SUCCESS;
-	int got_lock;
 
 	/*
 	 * Convert legacy rules to netfn rules.
 	 */
 	netfn_capwapmgr_legacy_rule2tun_cfg(ip_rule, NULL, capwap_rule, dtls_data, &netfn_cfg, tunnel_id);
 
-	got_lock = rtnl_trylock();
+	/*
+	 * TODO: Move to RCU lock to protect tunid object.
+	 */
 	netfn_ret = netfn_capwapmgr_tunid_add(dev, tunnel_id, &netfn_cfg);
-	if (got_lock) {
-		rtnl_unlock();
-	}
+
 	/*
 	 * Convert the return status from netfn to legacy.
 	 */
@@ -654,18 +653,16 @@ static inline nss_capwapmgr_status_t nss_capwapmgr_ipv6_tunnel_create(struct net
 {
 	struct netfn_capwapmgr_tun_cfg netfn_cfg = {0};
 	netfn_capwapmgr_ret_t netfn_ret = NETFN_CAPWAPMGR_SUCCESS;
-	int got_lock;
 
 	/*
 	 * Convert legacy rules to netfn rules.
 	 */
 	netfn_capwapmgr_legacy_rule2tun_cfg(NULL, ip_rule, capwap_rule, dtls_data, &netfn_cfg, tunnel_id);
 
-	got_lock = rtnl_trylock();
+	/*
+	 * TODO: Move to RCU lock to protect tunid object.
+	 */
 	netfn_ret = netfn_capwapmgr_tunid_add(dev, tunnel_id, &netfn_cfg);
-	if (got_lock) {
-		rtnl_unlock();
-	}
 
 	/*
 	 * Convert the return status from netfn to legacy.
@@ -821,14 +818,10 @@ static inline nss_capwapmgr_status_t nss_capwapmgr_change_version(struct net_dev
  */
 static inline nss_capwapmgr_status_t nss_capwapmgr_tunnel_destroy(struct net_device *dev, uint8_t tunnel_id)
 {
-	netfn_capwapmgr_ret_t netfn_ret = NETFN_CAPWAPMGR_SUCCESS;
-	int got_lock;
-
-	got_lock = rtnl_trylock();
-	netfn_ret = netfn_capwapmgr_tunid_del(dev, tunnel_id);
-	if (got_lock) {
-		rtnl_unlock();
-	}
+	/*
+	 * TODO: Use RCU locks to protect tunid object.
+	 */
+	netfn_capwapmgr_ret_t netfn_ret = netfn_ret = netfn_capwapmgr_tunid_del(dev, tunnel_id);
 
 	return netfn_capwapmgr_status2legacy_status(netfn_ret);
 }

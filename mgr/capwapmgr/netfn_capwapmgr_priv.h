@@ -20,9 +20,11 @@
 #ifndef __NETFN_CAPWAPMGR_PRIV_H
 #define __NETFN_CAPWAPMGR_PRIV_H
 
+#include <asm/bitops.h>
 #include <linux/spinlock.h>
 #include <linux/if_ether.h>
 #include <linux/kref.h>
+#include <linux/bitmap.h>
 
 #include <netfn_capwap.h>
 #include <netfn_flowmgr.h>
