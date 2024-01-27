@@ -25,9 +25,11 @@
  *	Private context of tunid capwap dev.
  */
 struct netfn_capwapmgr_tunid_ctx {
+	spinlock_t lock;			/*< Lock to protect concurrent config changes */
 	struct dentry *dentry;			/*< Stats dentry */
 	struct netfn_capwapmgr *mgr;		/*< Pointer to manager context */
 	struct netfn_capwapmgr_tun_ctx *tunnels[NETFN_CAPWAPMGR_TUNNELS_MAX];
 						/*< Tunnels */
+	DECLARE_BITMAP(active_tunnels, NETFN_CAPWAPMGR_TUNNELS_MAX);
 };
 #endif /*__NETFN_CAPWAPMGR_TUNID_H */
