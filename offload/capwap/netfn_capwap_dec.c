@@ -201,6 +201,7 @@ static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec *dec,
 		NETFN_CAPWAP_TUN_STATS_INC(&stats->drop_linearize_fail);
 	}
 
+	NETFN_CAPWAP_TUN_STATS_INC(&stats->slow_reasm);
 done:
 	netfn_capwap_frags_init(frags);
 	return reasm_skb;
@@ -291,7 +292,7 @@ static uint8_t *netfn_capwap_dec_capwap(struct netfn_capwap_dec *dec, struct sk_
 	 * For capwap pkts preamble should be zero.
 	 */
 	preamble = netfn_capwap_hdr_get_preamble(info);
-	if (unlikely(!preamble)) {
+	if (unlikely(preamble)) {
 		preh->type |= NETFN_CAPWAP_PKT_TYPE_INVALID;
 		return start;
 	}
@@ -318,6 +319,7 @@ static uint8_t *netfn_capwap_dec_capwap(struct netfn_capwap_dec *dec, struct sk_
 	 * 2. Its not first fragment.
 	 */
 	if (mdata->keep_alive || (mdata->frag && mdata->frag_offset)) {
+		NETFN_CAPWAP_TUN_STATS_ADD(&dec->stats.keepalive_pkts, mdata->keep_alive);
 		return start + next_hdr;
 	}
 
@@ -365,7 +367,7 @@ static uint8_t *netfn_capwap_dec_capwap(struct netfn_capwap_dec *dec, struct sk_
 		/*
 		 * Convert inner 802.11 packet to 802.3 packet.
 		 */
-		next_hdr = netfn_capwap_dec_80211_to_8023(dec, preh, (start + next_hdr));
+		next_hdr += netfn_capwap_dec_80211_to_8023(dec, preh, (start + next_hdr));
 		preh->type |= NETFN_CAPWAP_PKT_TYPE_8023;
 	}
 
@@ -383,13 +385,13 @@ static uint8_t *netfn_capwap_dec_l4(struct netfn_capwap_dec *dec, struct sk_buff
 	/*
 	 * Check if its a control packet.
 	 */
-	if (unlikely(udph->source == NETFN_CAPWAP_CTRL_PORT)) {
+	if (unlikely(ntohs(udph->source) == NETFN_CAPWAP_CTRL_PORT)) {
 		NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.control_pkts);
-		preh->type = NETFN_CAPWAP_PKT_TYPE_CTRL;
+		preh->type |= NETFN_CAPWAP_PKT_TYPE_CTRL;
 		return start + sizeof(*udph);
 	}
 
-	preh->type = NETFN_CAPWAP_PKT_TYPE_DATA;
+	preh->type |= NETFN_CAPWAP_PKT_TYPE_DATA;
 	return start + sizeof(*udph);
 }
 
@@ -402,7 +404,7 @@ static uint8_t *netfn_capwap_dec_l3(struct netfn_capwap_dec *dec, struct sk_buff
 	struct ipv6hdr *ip6h;
 	struct iphdr *iph;
 
-	if (skb->protocol == ETH_P_IP) {
+	if (ntohs(skb->protocol) == ETH_P_IP) {
 		iph = (struct iphdr *)start;
 
 		preh->dscp = ipv4_get_dsfield(iph);
@@ -415,34 +417,6 @@ static uint8_t *netfn_capwap_dec_l3(struct netfn_capwap_dec *dec, struct sk_buff
 	preh->dscp = ipv6_get_dsfield(ip6h);
 	skb->protocol = ip6h->nexthdr;
 	return start + sizeof(*ip6h);
-}
-
-/*
- * netfn_capwap_dec_l2()
- *	Decapsulate L2 header
- */
-static uint8_t *netfn_capwap_dec_l2(struct netfn_capwap_dec *dec, struct sk_buff *skb, uint8_t *start, struct netfn_capwap_prehdr *preh)
-{
-	struct ethhdr *ehdr = (struct ethhdr *)start;
-	uint8_t next_hdr = 0;
-	uint16_t proto;
-
-	proto = ehdr->h_proto;
-	next_hdr += ETH_HLEN;
-
-	/*
-	 * Outer header has a VLAN
-	 */
-	if (unlikely(proto == htons(ETH_P_8021Q))) {
-		struct vlan_hdr *vh = (struct vlan_hdr *)start;
-
-		proto = vh->h_vlan_encapsulated_proto;
-		preh->vlan_pcp = (ntohs(vh->h_vlan_TCI) >> VLAN_PRIO_SHIFT);
-		next_hdr += sizeof(*vh);
-	}
-
-	skb->protocol = proto;
-	return start + next_hdr;
 }
 
 /*
@@ -479,7 +453,6 @@ static bool netfn_capwap_dec(struct netfn_capwap_dec *dec, struct sk_buff *skb, 
 		goto skip_headers;
 	}
 
-	next_hdr = netfn_capwap_dec_l2(dec, skb, start, &preh);
 	next_hdr = netfn_capwap_dec_l3(dec, skb, next_hdr, &preh);
 	next_hdr = netfn_capwap_dec_l4(dec, skb, next_hdr, &preh);
 	next_hdr = netfn_capwap_dec_capwap(dec, skb, next_hdr, &preh);

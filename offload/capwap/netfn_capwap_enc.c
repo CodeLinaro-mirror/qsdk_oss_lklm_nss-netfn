@@ -44,7 +44,7 @@ static void netfn_capwap_enc_capwap(struct netfn_capwap_tun_enc *enc, struct sk_
 	/*
 	 * Check if this packet has wireless info.
 	 */
-	if (phdr->type & NETFN_CAPWAP_PKT_TYPE_WINFO) {
+	if (mdata->first_frag && (phdr->type & NETFN_CAPWAP_PKT_TYPE_WINFO)) {
 		hlen += (phdr->nwireless * NETFN_CAPWAP_WIRELESS_INFO_LEN);
 		info.fields.wbit = 1;
 	}
@@ -52,7 +52,7 @@ static void netfn_capwap_enc_capwap(struct netfn_capwap_tun_enc *enc, struct sk_
 	/*
 	 * If packet is 802.11 packet.
 	 */
-	if ((phdr->type & NETFN_CAPWAP_PKT_TYPE_80211) && mdata->first_frag) {
+	if (phdr->type & NETFN_CAPWAP_PKT_TYPE_80211) {
 		info.fields.tbit = info.fields.wbid = 1;
 	}
 
@@ -153,16 +153,14 @@ static void netfn_capwap_enc_l3(struct netfn_capwap_tun_enc *enc, struct sk_buff
  */
 static inline void netfn_capwap_enc_snap_hdr(struct netfn_capwap_tun_enc *enc, struct sk_buff *skb)
 {
+	struct __snap_hdr {
+		uint8_t hdr[NETFN_CAPWAP_SNAP_HDR_LEN];
+	};
 	uint16_t *next_proto = (uint16_t *)__skb_push(skb, sizeof(skb->protocol));
-	uint8_t *snap_hdr = __skb_push(skb, NETFN_CAPWAP_SNAP_HDR_LEN);
+	struct __snap_hdr *snap = __skb_push(skb, sizeof(*snap));
 
-	/*
-	 * TODO: Try with struct object copy.
-	 */
+	*snap = *((struct __snap_hdr *)enc->snap_hdr);
 	*next_proto = skb->protocol;
-	snap_hdr[0] = enc->snap_hdr[0];
-	snap_hdr[1] = enc->snap_hdr[1];
-	snap_hdr[3] = enc->snap_hdr[2];
 }
 
 /*
@@ -241,7 +239,9 @@ static void netfn_capwap_enc_80211(struct netfn_capwap_tun_enc *enc, struct sk_b
 	/*
 	 * Insert wlan info.
 	 */
-	memcpy(__skb_push(skb, sizeof(phdr->winfo)), &phdr->winfo, nwireless * sizeof(phdr->winfo));
+	if (nwireless) {
+		memcpy(__skb_push(skb, sizeof(phdr->winfo)), phdr->winfo, sizeof(phdr->winfo));
+	}
 }
 
 /*

@@ -178,7 +178,7 @@ struct net_device *netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, st
 	 */
 	BUG_ON(!dev);
 
-	if (id <= 0 || id > NETFN_CAPWAP_MAX_IDS) {
+	if (id < 0 || id >= NETFN_CAPWAP_MAX_IDS) {
 		pr_warn("%px: Invalid id(%d) allowed(1 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS);
 		return NULL;
 	}
@@ -254,7 +254,7 @@ bool netfn_capwap_tunid_del(struct net_device *dev, uint8_t id)
 	 */
 	BUG_ON(!dev);
 
-	if (id <= 0 || id > NETFN_CAPWAP_MAX_IDS) {
+	if (id < 0 || id >= NETFN_CAPWAP_MAX_IDS) {
 		pr_warn("%px: Invalid id(%d) allowed(1 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS);
 		return false;
 	}
@@ -291,7 +291,7 @@ bool netfn_capwap_tunid_bind(struct net_device *dev, uint8_t id, struct net_devi
 	BUG_ON(!dev);
 	BUG_ON(!next);
 
-	if (id <= 0 || id > NETFN_CAPWAP_MAX_IDS) {
+	if (id < 0 || id >= NETFN_CAPWAP_MAX_IDS) {
 		pr_warn("%px: Invalid id(%d) allowed(1 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS);
 		return false;
 	}
@@ -333,7 +333,7 @@ int netfn_capwap_tunid_stats_get(struct net_device *dev, uint8_t id, struct netf
 	BUG_ON(!dev);
 	BUG_ON(!stats);
 
-	if (id <= 0 || id > NETFN_CAPWAP_MAX_IDS) {
+	if (id < 0 || id >= NETFN_CAPWAP_MAX_IDS) {
 		pr_warn("%px: Invalid id(%d) allowed(1 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS);
 		return -EINVAL;
 	}
