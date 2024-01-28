@@ -362,7 +362,7 @@ static const struct file_operations file_ops = {
  *	Reads encap stats.
  */
 void netfn_capwap_enc_stats_read(struct netfn_capwap_tun_enc *enc, struct netfn_capwap_tun_stats *stats)
-{  
+{
 	uint64_t *dest = (uint64_t *)&stats->enc;
 	uint64_t *src = (uint64_t *)&enc->stats;
 	int i;
@@ -437,6 +437,7 @@ bool netfn_capwap_enc(struct netfn_capwap_tun_enc *enc, struct sk_buff *orig_skb
 		 * DTLS adds these for us.
 		 */
 		if (enc->features & NETFN_CAPWAP_FEATURES_DTLS) {
+			skb->priority = enc->hdr.tos;
 			continue;
 		}
 
@@ -458,6 +459,7 @@ bool netfn_capwap_enc_init(struct netfn_capwap_tun_enc *enc, struct netfn_capwap
 
 	ether_addr_copy(&enc->bssid, cfg->bssid);
 	enc->outer_hdr_len = ETH_HLEN;
+	enc->features = cfg->features;
 
 	/*
 	 * TODO: Add vlan and pppoe.

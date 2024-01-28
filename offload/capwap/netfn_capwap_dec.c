@@ -466,13 +466,25 @@ static bool netfn_capwap_dec(struct netfn_capwap_dec *dec, struct sk_buff *skb, 
 	 */
 	mdata = NETFN_CAPWAP_CB(skb);
 
+	/************************
+	 * Decapsulation starts.*
+	 ************************/
 	/*
-	 * Decapsulation starts.
+	 * If dtls is enabled we have skip IP and UDP/UDPLite decapsulation.
+	 * Its stripped by DTLS.
 	 */
+	if (dec->features & NETFN_CAPWAP_FEATURES_DTLS) {
+		preh.dscp = skb->priority;
+		next_hdr = netfn_capwap_dec_capwap(dec, skb, next_hdr, &preh);
+		goto skip_headers;
+	}
+
 	next_hdr = netfn_capwap_dec_l2(dec, skb, start, &preh);
 	next_hdr = netfn_capwap_dec_l3(dec, skb, next_hdr, &preh);
 	next_hdr = netfn_capwap_dec_l4(dec, skb, next_hdr, &preh);
 	next_hdr = netfn_capwap_dec_capwap(dec, skb, next_hdr, &preh);
+
+skip_headers:
 
 	/*
 	 * Sanity check to see if we didn't overflow.
