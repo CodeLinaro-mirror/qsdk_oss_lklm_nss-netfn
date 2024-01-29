@@ -14,3 +14,4 @@
 
 netfn_flowmgr_ret_t netfn_flowmgr_sfe_destroy_v4_rule(struct netfn_flowmgr_destroy_rule *original, struct netfn_flowmgr_destroy_rule *reply);
 netfn_flowmgr_ret_t netfn_flowmgr_sfe_create_v4_rule(struct netfn_flowmgr_create_rule *original, struct netfn_flowmgr_create_rule *reply);
+netfn_flowmgr_ret_t netfn_flowmgr_sfe_v4_get_stats(struct netfn_flowmgr_flow_conn_stats *stats);

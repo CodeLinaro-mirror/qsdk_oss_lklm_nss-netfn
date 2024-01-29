@@ -76,6 +76,22 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_vlan_info(struct netfn_flowmgr_cr
 }
 
 /*
+ * netfn_flowmgr_sfe_get_stats()
+ *	Get SFE stats for a single connection
+ */
+netfn_flowmgr_ret_t netfn_flowmgr_sfe_get_stats(struct netfn_flowmgr_flow_conn_stats *stats)
+{
+	if (stats->tuple.ip_version == NETFN_FLOWMGR_TUPLE_IP_VERSION_V4) {
+		return netfn_flowmgr_sfe_v4_get_stats(stats);
+	}
+	else if (stats->tuple.ip_version == NETFN_FLOWMGR_TUPLE_IP_VERSION_V6) {
+		return netfn_flowmgr_sfe_v6_get_stats(stats);
+	}
+
+	return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_INCORRECT_IP_VERSION, 0);
+}
+
+/*
  * netfn_flowmgr_sfe_destroy_rule()
  *	destroys flow in sfe
  */
@@ -145,6 +161,7 @@ bool netfn_flowmgr_sfe_init(void)
 	 */
 	sfe_ops.create_rule = netfn_flowmgr_sfe_create_rule;
 	sfe_ops.destroy_rule = netfn_flowmgr_sfe_destroy_rule;
+	sfe_ops.get_stats = netfn_flowmgr_sfe_get_stats;
 
 	/*
 	 * Register the callbacks with netfn core.

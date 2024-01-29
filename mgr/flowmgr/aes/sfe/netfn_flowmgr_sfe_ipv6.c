@@ -19,6 +19,100 @@
 #include "netfn_flowmgr_sfe_ipv6.h"
 
 /*
+ * netfn_flowmgr_sfe_v6_get_stats()
+ *	Get SFE IPv6 stats for a single connection
+ */
+netfn_flowmgr_ret_t netfn_flowmgr_sfe_v6_get_stats(struct netfn_flowmgr_flow_conn_stats *stats)
+{
+	struct sfe_ipv6_single_conn_stats sfe_stats;
+	netfn_tuple_type_t tuple_type;
+	bool sfe_status;
+
+	tuple_type = stats->tuple.tuple_type;
+
+	/*
+	 * Check tuple type
+	 */
+	if (!(tuple_type == NETFN_TUPLE_3TUPLE) && !(tuple_type == NETFN_TUPLE_4TUPLE) && !(tuple_type == NETFN_TUPLE_5TUPLE)) {
+		netfn_flowmgr_warn("Unsupported tupple type in SFE acceleration mode, tuple_type = %d\n", tuple_type);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_UNSUPPORTED_TUPLE_TYPE, 0);
+	}
+
+	sfe_stats.tuple.flow_ident = 0;
+	sfe_stats.tuple.return_ident = 0;
+	if (tuple_type == NETFN_TUPLE_3TUPLE) {
+		sfe_stats.tuple.protocol = stats->tuple.tuples.tuple_3.protocol;
+		memcpy(sfe_stats.tuple.flow_ip, stats->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
+		memcpy(sfe_stats.tuple.return_ip, stats->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
+	} else if (tuple_type == NETFN_TUPLE_4TUPLE) {
+		sfe_stats.tuple.protocol = stats->tuple.tuples.tuple_4.protocol;
+		memcpy(sfe_stats.tuple.flow_ip, stats->tuple.tuples.tuple_4.src_ip, sizeof(uint32_t) * 4);
+		memcpy(sfe_stats.tuple.return_ip, stats->tuple.tuples.tuple_4.dest_ip, sizeof(uint32_t) * 4);
+		if (stats->tuple.tuples.tuple_4.ident_type == NETFN_4TUPLE_VALID_SRC_PORT) {
+			sfe_stats.tuple.flow_ident = stats->tuple.tuples.tuple_4.l4_ident;
+		} else {
+			sfe_stats.tuple.return_ident = stats->tuple.tuples.tuple_4.l4_ident;
+		}
+	} else if (tuple_type == NETFN_TUPLE_5TUPLE) {
+                sfe_stats.tuple.protocol = stats->tuple.tuples.tuple_5.protocol;
+		memcpy(sfe_stats.tuple.flow_ip, stats->tuple.tuples.tuple_5.src_ip, sizeof(uint32_t) * 4);
+		memcpy(sfe_stats.tuple.return_ip, stats->tuple.tuples.tuple_5.dest_ip, sizeof(uint32_t) * 4);
+                sfe_stats.tuple.flow_ident = stats->tuple.tuples.tuple_5.l4_src_ident;
+                sfe_stats.tuple.return_ident = stats->tuple.tuples.tuple_5.l4_dest_ident;
+        }
+	sfe_stats.org_dev = stats->org_netdev;
+	sfe_stats.reply_dev = stats->reply_netdev;
+
+	sfe_status = sfe_ipv6_get_single_conn_stats(&sfe_stats);
+	if (!sfe_status) {
+		netfn_flowmgr_warn("SFE v6 get sfe_stats failed for below tuples:\n"
+					"protocol = %u\n"
+					"flow_ip = %pI6\n"
+					"return_ip = %pI6\n"
+					"flow_ident = %u\n"
+					"return_ident = %u\n",
+					sfe_stats.tuple.protocol,
+					&sfe_stats.tuple.flow_ip,
+					&sfe_stats.tuple.return_ip,
+					sfe_stats.tuple.flow_ident,
+					sfe_stats.tuple.return_ident);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_GET_SFE_STATS_FAILED, sfe_status);
+	}
+
+	/*
+	 * Copy sfe stats to the conn stats structure to update the user stats.
+	 */
+	stats->conn_stats.ip_version = ETH_P_IP;
+	stats->conn_stats.protocol = sfe_stats.tuple.protocol;
+
+	/*
+	 * original direction stats
+	 */
+	memcpy(stats->conn_stats.org_src_ip, sfe_stats.tuple.flow_ip, sizeof(uint32_t) * 4);
+	memcpy(stats->conn_stats.org_dest_ip, sfe_stats.tuple.return_ip, sizeof(uint32_t) * 4);
+	stats->conn_stats.org_src_ident = sfe_stats.tuple.flow_ident;
+	stats->conn_stats.org_dest_ident = sfe_stats.tuple.return_ident;
+	stats->conn_stats.org_tx_pkt_count = sfe_stats.tx_packet_count;
+	stats->conn_stats.org_rx_pkt_count = sfe_stats.rx_packet_count;
+	stats->conn_stats.org_tx_byte_count = sfe_stats.tx_byte_count;
+	stats->conn_stats.org_rx_byte_count = sfe_stats.rx_byte_count;
+
+	/*
+	 * reply direction stats
+	 */
+	memcpy(stats->conn_stats.reply_src_ip, sfe_stats.tuple.return_ip, sizeof(uint32_t) * 4);
+	memcpy(stats->conn_stats.reply_dest_ip, sfe_stats.tuple.flow_ip, sizeof(uint32_t) * 4);
+	stats->conn_stats.reply_src_ident = sfe_stats.tuple.return_ident;
+	stats->conn_stats.reply_dest_ident = sfe_stats.tuple.flow_ident;
+	stats->conn_stats.reply_tx_pkt_count = sfe_stats.rx_packet_count;
+	stats->conn_stats.reply_rx_pkt_count = sfe_stats.tx_packet_count;
+	stats->conn_stats.reply_tx_byte_count = sfe_stats.rx_byte_count;
+	stats->conn_stats.reply_rx_byte_count = sfe_stats.tx_byte_count;
+
+	return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_SUCCESS, sfe_status);
+}
+
+/*
  * netfn_flowmgr_sfe_validate_v6_destroy_tuple_info()
  *	Validate tuple info in original and reply direction
  */
