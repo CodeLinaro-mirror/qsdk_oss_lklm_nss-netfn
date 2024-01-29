@@ -247,7 +247,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_ppe_validate_v4_create_tuple_info(struc
 		 * Original flow rule protocol should match with reply direction
 		 */
 		if (original->tuple.tuples.tuple_5.protocol != reply->tuple.tuples.tuple_5.protocol) {
-			netfn_flowmgr_warn("Non-matching protocol in flow and return direction, org_proto = %u, reply_proto = %u\n", 
+			netfn_flowmgr_warn("Non-matching protocol in flow and return direction, org_proto = %u, reply_proto = %u\n",
 						original->tuple.tuples.tuple_5.protocol, reply->tuple.tuples.tuple_5.protocol);
 			netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_proto_mismatch);
 			return NETFN_FLOWMGR_RET_PPE_PROTOCOL_MISMATCH;
@@ -717,7 +717,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_validate_v4_destroy_tuple_info(struct netf
 		 * Original flow rule protocol should match with reply direction
 		 */
 		if (original->tuple.tuples.tuple_3.protocol != reply->tuple.tuples.tuple_3.protocol) {
-			netfn_flowmgr_warn("Non-matching protocol in flow and return direction, org_proto = %u, reply_proto = %u\n", 
+			netfn_flowmgr_warn("Non-matching protocol in flow and return direction, org_proto = %u, reply_proto = %u\n",
 						original->tuple.tuples.tuple_3.protocol, reply->tuple.tuples.tuple_3.protocol);
 			netfn_flowmgr_stats_inc(&stats->v4_destroy_validate_tuple_proto_mismatch);
 			return NETFN_FLOWMGR_RET_PPE_PROTOCOL_MISMATCH;
@@ -766,7 +766,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_validate_v4_destroy_tuple_info(struct netf
 		 * Original flow rule protocol should reversly match with reply direction
 		 */
 		if (original->tuple.tuples.tuple_5.protocol != reply->tuple.tuples.tuple_5.protocol) {
-			netfn_flowmgr_warn("Non-matching protocol in flow and return direction, org_proto = %u, reply_proto = %u\n", 
+			netfn_flowmgr_warn("Non-matching protocol in flow and return direction, org_proto = %u, reply_proto = %u\n",
 						original->tuple.tuples.tuple_5.protocol, reply->tuple.tuples.tuple_5.protocol);
 			netfn_flowmgr_stats_inc(&stats->v4_destroy_validate_tuple_proto_mismatch);
 			return NETFN_FLOWMGR_RET_PPE_PROTOCOL_MISMATCH;

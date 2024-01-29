@@ -36,7 +36,6 @@ static const char * const netfn_flowmgr_debug_stats_str[] = {
 	"v4_create_validate_tuple_ip_addr_mismatch",	/**< No of v4 create rule failed due to ip addr mismatch */
 	"v4_create_validate_tuple_ident_mismatch",	/**< No of v4 create rule failed due to ident mismatch */
 	"v4_create_validate_tuple_proto_mismatch",	/**< No of v4 create rule failed due to proto mismatch */
-	"v4_create_validate_tuple_type_unsupported",	/**< No of v4 create rule failed due to unsupported tuple type */
 	"v4_create_validate_tuple_type_invalid",	/**< No of v4 create rule failed due to invalid tuple type */
 	"v4_create_validate_tuple_invalid_nat_bridge",	/**< No of v4 create rule failed due to unsupported nat + bridge */
 	"v4_create_validate_tuple_invalid_net_dev",	/**< No of v4 create rule failed due to invalid net device */
@@ -65,6 +64,7 @@ static const char * const netfn_flowmgr_debug_stats_str[] = {
 	"v4_destroy_ppe_rule_req",			/**< No of v4 ppe destroy rule requests */
 	"v4_destroy_rule_ppe_success",			/**< No of v4 successful ppe destroy rule requests */
 	"v4_destroy_rule_req_fail_ppe_fail",		/**< No of v4 failed ppe destroy rule requests */
+	"v4_get_stats_failed",				/**< No of v4 get stats failed requests */
 
 	/* v4 SFE stats */
 	"v4_create_sfe_rule_req",			/**< No of v4 sfe create rule requests */
@@ -131,6 +131,7 @@ static const char * const netfn_flowmgr_debug_stats_str[] = {
 	"v6_destroy_ppe_rule_req",			/**< No of v6 ppe destroy rule requests */
 	"v6_destroy_rule_ppe_success",			/**< No of v6 successful ppe destroy rule requests */
 	"v6_destroy_rule_req_fail_ppe_fail",		/**< No of v6 failed ppe destroy rule requests */
+	"v6_get_stats_failed",				/**< No of v6 get stats failed requests */
 
 	/* v6 SFE stats */
 	"v6_create_sfe_rule_req",			/**< No of v6 sfe create rule requests */
@@ -143,6 +144,12 @@ static const char * const netfn_flowmgr_debug_stats_str[] = {
 	/* common stats */
 	"validate_vlan_inner_mismatch",			/**< No of v4/v6 create rule failed due to inner vlan mismatch */
 	"validate_vlan_outer_mismatch",			/**< No of v4/v6 create rule failed due to outer vlan mismatch */
+	"validate_unsupported_tuple_type",		/**< No of v4/v6 failure due to unsupported tuple type */
+	"dscp_priority_add_req",			/**< No of add dscp priority requests */
+	"dscp_priority_del_req",			/**< No of del dscp priority requests */
+	"dscp_priority_add_req_fail_no_wan_dev",	/**< No of add dscp priority request fail due to no WAN dev */
+	"dscp_priority_add_req_rule_create_fail",	/**< No of add dscp priority request fail due to rule create fail */
+	"dscp_priority_del_req_rule_destroy_fail",	/**< No of del dscp priority request fail due to rule destroy fail */
 };
 
 /*
@@ -164,7 +171,7 @@ static int netfn_flowmgr_debug_stats_show(struct seq_file *m, void __attribute__
 	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
 	struct netfn_flowmgr_debug_stats *ae_stats;
 	netfn_flowmgr_ae_type_t ae_type;
-	int stats_idx;
+	uint64_t stats_idx;
 
 	/*
 	 * For all AE type store and print the stats atomically.
@@ -176,8 +183,8 @@ static int netfn_flowmgr_debug_stats_show(struct seq_file *m, void __attribute__
 		 * Iterate till debug stats length and dump the stats.
 		 */
 		for (stats_idx = 0; stats_idx < sizeof(struct netfn_flowmgr_debug_stats) / sizeof(uint64_t); stats_idx++) {
-			seq_printf(m, "\t\t [%s]:  %llu\n", netfn_flowmgr_debug_stats_str[stats_idx], 
-					atomic64_read((atomic64_t *)&ae_stats[stats_idx]));
+			seq_printf(m, "\t\t [%s]:  %llu\n", netfn_flowmgr_debug_stats_str[stats_idx],
+						atomic64_read(((atomic64_t *)ae_stats + stats_idx)));
 		}
 	}
 	return 0;

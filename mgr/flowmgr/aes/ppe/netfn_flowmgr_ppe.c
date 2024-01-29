@@ -93,22 +93,51 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_destroy_rule(struct netfn_flowmgr_destroy_
 }
 
 /*
+ * netfn_flowmgr_ppe_endianess_be_to_le()
+ *	Change the endianess from network to host order.
+ */
+void netfn_flowmgr_ppe_endianess_be_to_le(uint32_t ip_addr[], int ip_version)
+{
+	/*
+	 * Change the endianess of IPv4 addr from network to host
+	 */
+	if (ip_version == NETFN_FLOWMGR_TUPLE_IP_VERSION_V4) {
+		ip_addr[0] = ntohl(ip_addr[0]);
+	}
+
+	/*
+	 * Change the endianess of IPv6 addr from network to host
+	 */
+	if (ip_version == NETFN_FLOWMGR_TUPLE_IP_VERSION_V6) {
+		ip_addr[0] = ntohl(ip_addr[0]);
+		ip_addr[1] = ntohl(ip_addr[1]);
+		ip_addr[2] = ntohl(ip_addr[2]);
+		ip_addr[3] = ntohl(ip_addr[3]);
+	}
+}
+
+/*
  * netfn_flowmgr_ppe_v6_get_stats()
  *	Get PPE IPv6 stats
  */
 netfn_flowmgr_ret_t netfn_flowmgr_ppe_v6_get_stats(struct netfn_flowmgr_flow_conn_stats *stats)
 {
-	struct ppe_drv_v6_get_conn_stats ppe_stats;
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+	struct ppe_drv_v6_flow_conn_stats ppe_stats;
+	struct netfn_flowmgr_debug_stats *dbg_stats;
 	netfn_tuple_type_t tuple_type;
 	ppe_drv_ret_t ppe_status;
+
+	dbg_stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_PPE];
 
 	tuple_type = stats->tuple.tuple_type;
 
 	/*
 	 * Check tuple type
 	 */
-	if (!(tuple_type == NETFN_TUPLE_3TUPLE) || (!(tuple_type == NETFN_TUPLE_5TUPLE))) {
+	if (!(tuple_type == NETFN_TUPLE_3TUPLE) && (!(tuple_type == NETFN_TUPLE_5TUPLE))) {
 		netfn_flowmgr_warn("Unsupported tupple type in PPE acceleration mode, tuple_type = %d\n", tuple_type);
+		netfn_flowmgr_stats_inc(&dbg_stats->validate_unsupported_tuple_type);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_UNSUPPORTED_TUPLE_TYPE, 0);
 	}
 
@@ -123,8 +152,13 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_v6_get_stats(struct netfn_flowmgr_flow_con
                 ppe_stats.tuple.return_ident = (uint32_t)stats->tuple.tuples.tuple_5.l4_dest_ident;
         }
 
+	/*
+	 * Change endianess
+	 */
+	netfn_flowmgr_ppe_endianess_be_to_le(ppe_stats.tuple.flow_ip, NETFN_FLOWMGR_TUPLE_IP_VERSION_V6);
+	netfn_flowmgr_ppe_endianess_be_to_le(ppe_stats.tuple.return_ip, NETFN_FLOWMGR_TUPLE_IP_VERSION_V6);
 
-	ppe_status = ppe_drv_v6_conn_stats_get(&ppe_stats);
+	ppe_status = ppe_drv_v6_get_conn_stats(&ppe_stats);
 	if (ppe_status != PPE_DRV_RET_SUCCESS) {
 		netfn_flowmgr_warn("PPE v6 get ppe_stats failed, ppe_status = %d\n", ppe_status);
 		netfn_flowmgr_warn("PPE v6 get ppe_stats failed for below tuples:\n"
@@ -138,6 +172,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_v6_get_stats(struct netfn_flowmgr_flow_con
 					&ppe_stats.tuple.return_ip,
 					ppe_stats.tuple.flow_ident,
 					ppe_stats.tuple.return_ident);
+		netfn_flowmgr_stats_inc(&dbg_stats->v6_get_stats_failed);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_GET_PPE_STATS_FAILED, ppe_status);
 	}
 
@@ -180,32 +215,37 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_v6_get_stats(struct netfn_flowmgr_flow_con
  */
 netfn_flowmgr_ret_t netfn_flowmgr_ppe_v4_get_stats(struct netfn_flowmgr_flow_conn_stats *stats)
 {
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
 	struct ppe_drv_v4_flow_conn_stats ppe_stats;
+	struct netfn_flowmgr_debug_stats *dbg_stats;
 	netfn_tuple_type_t tuple_type;
 	ppe_drv_ret_t ppe_status;
+
+	dbg_stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_PPE];
 
 	tuple_type = stats->tuple.tuple_type;
 
 	/*
 	 * Check tuple type
 	 */
-	if (!(tuple_type == NETFN_TUPLE_3TUPLE) || (!(tuple_type == NETFN_TUPLE_5TUPLE))) {
+	if (!(tuple_type == NETFN_TUPLE_3TUPLE) && (!(tuple_type == NETFN_TUPLE_5TUPLE))) {
 		netfn_flowmgr_warn("Unsupported tupple type in PPE acceleration mode, tuple_type = %d\n", tuple_type);
+		netfn_flowmgr_stats_inc(&dbg_stats->validate_unsupported_tuple_type);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_UNSUPPORTED_TUPLE_TYPE, 0);
 	}
 
 	ppe_stats.tuple.protocol = stats->tuple.tuples.tuple_3.protocol;
-	ppe_stats.tuple.flow_ip = stats->tuple.tuples.tuple_3.src_ip[0];
-	ppe_stats.tuple.return_ip = stats->tuple.tuples.tuple_3.dest_ip[0];
+	ppe_stats.tuple.flow_ip = ntohl(stats->tuple.tuples.tuple_3.src_ip[0]);
+	ppe_stats.tuple.return_ip = ntohl(stats->tuple.tuples.tuple_3.dest_ip[0]);
 	if (tuple_type == NETFN_TUPLE_5TUPLE) {
                 ppe_stats.tuple.protocol = stats->tuple.tuples.tuple_5.protocol;
-                ppe_stats.tuple.flow_ip = stats->tuple.tuples.tuple_5.src_ip[0];
-                ppe_stats.tuple.return_ip = stats->tuple.tuples.tuple_5.dest_ip[0];
+                ppe_stats.tuple.flow_ip = ntohl(stats->tuple.tuples.tuple_5.src_ip[0]);
+                ppe_stats.tuple.return_ip = ntohl(stats->tuple.tuples.tuple_5.dest_ip[0]);
                 ppe_stats.tuple.flow_ident = (uint32_t)stats->tuple.tuples.tuple_5.l4_src_ident;
                 ppe_stats.tuple.return_ident = (uint32_t)stats->tuple.tuples.tuple_5.l4_dest_ident;
         }
 
-	ppe_status = ppe_drv_v4_conn_stats_get(&ppe_stats);
+	ppe_status = ppe_drv_v4_get_conn_stats(&ppe_stats);
 	if (ppe_status != PPE_DRV_RET_SUCCESS) {
 		netfn_flowmgr_warn("PPE v4 get ppe_stats failed, ppe_status = %d\n", ppe_status);
 		netfn_flowmgr_warn("PPE v4 get ppe_stats failed for below tuples:\n"
@@ -219,6 +259,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_v4_get_stats(struct netfn_flowmgr_flow_con
 					&ppe_stats.tuple.return_ip,
 					ppe_stats.tuple.flow_ident,
 					ppe_stats.tuple.return_ident);
+		netfn_flowmgr_stats_inc(&dbg_stats->v4_get_stats_failed);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_GET_PPE_STATS_FAILED, ppe_status);
 	}
 
@@ -277,11 +318,16 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_get_stats(struct netfn_flowmgr_flow_conn_s
  */
 netfn_flowmgr_ret_t netfn_flowmgr_ppe_dscp_pri_add(struct netfn_flowmgr_dscp_priority *dscpinfo)
 {
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+	struct netfn_flowmgr_debug_stats *stats;
 	struct ppe_acl_rule acl_rule = {0};
 	struct net_device *netdev = NULL;
 	ppe_acl_ret_t ppe_acl_status;
 	netfn_flowmgr_ret_t status = 0;
 
+	stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_PPE];
+
+	netfn_flowmgr_stats_inc(&stats->dscp_priority_add_req);
 	/*
 	 * Create acl rule
 	 */
@@ -294,6 +340,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_dscp_pri_add(struct netfn_flowmgr_dscp_pri
         netdev = dscpinfo->src_dev;
 	if (!netdev) {
 		netfn_flowmgr_warn("No WAN net device\n");
+		netfn_flowmgr_stats_inc(&stats->dscp_priority_add_req_fail_no_wan_dev);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_INVALID_DSCP_RULE, 0);
 	}
 
@@ -315,6 +362,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_dscp_pri_add(struct netfn_flowmgr_dscp_pri
 	ppe_acl_status = ppe_acl_rule_create(&acl_rule);
 	if (ppe_acl_status != PPE_ACL_RET_SUCCESS) {
                 netfn_flowmgr_warn("Failed to create ACL rule for dscp prioritization, error:%d", ppe_acl_status);
+		netfn_flowmgr_stats_inc(&stats->dscp_priority_add_req_rule_create_fail);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_DSCP_RULE_ADD_FAILED, ppe_acl_status);
         }
 
@@ -330,15 +378,21 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_dscp_pri_add(struct netfn_flowmgr_dscp_pri
  */
 netfn_flowmgr_ret_t netfn_flowmgr_ppe_dscp_pri_del(int16_t rule_id)
 {
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+	struct netfn_flowmgr_debug_stats *stats;
 	netfn_flowmgr_ret_t status = 0;
 	ppe_acl_ret_t ppe_acl_status;
 
+	stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_PPE];
+
+	netfn_flowmgr_stats_inc(&stats->dscp_priority_del_req);
 	/*
 	 * Call ppe acl rule destroy API with rule id obtained during create
 	 */
 	ppe_acl_status = ppe_acl_rule_destroy(rule_id);
 	if (ppe_acl_status != PPE_ACL_RET_SUCCESS) {
                 netfn_flowmgr_warn("Failed to destroy ACL rule for ruleid:%d, error:%d", rule_id, ppe_acl_status);
+		netfn_flowmgr_stats_inc(&stats->dscp_priority_del_req_rule_destroy_fail);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_DSCP_RULE_DEL_FAILED, ppe_acl_status);
         }
 
@@ -403,30 +457,6 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_validate_vlan_info(struct netfn_flowmgr_cr
 		status = NETFN_FLOWMGR_RET_PPE_OUTER_VLAN_MISMATCH;
 	}
 	return status;
-}
-
-/*
- * netfn_flowmgr_ppe_change_ip_endianess()
- *	Change the endianess from network to host order.
- */
-void netfn_flowmgr_ppe_change_ip_endianess(uint32_t ip_addr[], int ip_version)
-{
-	/*
-	 * Change the endianess of IPv4 addr from network to host
-	 */
-	if (ip_version == NETFN_FLOWMGR_TUPLE_IP_VERSION_V4) {
-		ip_addr[0] = ntohl(ip_addr[0]);
-	}
-
-	/*
-	 * Change the endianess of IPv6 addr from network to host
-	 */
-	if (ip_version == NETFN_FLOWMGR_TUPLE_IP_VERSION_V6) {
-		ip_addr[0] = ntohl(ip_addr[0]);
-		ip_addr[1] = ntohl(ip_addr[1]);
-		ip_addr[2] = ntohl(ip_addr[2]);
-		ip_addr[3] = ntohl(ip_addr[3]);
-	}
 }
 
 /*

@@ -180,34 +180,51 @@ netfn_flowmgr_ret_t netfn_flowmgr_dscp_pri_del(int16_t rule_id, netfn_flowmgr_ac
 EXPORT_SYMBOL(netfn_flowmgr_dscp_pri_del);
 
 /*
- * netfn_flowmgr_conn_get_stats()
+ * netfn_flowmgr_get_conn_stats()
  *	API to get stats of a connection based on tuple info.
  */
-netfn_flowmgr_ret_t netfn_flowmgr_conn_get_stats(struct netfn_flowmgr_flow_conn_stats *conn_stats, netfn_flowmgr_accel_mode_t mode)
+netfn_flowmgr_ret_t netfn_flowmgr_get_conn_stats(struct netfn_flowmgr_flow_conn_stats *conn_stats, netfn_flowmgr_accel_mode_t mode)
 {
 	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
 	netfn_flowmgr_ret_t netfn_status = NETFN_FLOWMGR_RET_SUCCESS;
 
+	/*
+	 * Check if conn_stats is valid
+	 */
 	if (!conn_stats) {
 		netfn_flowmgr_warn("Invalid conn stats\n");
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_INVALID_CONN_STATS, 0);
 	}
 
-	if (mode != NETFN_FLOWMGR_ACCEL_MODE_PPE || mode != NETFN_FLOWMGR_ACCEL_MODE_SFE) {
+	/*
+	 * AE mode should either be PPE or SFE
+	 */
+	if ((mode != NETFN_FLOWMGR_ACCEL_MODE_PPE) && (mode != NETFN_FLOWMGR_ACCEL_MODE_SFE)) {
 		netfn_flowmgr_warn("Invalid accel mode\n");
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_INVALID_ACCEL_MODE, 0);
 	}
 
+	/*
+	 * Ops should be registered
+	 */
 	if (f->ae_ops[mode] == NULL) {
 		netfn_flowmgr_warn("Ops not registerd for mode = %d\n", mode);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_OPS_NOT_REGISTERED, 0);
 	}
 
+	/*
+	 * Check if get stats ops is valid
+	 */
 	if (f->ae_ops[mode]->get_stats == NULL) {
 		netfn_flowmgr_warn("get stats no registered for mode = %d\n", mode);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_GET_STATS_NOT_REGISTERED, 0);
 	}
 
+	/*
+	 * Call get stats function registered by AEs.
+	 * If status is non-zero that means get stats is failed and it
+	 * will contain both errors (AE specific error and Netfn error)
+	 */
 	netfn_status = f->ae_ops[mode]->get_stats(conn_stats);
 	if (netfn_status) {
 		netfn_flowmgr_warn("Get stats failed\n");
@@ -216,7 +233,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_conn_get_stats(struct netfn_flowmgr_flow_conn_
 
 	return netfn_status;
 }
-EXPORT_SYMBOL(netfn_flowmgr_conn_get_stats);
+EXPORT_SYMBOL(netfn_flowmgr_get_conn_stats);
 
 /*
  * netfn_flowmgr_ipv6_stats_callback_unregister()
@@ -604,6 +621,7 @@ void __exit netfn_flowmgr_exit_module(void)
 static int __init netfn_flowmgr_init_module(void)
 {
 	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+	int debugfs_status = 0;
 	int ret = 0;
 
 	/*
@@ -629,6 +647,13 @@ static int __init netfn_flowmgr_init_module(void)
 		netfn_flowmgr_warn("sysctl table configuration failed");
 		return -EINVAL;
 	}
+
+	/*
+	 * Initialization of debugfs
+	 */
+	debugfs_status = netfn_flowmgr_stats_debugfs_init();
+	if (debugfs_status)
+		netfn_flowmgr_warn("Netfn flow manager debugfs initialization failed");
 
 	netfn_flowmgr_info("Netfn flow manager module loaded\n");
 

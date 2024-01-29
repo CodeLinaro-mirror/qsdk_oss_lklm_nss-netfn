@@ -36,7 +36,6 @@ struct netfn_flowmgr_debug_stats {
 	atomic64_t v4_create_validate_tuple_ip_addr_mismatch;	/**< No of v4 create rule failed due to ip addr mismatch */
 	atomic64_t v4_create_validate_tuple_ident_mismatch;	/**< No of v4 create rule failed due to ident mismatch */
 	atomic64_t v4_create_validate_tuple_proto_mismatch;	/**< No of v4 create rule failed due to proto mismatch */
-	atomic64_t v4_create_validate_tuple_type_unsupported;	/**< No of v4 create rule failed due to unsupported tuple type */
 	atomic64_t v4_create_validate_tuple_type_invalid;	/**< No of v4 create rule failed due to invalid tuple type */
 	atomic64_t v4_create_validate_tuple_invalid_nat_bridge;	/**< No of v4 create rule failed due to unsupported nat + bridge */
 	atomic64_t v4_create_validate_tuple_invalid_net_dev;	/**< No of v4 create rule failed due to invalid net device */
@@ -65,6 +64,7 @@ struct netfn_flowmgr_debug_stats {
 	atomic64_t v4_destroy_ppe_rule_req;			/**< No of v4 ppe destroy rule requests */
 	atomic64_t v4_destroy_rule_ppe_success;			/**< No of v4 successful ppe destroy rule requests */
 	atomic64_t v4_destroy_rule_req_fail_ppe_fail;		/**< No of v4 failed ppe destroy rule requests */
+	atomic64_t v4_get_stats_failed;				/**< No of v4 get stats failed requests */
 
 	/* v4 SFE stats */
 	atomic64_t v4_create_sfe_rule_req;			/**< No of v4 sfe create rule requests */
@@ -128,6 +128,7 @@ struct netfn_flowmgr_debug_stats {
 	atomic64_t v6_destroy_ppe_rule_req;			/**< No of v6 ppe destroy rule requests */
 	atomic64_t v6_destroy_rule_ppe_success;			/**< No of v6 successful ppe destroy rule requests */
 	atomic64_t v6_destroy_rule_req_fail_ppe_fail;		/**< No of v6 failed ppe destroy rule requests */
+	atomic64_t v6_get_stats_failed;				/**< No of v6 get stats failed requests */
 
 	/* v6 SFE stats */
 	atomic64_t v6_create_sfe_rule_req;			/**< No of v4 sfe create rule requests */
@@ -140,6 +141,12 @@ struct netfn_flowmgr_debug_stats {
 	/* common stats */
 	atomic64_t validate_vlan_inner_mismatch;		/**< No of v4/v6 create rule failed due to inner vlan mismatch */
 	atomic64_t validate_vlan_outer_mismatch;		/**< No of v4/v6 create rule failed due to outer vlan mismatch */
+	atomic64_t validate_unsupported_tuple_type;		/**< No of v4/v6 failure due to unsupported tuple type */
+	atomic64_t dscp_priority_add_req;			/**< No of add dscp priority requests */
+	atomic64_t dscp_priority_del_req;			/**< No of del dscp priority requests */
+	atomic64_t dscp_priority_add_req_fail_no_wan_dev;	/**< No of add dscp priority request fail due to no WAN dev  */
+	atomic64_t dscp_priority_add_req_rule_create_fail;	/**< No of add dscp priority request fail due to rule create fail  */
+	atomic64_t dscp_priority_del_req_rule_destroy_fail;	/**< No of del dscp priority request fail due to rule destroy fail  */
 };
 
 /*
