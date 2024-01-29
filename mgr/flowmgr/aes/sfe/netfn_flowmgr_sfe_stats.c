@@ -35,10 +35,13 @@ struct workqueue_struct *netfn_flowmgr_sfe_ipv6_workqueue;
  */
 void netfn_flowmgr_sfe_ipv4_process_one_conn_sync_msg(struct sfe_ipv4_conn_sync *sync)
 {
-	struct netfn_flowmgr_conn_stats conn_stats;
 	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+	struct netfn_flowmgr_conn_stats conn_stats;
 	netfn_flowmgr_ipv4_stats_callback_t sync_cb;
 	void *sync_data;
+	struct netfn_flowmgr_debug_stats *stats;
+
+	stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_SFE];
 
 	spin_lock(&f->lock);
 	sync_cb = f->stats_sync_v4_cb;
@@ -47,6 +50,7 @@ void netfn_flowmgr_sfe_ipv4_process_one_conn_sync_msg(struct sfe_ipv4_conn_sync 
 
 	if (!sync_cb) {
 		netfn_flowmgr_warn("No callback registered for stats sync\n");
+		netfn_flowmgr_stats_inc(&stats->v4_stats_sync_callback_not_registered);
 		return;
 	}
 
@@ -107,11 +111,17 @@ void netfn_flowmgr_sfe_ipv4_process_one_conn_sync_msg(struct sfe_ipv4_conn_sync 
  */
 void netfn_flowmgr_sfe_ipv4_stats_sync_callback(void *app_data, struct sfe_ipv4_msg *nim)
 {
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+	struct netfn_flowmgr_debug_stats *stats;
+
+	stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_SFE];
+
 	/*
 	 * Only respond to sync messages
 	 */
 	if (nim->cm.type != SFE_RX_CONN_STATS_SYNC_MSG) {
 		netfn_flowmgr_warn("Ignoring nim: %px - not sync: %d", nim, nim->cm.type);
+		netfn_flowmgr_stats_inc(&stats->v4_stats_sync_invalid_msg_type);
 		return;
 	}
 	netfn_flowmgr_sfe_ipv4_process_one_conn_sync_msg(&nim->msg.conn_stats);
@@ -167,19 +177,24 @@ void netfn_flowmgr_sfe_ipv4_connection_sync_many_callback(void *app_data, struct
  * netfn_flowmgr_sfe_v4_get_stats()
  *	Get SFE IPv4 stats for a single connection
  */
-netfn_flowmgr_ret_t netfn_flowmgr_sfe_v4_get_stats(struct netfn_flowmgr_flow_conn_stats *stats)
+netfn_flowmgr_ret_t netfn_flowmgr_sfe_v4_get_stats(struct netfn_flowmgr_flow_conn_stats *conn_stats)
 {
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
 	struct sfe_ipv4_single_conn_stats sfe_stats;
 	netfn_tuple_type_t tuple_type;
 	bool sfe_status;
+	struct netfn_flowmgr_debug_stats *stats;
 
-	tuple_type = stats->tuple.tuple_type;
+	stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_SFE];
+
+	tuple_type = conn_stats->tuple.tuple_type;
 
 	/*
 	 * Check tuple type
 	 */
 	if (!(tuple_type == NETFN_TUPLE_3TUPLE) && !(tuple_type == NETFN_TUPLE_4TUPLE) && !(tuple_type == NETFN_TUPLE_5TUPLE)) {
 		netfn_flowmgr_warn("Unsupported tupple type in SFE acceleration mode, tuple_type = %d\n", tuple_type);
+		netfn_flowmgr_stats_inc(&stats->v4_get_stats_tuple_type_unsupported);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_UNSUPPORTED_TUPLE_TYPE, 0);
 	}
 
@@ -199,14 +214,14 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_v4_get_stats(struct netfn_flowmgr_flow_con
 			sfe_stats.tuple.return_ident = stats->tuple.tuples.tuple_4.l4_ident;
 		}
 	} else if (tuple_type == NETFN_TUPLE_5TUPLE) {
-                sfe_stats.tuple.protocol = stats->tuple.tuples.tuple_5.protocol;
-                sfe_stats.tuple.flow_ip = stats->tuple.tuples.tuple_5.src_ip[0];
-                sfe_stats.tuple.return_ip = stats->tuple.tuples.tuple_5.dest_ip[0];
-                sfe_stats.tuple.flow_ident = stats->tuple.tuples.tuple_5.l4_src_ident;
-                sfe_stats.tuple.return_ident = stats->tuple.tuples.tuple_5.l4_dest_ident;
+                sfe_stats.tuple.protocol = conn_stats->tuple.tuples.tuple_5.protocol;
+                sfe_stats.tuple.flow_ip = conn_stats->tuple.tuples.tuple_5.src_ip[0];
+                sfe_stats.tuple.return_ip = conn_stats->tuple.tuples.tuple_5.dest_ip[0];
+                sfe_stats.tuple.flow_ident = conn_stats->tuple.tuples.tuple_5.l4_src_ident;
+                sfe_stats.tuple.return_ident = conn_stats->tuple.tuples.tuple_5.l4_dest_ident;
         }
-	sfe_stats.org_dev = stats->org_netdev;
-	sfe_stats.reply_dev = stats->reply_netdev;
+	sfe_stats.org_dev = conn_stats->org_netdev;
+	sfe_stats.reply_dev = conn_stats->reply_netdev;
 
 	sfe_status = sfe_ipv4_get_single_conn_stats(&sfe_stats);
 	if (!sfe_status) {
@@ -221,38 +236,39 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_v4_get_stats(struct netfn_flowmgr_flow_con
 					&sfe_stats.tuple.return_ip,
 					sfe_stats.tuple.flow_ident,
 					sfe_stats.tuple.return_ident);
+		netfn_flowmgr_stats_inc(&stats->v4_get_stats_fail);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_GET_SFE_STATS_FAILED, sfe_status);
 	}
 
 	/*
 	 * Copy sfe stats to the conn stats structure to update the user stats.
 	 */
-	stats->conn_stats.ip_version = ETH_P_IP;
-	stats->conn_stats.protocol = sfe_stats.tuple.protocol;
+	conn_stats->conn_stats.ip_version = ETH_P_IP;
+	conn_stats->conn_stats.protocol = sfe_stats.tuple.protocol;
 
 	/*
 	 * original direction stats
 	 */
-	stats->conn_stats.org_src_ip[0] = sfe_stats.tuple.flow_ip;
-	stats->conn_stats.org_dest_ip[0] = sfe_stats.tuple.return_ip;
-	stats->conn_stats.org_src_ident = sfe_stats.tuple.flow_ident;
-	stats->conn_stats.org_dest_ident = sfe_stats.tuple.return_ident;
-	stats->conn_stats.org_tx_pkt_count = sfe_stats.tx_packet_count;
-	stats->conn_stats.org_rx_pkt_count = sfe_stats.rx_packet_count;
-	stats->conn_stats.org_tx_byte_count = sfe_stats.tx_byte_count;
-	stats->conn_stats.org_rx_byte_count = sfe_stats.rx_byte_count;
+	conn_stats->conn_stats.org_src_ip[0] = sfe_stats.tuple.flow_ip;
+	conn_stats->conn_stats.org_dest_ip[0] = sfe_stats.tuple.return_ip;
+	conn_stats->conn_stats.org_src_ident = sfe_stats.tuple.flow_ident;
+	conn_stats->conn_stats.org_dest_ident = sfe_stats.tuple.return_ident;
+	conn_stats->conn_stats.org_tx_pkt_count = sfe_stats.tx_packet_count;
+	conn_stats->conn_stats.org_rx_pkt_count = sfe_stats.rx_packet_count;
+	conn_stats->conn_stats.org_tx_byte_count = sfe_stats.tx_byte_count;
+	conn_stats->conn_stats.org_rx_byte_count = sfe_stats.rx_byte_count;
 
 	/*
 	 * reply direction stats
 	 */
-	stats->conn_stats.reply_src_ip[0] = sfe_stats.tuple.return_ip;
-	stats->conn_stats.reply_dest_ip[0] = sfe_stats.tuple.flow_ip;
-	stats->conn_stats.reply_src_ident = sfe_stats.tuple.return_ident;
-	stats->conn_stats.reply_dest_ident = sfe_stats.tuple.flow_ident;
-	stats->conn_stats.reply_tx_pkt_count = sfe_stats.rx_packet_count;
-	stats->conn_stats.reply_rx_pkt_count = sfe_stats.tx_packet_count;
-	stats->conn_stats.reply_tx_byte_count = sfe_stats.rx_byte_count;
-	stats->conn_stats.reply_rx_byte_count = sfe_stats.tx_byte_count;
+	conn_stats->conn_stats.reply_src_ip[0] = sfe_stats.tuple.return_ip;
+	conn_stats->conn_stats.reply_dest_ip[0] = sfe_stats.tuple.flow_ip;
+	conn_stats->conn_stats.reply_src_ident = sfe_stats.tuple.return_ident;
+	conn_stats->conn_stats.reply_dest_ident = sfe_stats.tuple.flow_ident;
+	conn_stats->conn_stats.reply_tx_pkt_count = sfe_stats.rx_packet_count;
+	conn_stats->conn_stats.reply_rx_pkt_count = sfe_stats.tx_packet_count;
+	conn_stats->conn_stats.reply_tx_byte_count = sfe_stats.rx_byte_count;
+	conn_stats->conn_stats.reply_rx_byte_count = sfe_stats.tx_byte_count;
 
 	return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_SUCCESS, sfe_status);
 }
@@ -321,10 +337,13 @@ void netfn_flowmgr_sfe_ipv4_stats_deinit(void)
  */
 void netfn_flowmgr_sfe_ipv6_process_one_conn_sync_msg(struct sfe_ipv6_conn_sync *sync)
 {
-	struct netfn_flowmgr_conn_stats conn_stats;
 	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+	struct netfn_flowmgr_conn_stats conn_stats;
 	netfn_flowmgr_ipv6_stats_callback_t sync_cb;
 	void *sync_data;
+	struct netfn_flowmgr_debug_stats *stats;
+
+	stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_SFE];
 
 	spin_lock(&f->lock);
 	sync_cb = f->stats_sync_v6_cb;
@@ -333,6 +352,7 @@ void netfn_flowmgr_sfe_ipv6_process_one_conn_sync_msg(struct sfe_ipv6_conn_sync 
 
 	if (!sync_cb) {
 		netfn_flowmgr_warn("No callback registered for stats sync\n");
+		netfn_flowmgr_stats_inc(&stats->v6_stats_sync_callback_not_registered);
 		return;
 	}
 
@@ -390,11 +410,17 @@ void netfn_flowmgr_sfe_ipv6_process_one_conn_sync_msg(struct sfe_ipv6_conn_sync 
  */
 void netfn_flowmgr_sfe_ipv6_stats_sync_callback(void *app_data, struct sfe_ipv6_msg *nim)
 {
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+	struct netfn_flowmgr_debug_stats *stats;
+
+	stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_SFE];
+
 	/*
 	 * Only respond to sync messages
 	 */
 	if (nim->cm.type != SFE_RX_CONN_STATS_SYNC_MSG) {
 		netfn_flowmgr_warn("Ignoring nim: %px - not sync: %d", nim, nim->cm.type);
+		netfn_flowmgr_stats_inc(&stats->v6_stats_sync_invalid_msg_type);
 		return;
 	}
 	netfn_flowmgr_sfe_ipv6_process_one_conn_sync_msg(&nim->msg.conn_stats);
@@ -450,28 +476,33 @@ void netfn_flowmgr_sfe_ipv6_stats_sync_req_work(struct work_struct *work)
  * netfn_flowmgr_sfe_v6_get_stats()
  *	Get SFE IPv6 stats for a single connection
  */
-netfn_flowmgr_ret_t netfn_flowmgr_sfe_v6_get_stats(struct netfn_flowmgr_flow_conn_stats *stats)
+netfn_flowmgr_ret_t netfn_flowmgr_sfe_v6_get_stats(struct netfn_flowmgr_flow_conn_stats *conn_stats)
 {
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
 	struct sfe_ipv6_single_conn_stats sfe_stats;
 	netfn_tuple_type_t tuple_type;
 	bool sfe_status;
+	struct netfn_flowmgr_debug_stats *stats;
 
-	tuple_type = stats->tuple.tuple_type;
+	stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_SFE];
+
+	tuple_type = conn_stats->tuple.tuple_type;
 
 	/*
 	 * Check tuple type
 	 */
 	if (!(tuple_type == NETFN_TUPLE_3TUPLE) && !(tuple_type == NETFN_TUPLE_4TUPLE) && !(tuple_type == NETFN_TUPLE_5TUPLE)) {
 		netfn_flowmgr_warn("Unsupported tupple type in SFE acceleration mode, tuple_type = %d\n", tuple_type);
+		netfn_flowmgr_stats_inc(&stats->v6_get_stats_tuple_type_unsupported);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_UNSUPPORTED_TUPLE_TYPE, 0);
 	}
 
 	sfe_stats.tuple.flow_ident = 0;
 	sfe_stats.tuple.return_ident = 0;
 	if (tuple_type == NETFN_TUPLE_3TUPLE) {
-		sfe_stats.tuple.protocol = stats->tuple.tuples.tuple_3.protocol;
-		memcpy(sfe_stats.tuple.flow_ip, stats->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
-		memcpy(sfe_stats.tuple.return_ip, stats->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
+		sfe_stats.tuple.protocol = conn_stats->tuple.tuples.tuple_3.protocol;
+		memcpy(sfe_stats.tuple.flow_ip, conn_stats->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
+		memcpy(sfe_stats.tuple.return_ip, conn_stats->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
 		sfe_stats.tuple.flow_ident = 0;
 		sfe_stats.tuple.return_ident = 0;
 	} else if (tuple_type == NETFN_TUPLE_4TUPLE) {
@@ -484,14 +515,14 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_v6_get_stats(struct netfn_flowmgr_flow_con
 			sfe_stats.tuple.return_ident = stats->tuple.tuples.tuple_4.l4_ident;
 		}
 	} else if (tuple_type == NETFN_TUPLE_5TUPLE) {
-                sfe_stats.tuple.protocol = stats->tuple.tuples.tuple_5.protocol;
-		memcpy(sfe_stats.tuple.flow_ip, stats->tuple.tuples.tuple_5.src_ip, sizeof(uint32_t) * 4);
-		memcpy(sfe_stats.tuple.return_ip, stats->tuple.tuples.tuple_5.dest_ip, sizeof(uint32_t) * 4);
-                sfe_stats.tuple.flow_ident = stats->tuple.tuples.tuple_5.l4_src_ident;
-                sfe_stats.tuple.return_ident = stats->tuple.tuples.tuple_5.l4_dest_ident;
+                sfe_stats.tuple.protocol = conn_stats->tuple.tuples.tuple_5.protocol;
+		memcpy(sfe_stats.tuple.flow_ip, conn_stats->tuple.tuples.tuple_5.src_ip, sizeof(uint32_t) * 4);
+		memcpy(sfe_stats.tuple.return_ip, conn_stats->tuple.tuples.tuple_5.dest_ip, sizeof(uint32_t) * 4);
+                sfe_stats.tuple.flow_ident = conn_stats->tuple.tuples.tuple_5.l4_src_ident;
+                sfe_stats.tuple.return_ident = conn_stats->tuple.tuples.tuple_5.l4_dest_ident;
         }
-	sfe_stats.org_dev = stats->org_netdev;
-	sfe_stats.reply_dev = stats->reply_netdev;
+	sfe_stats.org_dev = conn_stats->org_netdev;
+	sfe_stats.reply_dev = conn_stats->reply_netdev;
 
 	sfe_status = sfe_ipv6_get_single_conn_stats(&sfe_stats);
 	if (!sfe_status) {
@@ -506,38 +537,39 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_v6_get_stats(struct netfn_flowmgr_flow_con
 					&sfe_stats.tuple.return_ip,
 					sfe_stats.tuple.flow_ident,
 					sfe_stats.tuple.return_ident);
+		netfn_flowmgr_stats_inc(&stats->v6_get_stats_fail);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_GET_SFE_STATS_FAILED, sfe_status);
 	}
 
 	/*
 	 * Copy sfe stats to the conn stats structure to update the user stats.
 	 */
-	stats->conn_stats.ip_version = ETH_P_IP;
-	stats->conn_stats.protocol = sfe_stats.tuple.protocol;
+	conn_stats->conn_stats.ip_version = ETH_P_IP;
+	conn_stats->conn_stats.protocol = sfe_stats.tuple.protocol;
 
 	/*
 	 * original direction stats
 	 */
-	memcpy(stats->conn_stats.org_src_ip, sfe_stats.tuple.flow_ip, sizeof(uint32_t) * 4);
-	memcpy(stats->conn_stats.org_dest_ip, sfe_stats.tuple.return_ip, sizeof(uint32_t) * 4);
-	stats->conn_stats.org_src_ident = sfe_stats.tuple.flow_ident;
-	stats->conn_stats.org_dest_ident = sfe_stats.tuple.return_ident;
-	stats->conn_stats.org_tx_pkt_count = sfe_stats.tx_packet_count;
-	stats->conn_stats.org_rx_pkt_count = sfe_stats.rx_packet_count;
-	stats->conn_stats.org_tx_byte_count = sfe_stats.tx_byte_count;
-	stats->conn_stats.org_rx_byte_count = sfe_stats.rx_byte_count;
+	memcpy(conn_stats->conn_stats.org_src_ip, sfe_stats.tuple.flow_ip, sizeof(uint32_t) * 4);
+	memcpy(conn_stats->conn_stats.org_dest_ip, sfe_stats.tuple.return_ip, sizeof(uint32_t) * 4);
+	conn_stats->conn_stats.org_src_ident = sfe_stats.tuple.flow_ident;
+	conn_stats->conn_stats.org_dest_ident = sfe_stats.tuple.return_ident;
+	conn_stats->conn_stats.org_tx_pkt_count = sfe_stats.tx_packet_count;
+	conn_stats->conn_stats.org_rx_pkt_count = sfe_stats.rx_packet_count;
+	conn_stats->conn_stats.org_tx_byte_count = sfe_stats.tx_byte_count;
+	conn_stats->conn_stats.org_rx_byte_count = sfe_stats.rx_byte_count;
 
 	/*
 	 * reply direction stats
 	 */
-	memcpy(stats->conn_stats.reply_src_ip, sfe_stats.tuple.return_ip, sizeof(uint32_t) * 4);
-	memcpy(stats->conn_stats.reply_dest_ip, sfe_stats.tuple.flow_ip, sizeof(uint32_t) * 4);
-	stats->conn_stats.reply_src_ident = sfe_stats.tuple.return_ident;
-	stats->conn_stats.reply_dest_ident = sfe_stats.tuple.flow_ident;
-	stats->conn_stats.reply_tx_pkt_count = sfe_stats.rx_packet_count;
-	stats->conn_stats.reply_rx_pkt_count = sfe_stats.tx_packet_count;
-	stats->conn_stats.reply_tx_byte_count = sfe_stats.rx_byte_count;
-	stats->conn_stats.reply_rx_byte_count = sfe_stats.tx_byte_count;
+	memcpy(conn_stats->conn_stats.reply_src_ip, sfe_stats.tuple.return_ip, sizeof(uint32_t) * 4);
+	memcpy(conn_stats->conn_stats.reply_dest_ip, sfe_stats.tuple.flow_ip, sizeof(uint32_t) * 4);
+	conn_stats->conn_stats.reply_src_ident = sfe_stats.tuple.return_ident;
+	conn_stats->conn_stats.reply_dest_ident = sfe_stats.tuple.flow_ident;
+	conn_stats->conn_stats.reply_tx_pkt_count = sfe_stats.rx_packet_count;
+	conn_stats->conn_stats.reply_rx_pkt_count = sfe_stats.tx_packet_count;
+	conn_stats->conn_stats.reply_tx_byte_count = sfe_stats.rx_byte_count;
+	conn_stats->conn_stats.reply_rx_byte_count = sfe_stats.tx_byte_count;
 
 	return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_SUCCESS, sfe_status);
 }

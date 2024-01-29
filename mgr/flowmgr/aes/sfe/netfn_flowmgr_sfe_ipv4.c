@@ -15,6 +15,7 @@
 #include <sfe_api.h>
 #include <netfn_flowmgr.h>
 #include <flowmgr/netfn_flowmgr_priv.h>
+#include <flowmgr/netfn_flowmgr_stats.h>
 #include "netfn_flowmgr_sfe.h"
 #include "netfn_flowmgr_sfe_stats.h"
 #include "netfn_flowmgr_sfe_ipv4.h"
@@ -27,6 +28,7 @@ bool sfe_ipv4_stats_sync = false;
  */
 static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_destroy_tuple_info(struct netfn_flowmgr_destroy_rule *original, struct netfn_flowmgr_destroy_rule *reply)
 {
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
 	uint32_t org_src_ip;
 	uint32_t org_dst_ip;
 	uint32_t reply_src_ip;
@@ -38,8 +40,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_destroy_tuple_info(stru
 	uint16_t reply_src_ident;
 	uint16_t reply_dst_ident;
 	netfn_tuple_type_t tuple_type;
+	struct netfn_flowmgr_debug_stats *stats;
 	netfn_flowmgr_ret_t status = NETFN_FLOWMGR_RET_SUCCESS;
 
+	stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_SFE];
 	netfn_flowmgr_trace("org tuple type = %d\n", original->tuple.tuple_type);
 	netfn_flowmgr_trace("reply tuple type = %d\n", reply->tuple.tuple_type);
 
@@ -48,6 +52,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_destroy_tuple_info(stru
 	 */
 	if (original->tuple.tuple_type != reply->tuple.tuple_type){
 		netfn_flowmgr_warn("Tuple type is not matching for original and reply direction\n");
+		netfn_flowmgr_stats_inc(&stats->v4_destroy_validate_tuple_mismatch);
 		return NETFN_FLOWMGR_RET_SFE_TUPLE_MISMATCH;
 	}
 
@@ -57,6 +62,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_destroy_tuple_info(stru
 	 * Based on tuple type validate the tuple info
 	 */
 	if (tuple_type == NETFN_TUPLE_3TUPLE) {
+		netfn_flowmgr_stats_inc(&stats->v4_destroy_validate_tuple_type_3);
 		/*
 		 * IPs
 		 */
@@ -69,6 +75,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_destroy_tuple_info(stru
 			netfn_flowmgr_warn("Non-matching IP addresses in flow and return direction\n");
 			netfn_flowmgr_warn("org_src_ip = %pI4, org_dst_ip = %pI4\n", &org_src_ip, &org_dst_ip);
 			netfn_flowmgr_warn("reply_src_ip = %pI4, reply_dst_ip = %pI4\n", &reply_src_ip, &reply_dst_ip);
+			netfn_flowmgr_stats_inc(&stats->v4_destroy_validate_tuple_ip_addr_mismatch);
 			return NETFN_FLOWMGR_RET_SFE_IP_ADDR_MISMATCH;
 		}
 
@@ -78,9 +85,11 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_destroy_tuple_info(stru
 		if (original->tuple.tuples.tuple_3.protocol != reply->tuple.tuples.tuple_3.protocol) {
 			netfn_flowmgr_warn("Non-matching protocol in flow and return direction, org_proto = %u, reply_proto = %u\n",
 						original->tuple.tuples.tuple_3.protocol, reply->tuple.tuples.tuple_3.protocol);
+			netfn_flowmgr_stats_inc(&stats->v4_destroy_validate_tuple_proto_mismatch);
 			return NETFN_FLOWMGR_RET_SFE_PROTOCOL_MISMATCH;
 		}
 	} else if (tuple_type == NETFN_TUPLE_4TUPLE) {
+		netfn_flowmgr_stats_inc(&stats->v4_destroy_validate_tuple_type_4);
 		/*
 		 * IPs
 		 */
@@ -102,6 +111,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_destroy_tuple_info(stru
 			netfn_flowmgr_warn("Non-matching IP addresses in flow and return direction\n");
 			netfn_flowmgr_warn("org_src_ip = %pI4, org_dst_ip = %pI4\n", &org_src_ip, &org_dst_ip);
 			netfn_flowmgr_warn("reply_src_ip = %pI4, reply_dst_ip = %pI4\n", &reply_src_ip, &reply_dst_ip);
+			netfn_flowmgr_stats_inc(&stats->v4_destroy_validate_tuple_ip_addr_mismatch);
 			return NETFN_FLOWMGR_RET_SFE_IP_ADDR_MISMATCH;
 		}
 
@@ -112,6 +122,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_destroy_tuple_info(stru
 			netfn_flowmgr_warn("Non-matching port numbers in flow and return direction\n");
 			netfn_flowmgr_warn("org_ident = %u\n", org_ident);
 			netfn_flowmgr_warn("reply_ident = %u\n", reply_ident);
+			netfn_flowmgr_stats_inc(&stats->v4_destroy_validate_tuple_ident_mismatch);
 			return NETFN_FLOWMGR_RET_SFE_PORT_MISMATCH;
 		}
 
@@ -121,9 +132,11 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_destroy_tuple_info(stru
 		if (original->tuple.tuples.tuple_4.protocol != reply->tuple.tuples.tuple_4.protocol) {
 			netfn_flowmgr_warn("Non-matching protocol in flow and return direction, org_proto = %u, reply_proto = %u\n",
 						original->tuple.tuples.tuple_4.protocol, reply->tuple.tuples.tuple_4.protocol);
+			netfn_flowmgr_stats_inc(&stats->v4_destroy_validate_tuple_proto_mismatch);
 			return NETFN_FLOWMGR_RET_SFE_PROTOCOL_MISMATCH;
 		}
         } else if (tuple_type == NETFN_TUPLE_5TUPLE) {
+		netfn_flowmgr_stats_inc(&stats->v4_destroy_validate_tuple_type_5);
 		/*
 		 * IPs
 		 */
@@ -147,6 +160,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_destroy_tuple_info(stru
 			netfn_flowmgr_warn("Non-matching IP addresses in flow and return direction\n");
 			netfn_flowmgr_warn("org_src_ip = %pI4, org_dst_ip = %pI4\n", &org_src_ip, &org_dst_ip);
 			netfn_flowmgr_warn("reply_src_ip = %pI4, reply_dst_ip = %pI4\n", &reply_src_ip, &reply_dst_ip);
+			netfn_flowmgr_stats_inc(&stats->v4_destroy_validate_tuple_ip_addr_mismatch);
 			return NETFN_FLOWMGR_RET_SFE_IP_ADDR_MISMATCH;
 		}
 
@@ -157,6 +171,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_destroy_tuple_info(stru
 			netfn_flowmgr_warn("Non-matching port numbers in flow and return direction\n");
 			netfn_flowmgr_warn("org_src_ident = %u, org_dst_ident = %u\n", org_src_ident, org_dst_ident);
 			netfn_flowmgr_warn("reply_src_ident = %u, reply_dst_ident = %u\n", reply_src_ident, reply_dst_ident);
+			netfn_flowmgr_stats_inc(&stats->v4_destroy_validate_tuple_ident_mismatch);
 			return NETFN_FLOWMGR_RET_SFE_PORT_MISMATCH;
 		}
 
@@ -166,11 +181,13 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_destroy_tuple_info(stru
 		if (original->tuple.tuples.tuple_5.protocol != reply->tuple.tuples.tuple_5.protocol) {
 			netfn_flowmgr_warn("Non-matching protocol in flow and return direction, org_proto = %u, reply_proto = %u\n",
 						original->tuple.tuples.tuple_5.protocol, reply->tuple.tuples.tuple_5.protocol);
+			netfn_flowmgr_stats_inc(&stats->v4_destroy_validate_tuple_proto_mismatch);
 			return NETFN_FLOWMGR_RET_SFE_PROTOCOL_MISMATCH;
 		}
 
 	} else {
 		netfn_flowmgr_warn("Unsupported tuple type\n");
+		netfn_flowmgr_stats_inc(&stats->v4_destroy_validate_tuple_type_invalid);
 		return NETFN_FLOWMGR_RET_SFE_UNSUPPORTED_TUPLE_TYPE;
 	}
 	return status;
@@ -182,11 +199,20 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_destroy_tuple_info(stru
  */
 netfn_flowmgr_ret_t netfn_flowmgr_sfe_destroy_v4_rule(struct netfn_flowmgr_destroy_rule *original, struct netfn_flowmgr_destroy_rule *reply)
 {
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
 	netfn_tuple_type_t tuple_type;
 	struct sfe_ipv4_msg *nim;
 	struct sfe_ipv4_rule_destroy_msg *nirdm;
+	struct netfn_flowmgr_debug_stats *stats;
 	netfn_flowmgr_ret_t netfn_status = NETFN_FLOWMGR_RET_SUCCESS;
 	sfe_tx_status_t sfe_status = SFE_TX_SUCCESS;
+
+	stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_SFE];
+
+	/*
+	 * Update stats
+	 */
+	netfn_flowmgr_stats_inc(&stats->v4_destroy_sfe_rule_req);
 
 	/*
 	 * Validate SFE tuple information
@@ -194,12 +220,14 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_destroy_v4_rule(struct netfn_flowmgr_destr
 	netfn_status = netfn_flowmgr_sfe_validate_v4_destroy_tuple_info(original, reply);
 	if (netfn_status != NETFN_FLOWMGR_RET_SUCCESS) {
 		netfn_flowmgr_warn("Invalid tuple info, SFE rule destroy failed\n");
+		netfn_flowmgr_stats_inc(&stats->v4_destroy_rule_req_fail_sfe_fail);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(netfn_status, sfe_status);
 	}
 
 	nim = (struct sfe_ipv4_msg *)kzalloc(sizeof(struct sfe_ipv4_msg), GFP_ATOMIC);
 	if (!nim) {
 		netfn_flowmgr_warn("no memory for sfe ipv4 message structure instance: %px, %px\n", original, reply);
+		netfn_flowmgr_stats_inc(&stats->v4_destroy_rule_req_fail_no_mem);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_NO_MEM, sfe_status);
 	}
 
@@ -257,10 +285,12 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_destroy_v4_rule(struct netfn_flowmgr_destr
 	sfe_status = sfe_ipv4_tx_with_resp(NULL, nim);
 	if (sfe_status != SFE_TX_SUCCESS) {
 		netfn_flowmgr_warn("SFE rule destroy failed with error: %u\n", sfe_status);
+		netfn_flowmgr_stats_inc(&stats->v4_destroy_rule_req_fail_sfe_fail);
 		netfn_status = NETFN_FLOWMGR_RET_DESTROY_RULE_FAILED;
 		goto done;
 	}
 
+	netfn_flowmgr_stats_inc(&stats->v4_destroy_rule_sfe_success);
 	netfn_flowmgr_warn("SFE v4 rule destroy success\n");
 done:
 	kfree(nim);
@@ -350,6 +380,7 @@ void netfn_flowmgr_sfe_fill_v4_default_create_msg_values(struct netfn_flowmgr_cr
  */
 static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struct netfn_flowmgr_create_rule *original, struct netfn_flowmgr_create_rule *reply)
 {
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
 	netfn_tuple_type_t tuple_type;
 	uint32_t org_rules;
 	uint32_t reply_rules;
@@ -373,8 +404,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 	uint16_t org_dst_ident_xlate;
 	uint16_t reply_src_ident_xlate;
 	uint16_t reply_dst_ident_xlate;
+	struct netfn_flowmgr_debug_stats *stats;
 	netfn_flowmgr_ret_t status = NETFN_FLOWMGR_RET_SUCCESS;
 
+	stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_SFE];
 	netfn_flowmgr_trace("org tuple type = %d\n", original->tuple.tuple_type);
 	netfn_flowmgr_trace("reply tuple type = %d\n", reply->tuple.tuple_type);
 
@@ -383,6 +416,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 	 */
 	if (original->tuple.tuple_type != reply->tuple.tuple_type){
 		netfn_flowmgr_warn("Tuple type is not matching for original and reply direction\n");
+		netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_mismatch);
 		return NETFN_FLOWMGR_RET_SFE_TUPLE_MISMATCH;
 	}
 
@@ -405,12 +439,14 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 	if ((org_rules & NETFN_FLOWMGR_VALID_RULE_FLAG_SRC_NAT) && (reply_rules & NETFN_FLOWMGR_VALID_RULE_FLAG_DST_NAT)) {
 		if(original->flow_flags & NETFN_FLOWMGR_FLOW_FLAG_BRIDGE_FLOW) {
 			netfn_flowmgr_warn("NAT with bridging is not supported\n");
+			netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_invalid_nat_bridge);
 			return NETFN_FLOWMGR_RET_SFE_NAT_WITH_BRIDGE_UNSUPPORTED;
 		}
 	}
 
 	if (!(original->flow_info.in_dev && original->flow_info.out_dev && original->flow_info.top_indev && original->flow_info.top_outdev)) {
 		netfn_flowmgr_warn("Invalid Net Device\n");
+		netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_invalid_net_dev);
 		return NETFN_FLOWMGR_RET_INVALID_RULE;
 	}
 
@@ -426,6 +462,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 	 * Based on tuple type validate the tuple info
 	 */
 	if (tuple_type == NETFN_TUPLE_3TUPLE) {
+		netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_type_3);
 		/*
 		 * Non-xlate IPs
 		 */
@@ -446,6 +483,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 			if(((org_src_ip_xlate != reply_dst_ip) && (org_src_ip != reply_dst_ip_xlate)) &&
 				(org_dst_ip != reply_src_ip) && (org_dst_ip_xlate != reply_src_ip_xlate)){
 				netfn_flowmgr_warn("Invalid SNAT configuration\n");
+				netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_invalid_snat_ip);
 				return NETFN_FLOWMGR_RET_SFE_INVALID_SNAT_IP_CONFIGURATION;
 			}
 		} else if (org_rules & NETFN_FLOWMGR_VALID_RULE_FLAG_DST_NAT) {
@@ -455,6 +493,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 			if(((org_src_ip_xlate != reply_dst_ip_xlate) && (org_src_ip != reply_dst_ip)) &&
 				(org_dst_ip != reply_src_ip_xlate) && (org_dst_ip_xlate != reply_src_ip)){
 				netfn_flowmgr_warn("Invalid DNAT configuration\n");
+				netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_invalid_dnat_ip);
 				return NETFN_FLOWMGR_RET_SFE_INVALID_DNAT_IP_CONFIGURATION;
 			}
 		} else {
@@ -465,6 +504,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 				netfn_flowmgr_warn("Non-matching IP addresses in flow and return direction\n");
 				netfn_flowmgr_warn("org_src_ip = %pI4, org_dst_ip = %pI4\n", &org_src_ip, &org_dst_ip);
 				netfn_flowmgr_warn("reply_src_ip = %pI4, reply_dst_ip = %pI4\n", &reply_src_ip, &reply_dst_ip);
+				netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_ip_addr_mismatch);
 				return NETFN_FLOWMGR_RET_SFE_IP_ADDR_MISMATCH;
 			}
 		}
@@ -475,9 +515,11 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 		if (original->tuple.tuples.tuple_3.protocol != reply->tuple.tuples.tuple_3.protocol) {
 			netfn_flowmgr_warn("Non-matching protocol in flow and return direction, org_proto = %u, reply_proto = %u\n",
 						original->tuple.tuples.tuple_3.protocol, reply->tuple.tuples.tuple_3.protocol);
+			netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_proto_mismatch);
 			return NETFN_FLOWMGR_RET_SFE_PROTOCOL_MISMATCH;
 		}
 	} else if (tuple_type == NETFN_TUPLE_4TUPLE) {
+		netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_type_4);
 		/*
 		 * Non-xlate IPs
 		 */
@@ -509,6 +551,8 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 			 */
 			if(((org_src_ip_xlate != reply_dst_ip) && (org_src_ip != reply_dst_ip_xlate)) &&
 				(org_dst_ip != reply_src_ip) && (org_dst_ip_xlate != reply_src_ip_xlate)) {
+				netfn_flowmgr_warn("Invalid SNAT IP configuration\n");
+				netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_invalid_snat_ip);
 				return NETFN_FLOWMGR_RET_SFE_INVALID_SNAT_IP_CONFIGURATION;
 			}
 
@@ -516,6 +560,8 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 			 * Port xlate check
 			 */
 			if((org_ident != reply_ident) && (org_ident_xlate != reply_ident_xlate)) {
+				netfn_flowmgr_warn("Invalid SNAT Port configuration\n");
+				netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_invalid_snat_port);
 				return NETFN_FLOWMGR_RET_SFE_INVALID_SNAT_PORT_CONFIGURATION;
 			}
 		} else if (org_rules & NETFN_FLOWMGR_VALID_RULE_FLAG_DST_NAT) {
@@ -524,6 +570,8 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 			 */
 			if(((org_src_ip_xlate != reply_dst_ip_xlate) && (org_src_ip != reply_dst_ip)) &&
 				(org_dst_ip != reply_src_ip_xlate) && (org_dst_ip_xlate != reply_src_ip)){
+				netfn_flowmgr_warn("Invalid DNAT IP configuration\n");
+				netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_invalid_dnat_ip);
 				return NETFN_FLOWMGR_RET_SFE_INVALID_DNAT_IP_CONFIGURATION;
 			}
 
@@ -531,6 +579,8 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 			 * Port xlate check
 			 */
 			if((org_ident != reply_ident_xlate) && (org_ident_xlate != reply_ident)){
+				netfn_flowmgr_warn("Invalid DNAT Port configuration\n");
+				netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_invalid_dnat_port);
 				return NETFN_FLOWMGR_RET_SFE_INVALID_DNAT_PORT_CONFIGURATION;
 			}
 		} else {
@@ -541,6 +591,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 				netfn_flowmgr_warn("Non-matching IP addresses in flow and return direction\n");
 				netfn_flowmgr_warn("org_src_ip = %pI4, org_dst_ip = %pI4\n", &org_src_ip, &org_dst_ip);
 				netfn_flowmgr_warn("reply_src_ip = %pI4, reply_dst_ip = %pI4\n", &reply_src_ip, &reply_dst_ip);
+				netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_ip_addr_mismatch);
 				return NETFN_FLOWMGR_RET_SFE_IP_ADDR_MISMATCH;
 			}
 
@@ -551,6 +602,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 				netfn_flowmgr_warn("Non-matching port numbers in flow and return direction\n");
 				netfn_flowmgr_warn("org_ident = %u\n", org_ident);
 				netfn_flowmgr_warn("reply_ident = %u\n", reply_ident);
+				netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_ident_mismatch);
 				return NETFN_FLOWMGR_RET_SFE_PORT_MISMATCH;
 			}
 		}
@@ -561,9 +613,11 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 		if (original->tuple.tuples.tuple_4.protocol != reply->tuple.tuples.tuple_4.protocol) {
 			netfn_flowmgr_warn("Non-matching protocol in flow and return direction, org_proto = %u, reply_proto = %u\n",
 						original->tuple.tuples.tuple_4.protocol, reply->tuple.tuples.tuple_4.protocol);
+			netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_proto_mismatch);
 			return NETFN_FLOWMGR_RET_SFE_PROTOCOL_MISMATCH;
 		}
 	} else if (tuple_type == NETFN_TUPLE_5TUPLE) {
+		netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_type_5);
 		/*
 		 * Non-xlate IPs
 		 */
@@ -599,6 +653,8 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 			 */
 			if(((org_src_ip_xlate != reply_dst_ip) && (org_src_ip != reply_dst_ip_xlate)) &&
 				(org_dst_ip != reply_src_ip) && (org_dst_ip_xlate != reply_src_ip_xlate)) {
+				netfn_flowmgr_warn("Invalid SNAT IP configuration\n");
+				netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_invalid_snat_ip);
 				return NETFN_FLOWMGR_RET_SFE_INVALID_SNAT_IP_CONFIGURATION;
 			}
 
@@ -607,6 +663,8 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 			 */
 			if(((org_src_ident_xlate != reply_dst_ident) && (org_src_ident != reply_dst_ident_xlate)) &&
 				(org_dst_ident != reply_src_ident) && (org_dst_ident_xlate != reply_src_ident_xlate)) {
+				netfn_flowmgr_warn("Invalid SNAT Port configuration\n");
+				netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_invalid_snat_port);
 				return NETFN_FLOWMGR_RET_SFE_INVALID_SNAT_PORT_CONFIGURATION;
 			}
 		} else if (org_rules & NETFN_FLOWMGR_VALID_RULE_FLAG_DST_NAT) {
@@ -615,6 +673,8 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 			 */
 			if(((org_src_ip_xlate != reply_dst_ip_xlate) && (org_src_ip != reply_dst_ip)) &&
 				(org_dst_ip != reply_src_ip_xlate) && (org_dst_ip_xlate != reply_src_ip)){
+				netfn_flowmgr_warn("Invalid DNAT IP configuration\n");
+				netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_invalid_dnat_ip);
 				return NETFN_FLOWMGR_RET_SFE_INVALID_DNAT_IP_CONFIGURATION;
 			}
 
@@ -623,6 +683,8 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 			 */
 			if(((org_src_ident_xlate != reply_dst_ident_xlate) && (org_src_ident != reply_dst_ident)) &&
 				(org_dst_ident != reply_src_ident_xlate) && (org_dst_ident_xlate != reply_src_ident)){
+				netfn_flowmgr_warn("Invalid DNAT Port configuration\n");
+				netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_invalid_dnat_port);
 				return NETFN_FLOWMGR_RET_SFE_INVALID_DNAT_PORT_CONFIGURATION;
 			}
 		} else {
@@ -633,6 +695,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 				netfn_flowmgr_warn("Non-matching IP addresses in flow and return direction\n");
 				netfn_flowmgr_warn("org_src_ip = %pI4, org_dst_ip = %pI4\n", &org_src_ip, &org_dst_ip);
 				netfn_flowmgr_warn("reply_src_ip = %pI4, reply_dst_ip = %pI4\n", &reply_src_ip, &reply_dst_ip);
+				netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_ip_addr_mismatch);
 				return NETFN_FLOWMGR_RET_SFE_IP_ADDR_MISMATCH;
 			}
 
@@ -643,6 +706,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 				netfn_flowmgr_warn("Non-matching port numbers in flow and return direction\n");
 				netfn_flowmgr_warn("org_src_ident = %u, org_dst_ident = %u\n", org_src_ident, org_dst_ident);
 				netfn_flowmgr_warn("reply_src_ident = %u, reply_dst_ident = %u\n", reply_src_ident, reply_dst_ident);
+				netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_ident_mismatch);
 				return NETFN_FLOWMGR_RET_SFE_PORT_MISMATCH;
 			}
 		}
@@ -653,11 +717,13 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 		if (original->tuple.tuples.tuple_5.protocol != reply->tuple.tuples.tuple_5.protocol) {
 			netfn_flowmgr_warn("Non-matching protocol in flow and return direction, org_proto = %u, reply_proto = %u\n",
 						original->tuple.tuples.tuple_5.protocol, reply->tuple.tuples.tuple_5.protocol);
+			netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_proto_mismatch);
 			return NETFN_FLOWMGR_RET_SFE_PROTOCOL_MISMATCH;
 		}
 
 	} else {
 		netfn_flowmgr_warn("Invalid Tuple Type for SFE, tuple_type = %d\n", tuple_type);
+		netfn_flowmgr_stats_inc(&stats->v4_create_validate_tuple_type_invalid);
 		return NETFN_FLOWMGR_RET_SFE_UNSUPPORTED_TUPLE_TYPE;
 	}
 	return status;
@@ -669,13 +735,22 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
  */
 netfn_flowmgr_ret_t netfn_flowmgr_sfe_create_v4_rule(struct netfn_flowmgr_create_rule *original, struct netfn_flowmgr_create_rule *reply)
 {
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
 	struct sfe_ipv4_msg *nim;
 	struct sfe_ipv4_rule_create_msg *nircm;
 	netfn_tuple_type_t tuple_type;
 	uint32_t org_rules;
 	uint32_t reply_rules;
+	struct netfn_flowmgr_debug_stats *stats;
 	sfe_tx_status_t sfe_status = SFE_TX_SUCCESS;
 	netfn_flowmgr_ret_t netfn_status = NETFN_FLOWMGR_RET_SUCCESS;
+
+	stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_SFE];
+
+	/*
+	 * Update stats
+	 */
+	netfn_flowmgr_stats_inc(&stats->v4_create_sfe_rule_req);
 
 	/*
 	 * Validate SFE tuple information
@@ -689,6 +764,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_create_v4_rule(struct netfn_flowmgr_create
 	nim = (struct sfe_ipv4_msg *)kzalloc(sizeof(struct sfe_ipv4_msg), GFP_ATOMIC);
 	if (!nim) {
 		netfn_flowmgr_warn("no memory for sfe ipv4 message structure instance: %px, %px\n", original, reply);
+		netfn_flowmgr_stats_inc(&stats->v4_create_rule_req_fail_no_mem);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_NO_MEM, sfe_status);
 	}
 
@@ -758,7 +834,10 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_create_v4_rule(struct netfn_flowmgr_create
 	 * Bridged Flow
 	 */
 	if (original->flow_flags & SFE_RULE_CREATE_FLAG_BRIDGE_FLOW) {
+		netfn_flowmgr_stats_inc(&stats->v4_create_rule_bridge_flow);
 		nircm->rule_flags |= SFE_RULE_CREATE_FLAG_BRIDGE_FLOW;
+	} else {
+		netfn_flowmgr_stats_inc(&stats->v4_create_rule_routed_flow);
 	}
 
 	/*
@@ -937,9 +1016,12 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_create_v4_rule(struct netfn_flowmgr_create
 	sfe_status = sfe_ipv4_tx_with_resp(NULL, nim);
 	if (sfe_status != SFE_TX_SUCCESS) {
 		netfn_flowmgr_warn("SFE rule create failed with error: %u\n", sfe_status);
+		netfn_flowmgr_stats_inc(&stats->v4_create_rule_req_fail_sfe_fail);
 		netfn_status = NETFN_FLOWMGR_RET_CREATE_RULE_FAILED;
 		goto done;
 	}
+
+	netfn_flowmgr_stats_inc(&stats->v4_create_rule_sfe_success);
 	netfn_flowmgr_info("SFE rule create success\n");
 done:
 	kfree(nim);

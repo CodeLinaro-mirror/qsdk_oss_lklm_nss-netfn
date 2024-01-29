@@ -19,13 +19,8 @@
  *	Netfn flowmgr common statistics
  */
 static const char * const netfn_flowmgr_debug_stats_str[] = {
-	/* v4 stats */
-	"v4_create_ppe_rule_req",			/**< No of v4 ppe create rule requests */
+	/* v4 generic stats */
 	"v4_create_rule_req_fail_no_mem",		/**< No of v4 create rule failed with no memory */
-	"v4_create_rule_invalid_ppe_tx_if",		/**< No of v4 create rule failed due to invalid ppe tx if */
-	"v4_create_rule_invalid_ppe_rx_if",		/**< No of v4 create rule failed due to invalid ppe rx if */
-	"v4_create_rule_invalid_ppe_top_tx_if",		/**< No of v4 create rule failed due to invalid ppe top tx if */
-	"v4_create_rule_invalid_ppe_top_rx_if",		/**< No of v4 create rule failed due to invalid ppe top rx if */
 	"v4_create_rule_flow_flag_mismatch",		/**< No of v4 create rule failed due to flow flag mismatched */
 	"v4_create_rule_bridge_flow",			/**< No of v4 create rule for bridged flow */
 	"v4_create_rule_routed_flow",			/**< No of v4 create rule for routed flow */
@@ -43,9 +38,8 @@ static const char * const netfn_flowmgr_debug_stats_str[] = {
 	"v4_create_validate_tuple_proto_mismatch",	/**< No of v4 create rule failed due to proto mismatch */
 	"v4_create_validate_tuple_type_unsupported",	/**< No of v4 create rule failed due to unsupported tuple type */
 	"v4_create_validate_tuple_type_invalid",	/**< No of v4 create rule failed due to invalid tuple type */
-	"v4_create_rule_ppe_success",			/**< No of v4 successful ppe create rule requests */
-	"v4_create_rule_req_fail_ppe_fail",		/**< No of v4 failed ppe create rule requests */
-	"v4_destroy_ppe_rule_req",			/**< No of v4 ppe destroy rule requests */
+	"v4_create_validate_tuple_invalid_nat_bridge",	/**< No of v4 create rule failed due to unsupported nat + bridge */
+	"v4_create_validate_tuple_invalid_net_dev",	/**< No of v4 create rule failed due to invalid net device */
 	"v4_destroy_validate_tuple_mismatch",		/**< No of v4 destroy rule failed due to tuple mismatch */
 	"v4_destroy_validate_tuple_type_3",		/**< No of v4 destroy rule tuple type 3 */
 	"v4_destroy_validate_tuple_type_4",		/**< No of v4 destroy rule tuple type 4 */
@@ -55,16 +49,33 @@ static const char * const netfn_flowmgr_debug_stats_str[] = {
 	"v4_destroy_validate_tuple_ident_mismatch",	/**< No of v4 destroy rule failed due to ident mismatch */
 	"v4_destroy_validate_tuple_proto_mismatch",	/**< No of v4 destroy rule failed due to proto mismatch */
 	"v4_destroy_rule_req_fail_no_mem",		/**< No of v4 destroy rule failed with no memory */
+	"v4_stats_sync_callback_not_registered",	/**< No of v4 sync requests with unregistered cb */
+	"v4_stats_sync_invalid_msg_type",		/**< No of v4 sync requests with inavalid msg */
+	"v4_get_stats_fail",				/**< No of v4 get stats failed */
+	"v4_get_stats_tuple_type_unsupported",		/**< No of v4 get stats failed due to unspported tuple type */
+
+	/* v4 PPE stats */
+	"v4_create_ppe_rule_req",			/**< No of v4 ppe create rule requests */
+	"v4_create_rule_invalid_ppe_tx_if",		/**< No of v4 create rule failed due to invalid ppe tx if */
+	"v4_create_rule_invalid_ppe_rx_if",		/**< No of v4 create rule failed due to invalid ppe rx if */
+	"v4_create_rule_invalid_ppe_top_tx_if",		/**< No of v4 create rule failed due to invalid ppe top tx if */
+	"v4_create_rule_invalid_ppe_top_rx_if",		/**< No of v4 create rule failed due to invalid ppe top rx if */
+	"v4_create_rule_ppe_success",			/**< No of v4 successful ppe create rule requests */
+	"v4_create_rule_req_fail_ppe_fail",		/**< No of v4 failed ppe create rule requests */
+	"v4_destroy_ppe_rule_req",			/**< No of v4 ppe destroy rule requests */
 	"v4_destroy_rule_ppe_success",			/**< No of v4 successful ppe destroy rule requests */
 	"v4_destroy_rule_req_fail_ppe_fail",		/**< No of v4 failed ppe destroy rule requests */
 
-	/* v6 stats */
-	"v6_create_ppe_rule_req",			/**< No of v6 ppe create rule requests */
+	/* v4 SFE stats */
+	"v4_create_sfe_rule_req",			/**< No of v4 sfe create rule requests */
+	"v4_create_rule_sfe_success",			/**< No of v4 successful sfe create rule requests */
+	"v4_create_rule_req_fail_sfe_fail",		/**< No of v4 failed sfe create rule requests */
+	"v4_destroy_sfe_rule_req",			/**< No of v4 sfe destroy rule requests */
+	"v4_destroy_rule_sfe_success",			/**< No of v4 successful sfe destroy rule requests */
+	"v4_destroy_rule_req_fail_sfe_fail",		/**< No of v4 failed sfe destroy rule requests */
+
+	/* v6 generic stats */
 	"v6_create_rule_req_fail_no_mem",		/**< No of v6 create rule failed with no memory */
-	"v6_create_rule_invalid_ppe_tx_if",		/**< No of v6 create rule failed due to invalid ppe tx if */
-	"v6_create_rule_invalid_ppe_rx_if",		/**< No of v6 create rule failed due to invalid ppe rx if */
-	"v6_create_rule_invalid_ppe_top_tx_if",		/**< No of v6 create rule failed due to invalid ppe top tx if */
-	"v6_create_rule_invalid_ppe_top_rx_if",		/**< No of v6 create rule failed due to invalid ppe top rx if */
 	"v6_create_rule_flow_flag_mismatch",		/**< No of v6 create rule failed due to flow flag mismatched */
 	"v6_create_rule_bridge_flow",			/**< No of v6 create rule for bridged flow */
 	"v6_create_rule_routed_flow",			/**< No of v6 create rule for routed flow */
@@ -76,12 +87,58 @@ static const char * const netfn_flowmgr_debug_stats_str[] = {
 	"v6_validate_tuple_ident_mismatch",		/**< No of v6 create rule failed due to ident mismatch */
 	"v6_validate_tuple_proto_mismatch",		/**< No of v6 create rule failed due to proto mismatch */
 	"v6_validate_tuple_type_invalid",		/**< No of v6 create rule failed due to invalid tuple type */
+	"v6_create_validate_tuple_mismatch",		/**< No of v6 create rule failed due to tuple mismatch */
+	"v6_create_validate_tuple_type_3",		/**< No of v6 create rule tuple type 3 */
+	"v6_create_validate_tuple_type_4",		/**< No of v6 create rule tuple type 4 */
+	"v6_create_validate_tuple_type_5",		/**< No of v6 create rule tuple type 5 */
+	"v6_create_validate_tuple_simul_snat_dnat",	/**< No of v6 create rule failed due to simul snat and dnat */
+	"v6_create_validate_tuple_invalid_snat_ip",	/**< No of v6 create rule failed due to invalid snat ip */
+	"v6_create_validate_tuple_invalid_dnat_ip",	/**< No of v6 create rule failed due to invalid dnat ip */
+	"v6_create_validate_tuple_invalid_snat_port",	/**< No of v6 create rule failed due to invalid snat port */
+	"v6_create_validate_tuple_invalid_dnat_port",	/**< No of v6 create rule failed due to invalid dnat port */
+	"v6_create_validate_tuple_ip_addr_mismatch",	/**< No of v6 create rule failed due to ip addr mismatch */
+	"v6_create_validate_tuple_ident_mismatch",	/**< No of v6 create rule failed due to ident mismatch */
+	"v6_create_validate_tuple_proto_mismatch",	/**< No of v6 create rule failed due to proto mismatch */
+	"v6_create_validate_tuple_type_unsupported",	/**< No of v6 create rule failed due to unsupported tuple type */
+	"v6_create_validate_tuple_type_invalid",	/**< No of v6 create rule failed due to invalid tuple type */
+	"v6_create_validate_tuple_invalid_nat_bridge",	/**< No of v6 create rule failed due to unsupported nat + bridge */
+	"v6_create_validate_tuple_invalid_net_dev",	/**< No of v6 create rule failed due to invalid net device */
+	"v6_create_validate_tuple_invalid_nat_bridge",	/**< No of v6 create rule failed due to unsupported nat + bridge */
+	"v6_create_validate_tuple_invalid_net_dev",	/**< No of v6 create rule failed due to invalid net device */
+	"v6_destroy_validate_tuple_mismatch",		/**< No of v6 destroy rule failed due to tuple mismatch */
+	"v6_destroy_validate_tuple_type_3",		/**< No of v6 destroy rule tuple type 3 */
+	"v6_destroy_validate_tuple_type_4",		/**< No of v6 destroy rule tuple type 4 */
+	"v6_destroy_validate_tuple_type_5",		/**< No of v6 destroy rule tuple type 5 */
+	"v6_destroy_validate_tuple_type_invalid",	/**< No of v6 destroy rule failed due to invalid tuple type */
+	"v6_destroy_validate_tuple_ip_addr_mismatch",	/**< No of v6 destroy rule failed due to ip addr mismatch */
+	"v6_destroy_validate_tuple_ident_mismatch",	/**< No of v6 destroy rule failed due to ident mismatch */
+	"v6_destroy_validate_tuple_proto_mismatch",	/**< No of v6 destroy rule failed due to proto mismatch */
+	"v6_destroy_rule_req_fail_no_mem",		/**< No of v6 destroy rule failed with no memory */
+	"v6_destroy_rule_req_fail_no_mem",		/**< No of v6 destroy rule failed with no memory */
+	"v6_stats_sync_callback_not_registered",	/**< No of v6 sync requests with unregistered cb */
+	"v6_stats_sync_invalid_msg_type",		/**< No of v6 sync requests with inavalid msg */
+	"v6_get_stats_fail",				/**< No of v6 get stats failed */
+	"v6_get_stats_tuple_type_unsupported",		/**< No of v6 get stats failed due to unspported tuple type */
+
+	/* v6 PPE stats */
+	"v6_create_ppe_rule_req",			/**< No of v6 ppe create rule requests */
+	"v6_create_rule_invalid_ppe_tx_if",		/**< No of v6 create rule failed due to invalid ppe tx if */
+	"v6_create_rule_invalid_ppe_rx_if",		/**< No of v6 create rule failed due to invalid ppe rx if */
+	"v6_create_rule_invalid_ppe_top_tx_if",		/**< No of v6 create rule failed due to invalid ppe top tx if */
+	"v6_create_rule_invalid_ppe_top_rx_if",		/**< No of v6 create rule failed due to invalid ppe top rx if */
 	"v6_create_rule_ppe_success",			/**< No of v6 successful ppe create rule requests */
 	"v6_create_rule_req_fail_ppe_fail",		/**< No of v6 failed ppe create rule requests */
 	"v6_destroy_ppe_rule_req",			/**< No of v6 ppe destroy rule requests */
-	"v6_destroy_rule_req_fail_no_mem",		/**< No of v6 destroy rule failed with no memory */
 	"v6_destroy_rule_ppe_success",			/**< No of v6 successful ppe destroy rule requests */
 	"v6_destroy_rule_req_fail_ppe_fail",		/**< No of v6 failed ppe destroy rule requests */
+
+	/* v6 SFE stats */
+	"v6_create_sfe_rule_req",			/**< No of v6 sfe create rule requests */
+	"v6_create_rule_sfe_success",			/**< No of v6 successful sfe create rule requests */
+	"v6_create_rule_req_fail_sfe_fail",		/**< No of v6 failed sfe create rule requests */
+	"v6_destroy_sfe_rule_req",			/**< No of v6 sfe destroy rule requests */
+	"v6_destroy_rule_sfe_success",			/**< No of v6 successful sfe destroy rule requests */
+	"v6_destroy_rule_req_fail_sfe_fail",		/**< No of v6 failed sfe destroy rule requests */
 
 	/* common stats */
 	"validate_vlan_inner_mismatch",			/**< No of v4/v6 create rule failed due to inner vlan mismatch */
