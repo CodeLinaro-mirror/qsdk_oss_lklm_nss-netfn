@@ -220,10 +220,6 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_rule_create(struct netfn_capwa
 	uint32_t ext_valid_flags = cfg->ext_cfg.ext_valid_flags;
 
 	/*
-	 * The tuple we get as a part of configuration message will be in the DownLink(DL) direction.
-	 * The DL direction will be the original direction for the flow rule.
-	 * Flow rule's Reply direction will the Uplink(UL) direction.
-	 *
 	 * Original flow rule will route the UL capwap packets from WAN netdevice to CAPWAP netdevice.
 	 * Reply flow rule will route the packets from CAPWAP netdevice to WAN netdevice.
 	 */
@@ -270,13 +266,13 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_rule_create(struct netfn_capwa
 	/*
 	 * Update flow rules for both the directions.
 	 */
-	memcpy(&original.flow_info, flow, sizeof(struct netfn_flowmgr_flow_info));
+	memcpy(&reply.flow_info, flow, sizeof(struct netfn_flowmgr_flow_info));
 
-	reply.flow_info.in_dev = flow->out_dev;
-	reply.flow_info.out_dev = flow->in_dev;
-	reply.flow_info.top_indev = flow->top_indev;
-	reply.flow_info.top_outdev = flow->top_outdev;
-	reply.flow_info.flow_mtu = flow->flow_mtu;
+	original.flow_info.in_dev = flow->out_dev;
+	original.flow_info.out_dev = flow->in_dev;
+	original.flow_info.top_indev = flow->top_indev;
+	original.flow_info.top_outdev = flow->top_outdev;
+	original.flow_info.flow_mtu = flow->flow_mtu;
 
 	/*
 	 * Mark the flow type as VP for both original and reply direction flows.
@@ -421,7 +417,7 @@ bool netfn_capwapmgr_tun_init(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_
 	struct net_device *capwap_dev = ctx->capwap_dev;
 	struct netfn_capwapmgr *mgr = &g_mgr;
 	struct timer_list *timer = NULL;
-	netfn_tuple_t enc_tuple = {0};
+	netfn_tuple_t dec_tuple = {0};
 	long bit_pos;
 	int ret = 0;
 
@@ -445,12 +441,8 @@ bool netfn_capwapmgr_tun_init(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_
 		goto fail;
 	}
 
-	/*
-	 * TODO: Check if we can push the uplink as the original direction
-	 * The input tuple will be in DL direction.
-	 */
 	dev_hold(ctx->dtls_dev);
-	netfn_capwapmgr_tun_get_reply(&cfg->tuple, &enc_tuple);
+	netfn_capwapmgr_tun_get_reply(&cfg->tuple, &dec_tuple);
 
 	/*
 	 * When DTLS is enabled, the out dev for flow rule will be the dtls dev.
@@ -461,13 +453,13 @@ bool netfn_capwapmgr_tun_init(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_
 	/*
 	 * Create Encap and decap sessions.
 	 */
-	ret = netfn_dtls_tun_session_add(ctx->dtls_dev, &cfg->ext_cfg.enc, &enc_tuple);
+	ret = netfn_dtls_tun_session_add(ctx->dtls_dev, &cfg->ext_cfg.enc, &cfg->tuple);
 	if (ret) {
 		netfn_capwapmgr_warn("Failed to add Encap dtls session %d\n", ret);
 		goto fail;
 	}
 
-	ret = netfn_dtls_tun_session_add(ctx->dtls_dev, &cfg->ext_cfg.dec, &cfg->tuple);
+	ret = netfn_dtls_tun_session_add(ctx->dtls_dev, &cfg->ext_cfg.dec, &dec_tuple);
 	if (ret) {
 		netfn_capwapmgr_warn("Failed to add Decap dtls session %d\n", ret);
 		netfn_dtls_tun_session_del(ctx->dtls_dev, true, htons(cfg->ext_cfg.enc.epoch));
