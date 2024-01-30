@@ -267,10 +267,10 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		 */
 		tuple->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V4;
 		tuple->tuple_type = NETFN_TUPLE_5TUPLE;
-		tuple->tuples.tuple_5.src_ip[0] = htonl(v4->src_ip);
-		tuple->tuples.tuple_5.dest_ip[0] = htonl(v4->dest_ip);
-		tuple->tuples.tuple_5.l4_src_ident = htons((uint16_t)v4->src_port);
-		tuple->tuples.tuple_5.l4_dest_ident = htons((uint16_t)v4->dest_port);
+		tuple->tuples.tuple_5.src_ip[0] = htonl(v4->dest_ip);
+		tuple->tuples.tuple_5.dest_ip[0] = htonl(v4->src_ip);
+		tuple->tuples.tuple_5.l4_src_ident = htons((uint16_t)v4->dest_port);
+		tuple->tuples.tuple_5.l4_dest_ident = htons((uint16_t)v4->src_port);
 		tuple->tuples.tuple_5.protocol = (uint8_t)v4->protocol;
 	} else {
 
@@ -312,17 +312,17 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		tuple->tuples.tuple_5.protocol = (uint8_t)v6->protocol;
 		tuple->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V6;
 		tuple->tuple_type = NETFN_TUPLE_5TUPLE;
-		tuple->tuples.tuple_5.src_ip[0] = ntohl(v6->src_ip[0]);
-		tuple->tuples.tuple_5.src_ip[1] = ntohl(v6->src_ip[1]);
-		tuple->tuples.tuple_5.src_ip[2] = ntohl(v6->src_ip[2]);
-		tuple->tuples.tuple_5.src_ip[3] = ntohl(v6->src_ip[3]);
-		tuple->tuples.tuple_5.l4_src_ident = htons((uint16_t)v6->src_port);
+		tuple->tuples.tuple_5.src_ip[0] = ntohl(v6->dest_ip[0]);
+		tuple->tuples.tuple_5.src_ip[1] = ntohl(v6->dest_ip[1]);
+		tuple->tuples.tuple_5.src_ip[2] = ntohl(v6->dest_ip[2]);
+		tuple->tuples.tuple_5.src_ip[3] = ntohl(v6->dest_ip[3]);
+		tuple->tuples.tuple_5.l4_src_ident = htons((uint16_t)v6->dest_port);
 
-		tuple->tuples.tuple_5.dest_ip[0] = ntohl(v6->dest_ip[0]);
-		tuple->tuples.tuple_5.dest_ip[1] = ntohl(v6->dest_ip[1]);
-		tuple->tuples.tuple_5.dest_ip[2] = ntohl(v6->dest_ip[2]);
-		tuple->tuples.tuple_5.dest_ip[3] = ntohl(v6->dest_ip[3]);
-		tuple->tuples.tuple_5.l4_dest_ident = htons((uint16_t)v6->dest_port);
+		tuple->tuples.tuple_5.dest_ip[0] = ntohl(v6->src_ip[0]);
+		tuple->tuples.tuple_5.dest_ip[1] = ntohl(v6->src_ip[1]);
+		tuple->tuples.tuple_5.dest_ip[2] = ntohl(v6->src_ip[2]);
+		tuple->tuples.tuple_5.dest_ip[3] = ntohl(v6->src_ip[3]);
+		tuple->tuples.tuple_5.l4_dest_ident = htons((uint16_t)v6->src_port);
 	}
 
 	/*
@@ -341,6 +341,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 	 */
 	cfg->capwap.enc.ttl = capwap_rule->encap.ttl;
 	cfg->capwap.enc.tos = capwap_rule->encap.tos;
+	cfg->capwap.enc.mtu = cfg->flow.flow_mtu;
 
 	cfg->capwap.dec.max_frags = capwap_rule->decap.max_fragments;
 	cfg->capwap.dec.max_payload_sz = capwap_rule->decap.max_buffer_size;
@@ -407,8 +408,6 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 			return status;
 		}
 
-		netfn_dtls_cfg->flags = NETFN_DTLS_FLAG_CAPWAP;
-
 		/*
 		 * TODO:Once netfn DTLS config structure is updated. Make sure this is still needed.
 		 * Currently the netfn dtls config takes encap and deacp specific parameters for a
@@ -416,18 +415,14 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		 */
 		netfn_dtls_cfg->version = netfn_capwapmgr_dtls_version_enum_to_netfn[dtls_data->encap.ver];
 
-		/*
-		 * TODO: Once DTLS supports using single epoch value for both encap and decap sessions.
-		 * This can be removed.
-		 */
-		netfn_dtls_cfg->epoch = ((dtls_data->encap.epoch + 1) << 8);
+		netfn_dtls_cfg->epoch = dtls_data->encap.epoch;
 
 		netfn_dtls_cfg->replay_win = dtls_data->decap.window_size;
 
 		/*
 		 * Update config specifying this is decap session configuration.
 		 */
-		netfn_dtls_cfg->flags &= ~(0x0001 << NETFN_DTLS_FLAG_ENC);
+		netfn_dtls_cfg->flags = NETFN_DTLS_FLAG_CAPWAP;
 	}
 
 	return status;
