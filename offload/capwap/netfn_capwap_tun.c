@@ -527,7 +527,9 @@ static void netfn_capwap_tun_tx_cb(struct netfn_pkt_steer *tx_steer, struct sk_b
 static void netfn_capwap_tun_rx_cb(struct netfn_pkt_steer *rx_steer, struct sk_buff_head *q_head)
 {
 	struct netfn_capwap_tun *nct = container_of(rx_steer, struct netfn_capwap_tun, rx_steer);
+	struct net_device *dev = nct->dev;
 	struct sk_buff *skb, *next_skb;
+	rx_handler_func_t *rx_handler;
 
 	/*
 	 * Walk the queue and pass onto required handler.
@@ -543,9 +545,14 @@ static void netfn_capwap_tun_rx_cb(struct netfn_pkt_steer *rx_steer, struct sk_b
 		 * Don't override skb fields in case of exception packets.
 		 */
 		if (likely(!NETFN_CAPWAP_CB(skb)->exception)) {
-			skb->dev = nct->dev;
+			skb->dev = dev;
 			skb->pkt_type = PACKET_HOST;
 			skb->skb_iif = nct->dev->ifindex;
+		}
+
+		rx_handler = rcu_dereference(dev->rx_handler);
+		if (likely(rx_handler) && (rx_handler(&skb) == RX_HANDLER_CONSUMED)) {
+			continue;
 		}
 
 		netif_receive_skb(skb);

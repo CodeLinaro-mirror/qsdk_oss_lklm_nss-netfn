@@ -59,7 +59,39 @@ static int netfn_capwap_tunid_close(struct net_device *dev)
  */
 static void netfn_capwap_tunid_stats(struct net_device *dev, struct rtnl_link_stats64 *stats)
 {
-	return;
+	struct netfn_capwap_tunid *ncti = netdev_priv(dev);
+	struct netfn_capwap_pkt_stats *pkt_stats = &ncti->stats;
+
+	stats->rx_packets = READ_ONCE(pkt_stats->rx_pkts);
+	stats->rx_bytes = READ_ONCE(pkt_stats->rx_bytes);
+	stats->tx_packets = READ_ONCE(pkt_stats->tx_pkts);
+	stats->tx_bytes = READ_ONCE(pkt_stats->tx_bytes);
+	stats->tx_dropped = READ_ONCE(pkt_stats->tx_failures);
+	stats->rx_dropped = READ_ONCE(pkt_stats->rx_failures);
+}
+
+/*
+ * netfn_capwap_tunid_rx_handler()
+ *	Rx handler for tunid.
+ */
+static rx_handler_result_t netfn_capwap_tunid_rx_handler(struct sk_buff **pskb)
+{
+	struct netfn_capwap_pkt_stats *stats;
+	struct netfn_capwap_tunid *ncti;
+	struct sk_buff *skb = *pskb;
+	struct net_device *dev;
+
+	dev = rcu_dereference_bh(skb->dev->rx_handler_data);
+	ncti = netdev_priv(dev);
+	stats = &ncti->stats;
+
+	NETFN_CAPWAP_TUN_STATS_INC(&stats->rx_pkts);
+	NETFN_CAPWAP_TUN_STATS_ADD(&stats->rx_bytes, skb->len);
+
+	skb->dev = dev;
+	netif_receive_skb(skb);
+
+	return RX_HANDLER_CONSUMED;
 }
 
 /*
@@ -70,11 +102,13 @@ static netdev_tx_t netfn_capwap_tunid_tx(struct sk_buff *skb, struct net_device 
 {
 	struct netfn_capwap_prehdr *pre = (struct netfn_capwap_prehdr *)skb->data;
 	struct netfn_capwap_tunid *ncti = netdev_priv(dev);
+	struct netfn_capwap_pkt_stats *stats = &ncti->stats;
 	struct net_device *tun_dev;
 
 	rcu_read_lock_bh();
 	tun_dev = rcu_dereference(ncti->tunnels[pre->tun_id]);
 	if (!tun_dev) {
+		NETFN_CAPWAP_TUN_STATS_INC(stats->tx_failures);
 		rcu_read_unlock_bh();
 		dev_kfree_skb(skb);
 		return NETDEV_TX_OK;
@@ -82,7 +116,19 @@ static netdev_tx_t netfn_capwap_tunid_tx(struct sk_buff *skb, struct net_device 
 
 	skb->dev = tun_dev;
 
-	dev_queue_xmit(skb);
+	/*
+	 * We are sending the packet to tunnel dev which is a controlled path
+	 * so no need for dev_queue_xmit/dev_fast_xmit.
+	 */
+	if (tun_dev->netdev_ops->ndo_start_xmit(skb, tun_dev) != NETDEV_TX_OK) {
+		NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_failures);
+		dev_kfree_skb(skb);
+		goto done;
+	}
+
+	NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_pkts);
+	NETFN_CAPWAP_TUN_STATS_ADD(&stats->tx_bytes, skb->len);
+done:
 	rcu_read_unlock_bh();
 	return NETDEV_TX_OK;
 }
@@ -205,6 +251,11 @@ struct net_device *netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, st
 	spin_lock_bh(&ncti->lock);
 	rcu_assign_pointer(ncti->tunnels[id], tun_dev);
 	spin_unlock_bh(&ncti->lock);
+
+	rtnl_lock();
+	dev_open(tun_dev, NULL);
+	netdev_rx_handler_register(tun_dev, &netfn_capwap_tunid_rx_handler, dev);
+	rtnl_unlock();
 
 	return tun_dev;
 }
