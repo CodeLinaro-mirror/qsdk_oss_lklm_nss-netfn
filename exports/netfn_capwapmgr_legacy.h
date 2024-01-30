@@ -23,6 +23,9 @@
  */
 #ifndef __NSS_CAPWAPMGR_LEGACY_H
 #define __NSS_CAPWAPMGR_LEGACY_H
+
+#include <linux/rtnetlink.h>
+
 #include <netfn_capwapmgr.h>
 
 #define NSS_CAPWAPMGR_MAX_TUNNELS		32
