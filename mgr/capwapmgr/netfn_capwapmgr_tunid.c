@@ -17,7 +17,6 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-#include <linux/bitmap.h>
 #include <linux/debugfs.h>
 #include <linux/netdevice.h>
 #include <linux/rtnetlink.h>
@@ -65,14 +64,11 @@ EXPORT_SYMBOL(netfn_capwapmgr_tunid_dev_alloc);
  * netfn_capwapmgr_tunid_dev_free()
  *	Free CAPWAP tunid dev.
  *
- * NOTE:This API should be called with rtnl lock held.
  */
 netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_dev_free(struct net_device *dev)
 {
 	struct netfn_capwapmgr_tunid_ctx *ctx = NULL;
 	struct netfn_capwapmgr *mgr = &g_mgr;
-
-	BUG_ON(!rtnl_is_locked());
 
 	ctx = netfn_capwap_tunid_pvt_get(dev);
 	if (!bitmap_empty(ctx->active_tunnels, NETFN_CAPWAPMGR_TUNNELS_MAX)) {
@@ -80,15 +76,15 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_dev_free(struct net_device *dev)
    		return NETFN_CAPWAPMGR_ERROR_MAX;
 	}
 
-	if (!netfn_capwap_tunid_free(dev)) {
-		netfn_capwapmgr_warn("%px: Failed to free tunid dev\n", dev);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
-	}
-
 	/*
 	 * hold:netfn_capwapmgr_tunid_alloc()
 	 */
 	dev_put(dev);
+	if (!netfn_capwap_tunid_free(dev)) {
+		netfn_capwapmgr_warn("%px: Failed to free tunid dev\n", dev);
+		dev_hold(dev);
+		return NETFN_CAPWAPMGR_ERROR_MAX;
+	}
 
 	/*
 	 * ref:netfn_capwapmgr_tunid_alloc().
@@ -141,15 +137,12 @@ EXPORT_SYMBOL(netfn_capwapmgr_tunid_toggle_state);
  * netfn_capwapmgr_tunid_del()
  *	Deletes the tunnel with a specific ID under the tunid dev.
  *
- * NOTE:This API should be called with rtnl lock held.
  */
 netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_del(struct net_device *dev, uint8_t tun_id)
 {
 	struct netfn_capwapmgr_tun_ctx *tunid_ctx = NULL;
 	struct netfn_capwapmgr_tunid_ctx *ctx = NULL;
 	struct net_device *tunid_dev = NULL;
-
-	BUG_ON(!rtnl_is_locked());
 
 	/*
 	 * Check for out of bound tunnel id.
@@ -164,7 +157,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_del(struct net_device *dev, uint8_t 
 	 */
 	ctx = netfn_capwap_tunid_pvt_get(dev);
 	spin_lock(&ctx->lock);
-	if (!test_and_clear_bit(tun_id, ctx->active_tunnels)) {
+	if (!__test_and_clear_bit(tun_id, ctx->active_tunnels)) {
 		netfn_capwapmgr_warn("%px: Tunnel Id %d Does not exist\n", dev, tun_id);
 		spin_unlock(&ctx->lock);
 		return NETFN_CAPWAPMGR_ERROR_MAX;
@@ -183,17 +176,18 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_del(struct net_device *dev, uint8_t 
 	}
 
 	/*
-	 * Delete capwap tunnel.
-	 */
-	if (netfn_capwap_tunid_del(dev, tun_id)) {
-		netfn_capwapmgr_warn("%px: Failed to free capwap tun \n", dev);
-		goto fail;
-	}
-
-	/*
 	 * dev_hold:netfn_capwapmgr_tunid_add()
 	 */
 	dev_put(tunid_dev);
+
+	/*
+	 * Delete capwap tunnel.
+	 */
+	if (!netfn_capwap_tunid_del(dev, tun_id)) {
+		netfn_capwapmgr_warn("%px: Failed to free capwap tun \n", dev);
+		dev_hold(tunid_dev);
+		goto fail;
+	}
 
 	/*
 	 * Clear the tunnel context
@@ -201,7 +195,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_del(struct net_device *dev, uint8_t 
 	ctx->tunnels[tun_id] = NULL;
 	return NETFN_CAPWAPMGR_SUCCESS;
 fail:
-	set_bit(tun_id, ctx->active_tunnels);
+	__set_bit(tun_id, ctx->active_tunnels);
 	return NETFN_CAPWAPMGR_ERROR_MAX;
 }
 EXPORT_SYMBOL(netfn_capwapmgr_tunid_del);
@@ -209,8 +203,6 @@ EXPORT_SYMBOL(netfn_capwapmgr_tunid_del);
 /*
  * netfn_capwapmgr_tunid_add()
  *	Adds a new tunnel with specific ID under the tunid dev.
- *
- * NOTE:This API should be called with rtnl lock held.
  */
 netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_add(struct net_device *dev, uint8_t tun_id, struct netfn_capwapmgr_tun_cfg *cfg)
 {
@@ -218,8 +210,6 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_add(struct net_device *dev, uint8_t 
 	struct netfn_capwapmgr_tunid_ctx *ctx = NULL;
 	struct net_device *tunid_dev = NULL;
 	bool tun_init_ret = false;
-
-	BUG_ON(!rtnl_is_locked());
 
 	/*
 	 * Check for out of bound tunnel id.
@@ -265,8 +255,12 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_add(struct net_device *dev, uint8_t 
 		goto fail;
 	}
 
+	/*
+	 * Get tunid dev context from offload engine.
+	 */
+	ctx = netfn_capwap_tunid_pvt_get(dev);
 	spin_lock(&ctx->lock);
-	if (!test_and_set_bit(tun_id, ctx->active_tunnels)) {
+	if (__test_and_set_bit(tun_id, ctx->active_tunnels)) {
 		netfn_capwapmgr_warn("%px: Tunnel ID %d unavailable\n", dev, tun_id);
 		spin_unlock(&ctx->lock);
 		goto fail;
@@ -277,10 +271,6 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_add(struct net_device *dev, uint8_t 
 	 */
 	dev_hold(tunid_dev);
 
-	/*
-	 * Get tunid dev context from offload engine.
-	 */
-	ctx = netfn_capwap_tunid_pvt_get(dev);
 	ctx->tunnels[tun_id] = tunid_ctx;
 	spin_unlock(&ctx->lock);
 	return NETFN_CAPWAPMGR_SUCCESS;
@@ -292,8 +282,6 @@ fail:
 
 	if (tunid_dev) {
 		netfn_capwap_tunid_del(dev, tun_id);
-		ctx->tunnels[tun_id] = NULL;
-		dev_put(tunid_dev);
 	}
 
 	return NETFN_CAPWAPMGR_ERROR_MAX;
