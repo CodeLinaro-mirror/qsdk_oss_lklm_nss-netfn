@@ -88,13 +88,13 @@ static ssize_t netfn_dtls_session_read(struct file *fp, char __user *ubuf, size_
 
 
 	if (ip_version == IPVERSION)
-		format = "%s Session%u (src:%pI4h dst:%pI4h epoch:0x%X sport:%u dport:%u proto:%u version:0x%X flags:0x%X):\n";
+		format = "%s Session%u (src:%pI4n dst:%pI4n epoch:0x%X sport:%u dport:%u proto:%u version:0x%X flags:0x%X):\n";
 	else
 		format = "%s Session%u (src:%pI6 dst:%pI6 epoch:0x%X sport:%u dport:%u proto:%u version:0x%X flags:0x%X):\n";
 
 	len += snprintf(buf + len, max_len - len, format,
-				hdr, ++i, t->src_ip, t->dest_ip, ntohs(ses->epoch), t->l4_src_ident,
-				t->l4_dest_ident, t->protocol, ip_version, ses->flags);
+				hdr, ++i, t->src_ip, t->dest_ip, ntohs(ses->epoch), ntohs(t->l4_src_ident),
+				ntohs(t->l4_dest_ident), t->protocol, ip_version, ses->flags);
 
 	len += snprintf(buf + len, max_len - len, "\tTx packets: %llu\n", stats.tx_pkts);
 	len += snprintf(buf + len, max_len - len, "\tTx bytes: %llu\n", stats.tx_bytes);
@@ -164,23 +164,23 @@ static void netfn_dtls_session_fill_tr(struct netfn_dtls_cfg *cfg, netfn_tuple_t
 
 	dtls->version = cfg->version;	/* Version is stored in host format */
 	dtls->epoch = htons(cfg->epoch);
-	dtls->src_port = htons(t5->l4_src_ident);
-	dtls->dst_port = htons(t5->l4_dest_ident);
+	dtls->src_port = t5->l4_src_ident;
+	dtls->dst_port = t5->l4_dest_ident;
 
 	if (t->ip_version == IPVERSION) {
 		dtls->ip_ver = IPVERSION;
-		dtls->src_ip[0] = htonl(t5->src_ip[0]);
-		dtls->dst_ip[0] = htonl(t5->dest_ip[0]);
+		dtls->src_ip[0] = t5->src_ip[0];
+		dtls->dst_ip[0] = t5->dest_ip[0];
 	} else {
 		dtls->ip_ver = 6;
-		dtls->src_ip[0] = htonl(t5->src_ip[0]);
-		dtls->src_ip[1] = htonl(t5->src_ip[1]);
-		dtls->src_ip[2] = htonl(t5->src_ip[2]);
-		dtls->src_ip[3] = htonl(t5->src_ip[3]);
-		dtls->dst_ip[0] = htonl(t5->dest_ip[0]);
-		dtls->dst_ip[1] = htonl(t5->dest_ip[1]);
-		dtls->dst_ip[2] = htonl(t5->dest_ip[2]);
-		dtls->dst_ip[3] = htonl(t5->dest_ip[3]);
+		dtls->src_ip[0] = t5->src_ip[0];
+		dtls->src_ip[1] = t5->src_ip[1];
+		dtls->src_ip[2] = t5->src_ip[2];
+		dtls->src_ip[3] = t5->src_ip[3];
+		dtls->dst_ip[0] = t5->dest_ip[0];
+		dtls->dst_ip[1] = t5->dest_ip[1];
+		dtls->dst_ip[2] = t5->dest_ip[2];
+		dtls->dst_ip[3] = t5->dest_ip[3];
 	}
 }
 
@@ -242,11 +242,11 @@ struct netfn_dtls_session *netfn_dtls_session_alloc(struct netfn_dtls_cfg *cfg, 
 		cfg->dscp, cfg->hop_limit);
 
 	if (t->ip_version == IPVERSION) {
-		pr_debug("%p: src:%pI4h dst:%pI4h epoch:0x%X sport:%u dport:%u proto:%u\n",
-				dev, t5->src_ip, t5->dest_ip, cfg->epoch, t5->l4_src_ident, t5->l4_dest_ident, t5->protocol);
+		pr_debug("%p: src:%pI4n dst:%pI4n epoch:0x%X sport:%u dport:%u proto:%u\n",
+				dev, t5->src_ip, t5->dest_ip, cfg->epoch, ntohs(t5->l4_src_ident), ntohs(t5->l4_dest_ident), t5->protocol);
 	} else {
 		pr_debug("%p: src:%pI6 dst:%pI6 epoch:0x%X sport:%u dport:%u proto:%u\n",
-				dev, t5->src_ip, t5->dest_ip, cfg->epoch, t5->l4_src_ident, t5->l4_dest_ident, t5->protocol);
+				dev, t5->src_ip, t5->dest_ip, cfg->epoch, ntohs(t5->l4_src_ident), ntohs(t5->l4_dest_ident), t5->protocol);
 	}
 
 	/*
