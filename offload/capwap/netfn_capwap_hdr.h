@@ -150,6 +150,7 @@ struct netfn_capwap_winfo {
  *	CAPWAP header information
  */
 struct netfn_capwap_hdr_mdata {
+	struct netfn_capwap_prehdr phdr;	/* Preheader from host */
 	uint16_t frag_id;		/* Fragment - ID */
 	uint16_t frag_offset;		/* Fragment offset */
 	uint8_t frag:1;			/* 1=Fragment, 0=Not a fragment */
