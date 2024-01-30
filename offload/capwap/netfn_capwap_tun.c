@@ -80,9 +80,12 @@ fail:
  */
 static rx_handler_result_t netfn_capwap_tun_rx_handler(struct sk_buff **pskb)
 {
+	struct netfn_capwap_tun *nct;
 	struct sk_buff *skb = *pskb;
 
-	netfn_capwap_tun_rx(netdev_priv(skb->dev), skb);
+	nct = netdev_priv(rcu_dereference_bh(skb->dev->rx_handler_data));
+
+	netfn_capwap_tun_rx(nct, skb);
 
 	return RX_HANDLER_CONSUMED;
 }
@@ -711,6 +714,7 @@ bool netfn_capwap_tun_bind(struct net_device *dev, struct net_device *next)
 
 	dev_hold(next);
 	old_next_dev = xchg(&nct->next_dev, next);
+	netfn_capwap_enc_mtu_update(&nct->enc, next->mtu);
 	BUG_ON(old_next_dev != nct->vp_dev);
 	rtnl_lock();
 	netdev_rx_handler_register(next, &netfn_capwap_tun_rx_handler, dev);

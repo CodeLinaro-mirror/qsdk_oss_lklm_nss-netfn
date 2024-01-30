@@ -414,7 +414,7 @@ bool netfn_capwap_enc(struct netfn_capwap_tun_enc *enc, struct sk_buff *orig_skb
 	/*
 	 * Check if its a fragmented packet.
 	 */
-	is_frag = !!(num_frags);
+	is_frag = !!(num_frags - 1);
 	mdata.frag_id = enc->frag_id++;
 
 	/*
@@ -512,4 +512,13 @@ bool netfn_capwap_enc_init(struct netfn_capwap_tun_enc *enc, struct netfn_capwap
 	}
 
 	return true;
+}
+
+/*
+ * netfn_capwap_enc_mtu_update()
+ *	Update the encap MTU
+ */
+void netfn_capwap_enc_mtu_update(struct netfn_capwap_tun_enc *enc, unsigned int mtu)
+{
+	enc->mtu = ((mtu - enc->outer_hdr_len) & ~(sizeof(uint64_t) - 1));
 }

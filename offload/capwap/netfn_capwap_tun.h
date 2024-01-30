@@ -62,7 +62,7 @@ struct netfn_capwap_tun_enc {
 	struct netfn_capwap_tun_enc_hdr hdr;	/* Encapsulation header per tunnel. */
 	uint32_t features;			/* Features enabled for the tunnel. */
 
-	int mtu;			/* MTU considered for fragmentation. */
+	unsigned int mtu;			/* MTU considered for fragmentation. */
 	uint16_t ipv4_id;		/* IPv4 ID for the tunnel. */
 	uint16_t frag_id;		/* Fragment ID per ipv4_id. */
 

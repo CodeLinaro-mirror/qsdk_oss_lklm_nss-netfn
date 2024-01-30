@@ -2,7 +2,7 @@
  * netfn_capwap_enc.h
  *	Network function's CAPWAP offload encapsulation definitions.
  *
- * Copyright (c) 2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -40,5 +40,11 @@ bool netfn_capwap_enc_init(struct netfn_capwap_tun_enc *enc, struct netfn_capwap
  *	Encapsulates the packets/s.
  */
 bool netfn_capwap_enc(struct netfn_capwap_tun_enc *enc, struct sk_buff *skb, struct sk_buff_head *q_frag);
+
+/*
+ * netfn_capwap_enc_mtu_update()
+ *	Update encap mtu
+ */
+void netfn_capwap_enc_mtu_update(struct netfn_capwap_tun_enc *enc, unsigned int mtu);
 
 #endif /* __NETFN_CAPWAP_ENC_H */
