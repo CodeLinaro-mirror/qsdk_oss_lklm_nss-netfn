@@ -427,6 +427,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 
 	return status;
 }
+EXPORT_SYMBOL(netfn_capwapmgr_legacy_rule2tun_cfg);
 
 /*
  * netfn_capwapmgr_stats2legacy_stats.
@@ -469,6 +470,7 @@ void netfn_capwapmgr_stats2legacy_stats(struct netfn_capwap_tun_stats *netfn_sta
 	legacy_stats->tx_dropped_dtls = netfn_stats->enc.drop_direct_dtls;
 	legacy_stats->tx_dropped_nwireless = netfn_stats->enc.drop_nwireless_len;
 }
+EXPORT_SYMBOL(netfn_capwapmgr_stats2legacy_stats);
 
 #if defined(NETFN_CAPWAPMGR_ONE_NETDEV)
 /*
@@ -495,3 +497,4 @@ nss_capwapmgr_status_t netfn_capwapmgr_status2legacy_status(netfn_capwapmgr_ret_
 
 	return NSS_CAPWAPMGR_SUCCESS;
 }
+EXPORT_SYMBOL(netfn_capwapmgr_status2legacy_status);
