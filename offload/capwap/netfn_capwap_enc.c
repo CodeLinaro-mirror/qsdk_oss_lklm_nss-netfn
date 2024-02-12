@@ -489,9 +489,9 @@ bool netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, st
  * netfn_capwap_enc_init()
  *	Encapsulation initialization.
  */
-bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc_cfg *cfg, struct netfn_capwap_tun *nct)
+bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc_cfg *cfg, struct netfn_tuple *ntuple, struct netfn_capwap_tun *nct)
 {
-	struct netfn_tuple_5tuple *tuple = &cfg->tuple.tuples.tuple_5;
+	struct netfn_tuple_5tuple *tuple = &ntuple->tuples.tuple_5;
 	struct netfn_capwap_enc_hdr *hdr = &enc->hdr;
 
 	ether_addr_copy(&enc->bssid, cfg->bssid);
@@ -502,14 +502,14 @@ bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc
 	 * TODO: Add vlan and pppoe.
 	 */
 
-	if (cfg->tuple.ip_version == IPVERSION) {
-		hdr->ip_version = cfg->tuple.ip_version;
+	if (ntuple->ip_version == IPVERSION) {
+		hdr->ip_version = ntuple->ip_version;
 		hdr->src_ip[0] = tuple->src_ip[0];
 		hdr->dest_ip[0] = tuple->dest_ip[0];
 
 		enc->outer_hdr_len += sizeof(struct iphdr);
 	} else {
-		hdr->ip_version = cfg->tuple.ip_version;
+		hdr->ip_version = ntuple->ip_version;
 
 		/*
 		 * TODO: Change to direct assignment once switched to in6_addr
