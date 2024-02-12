@@ -24,27 +24,63 @@
 #define NETFN_CAPWAP_ENC_STATS_WIDTH 82
 
 /*
+ * netfn_capwap_enc_hdr
+ *	Encapsulation header
+ */
+struct netfn_capwap_enc_hdr {
+	__be32 src_ip[4];		/* Source IP for tunnel. */
+	__be32 dest_ip[4];		/* Destination IP for tunnel. */
+	__be16 src_port;		/* Source port */
+	__be16 dest_port;		/* Destination port */
+	__u8 proto_next_hdr;		/* L4 proto. */
+	__u8 ip_version;		/* IP version. */
+	__u8 ttl;			/* Time to live. */
+	__u8 tos;			/* Type of service. */
+	__u8 csum_cov;			/* Checksum coverage. */
+};
+
+/*
+ * netfn_capwap_enc
+ *	Encapsulation state
+ */
+struct netfn_capwap_enc {
+	struct net_device *dev;		/* Device pointer for tunnel. */
+	struct netfn_capwap_enc_stats stats;	/* Encap tunnel stats. */
+
+	struct netfn_capwap_enc_hdr hdr;	/* Encapsulation header per tunnel. */
+	uint32_t features;			/* Features enabled for the tunnel. */
+
+	unsigned int mtu;			/* MTU considered for fragmentation. */
+	uint16_t ipv4_id;		/* IPv4 ID for the tunnel. */
+	uint16_t frag_id;		/* Fragment ID per ipv4_id. */
+
+	uint16_t outer_hdr_len;		/* Outer header length for the tunnel. */
+	uint8_t snap_hdr[NETFN_CAPWAP_SNAP_HDR_LEN];
+					/* Custom snap header. */
+	uint8_t bssid;			/* Basic service set ID. */
+};
+/*
  * netfn_capwap_enc_stats_read()
  *	Reads encap stats.
  */
-void netfn_capwap_enc_stats_read(struct netfn_capwap_tun_enc *enc, struct netfn_capwap_tun_stats *stats);
+void netfn_capwap_enc_stats_read(struct netfn_capwap_enc *enc, struct netfn_capwap_tun_stats *stats);
 
 /*
  * netfn_capwap_enc_init()
  *	Encapsulation initialization.
  */
-bool netfn_capwap_enc_init(struct netfn_capwap_tun_enc *enc, struct netfn_capwap_enc_cfg *cfg, struct dentry *dentry);
+bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc_cfg *cfg, struct dentry *dentry);
 
 /*
  * netfn_capwap_enc()
  *	Encapsulates the packets/s.
  */
-bool netfn_capwap_enc(struct netfn_capwap_tun_enc *enc, struct sk_buff *skb, struct sk_buff_head *q_frag);
+bool netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct sk_buff_head *q_frag);
 
 /*
  * netfn_capwap_enc_mtu_update()
  *	Update encap mtu
  */
-void netfn_capwap_enc_mtu_update(struct netfn_capwap_tun_enc *enc, unsigned int mtu);
+void netfn_capwap_enc_mtu_update(struct netfn_capwap_enc *enc, unsigned int mtu);
 
 #endif /* __NETFN_CAPWAP_ENC_H */

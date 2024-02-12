@@ -702,7 +702,7 @@ EXPORT_SYMBOL(netfn_capwap_tun_free);
  */
 bool netfn_capwap_tun_bind(struct net_device *dev, struct net_device *next)
 {
-	struct netfn_capwap_tun_enc *enc;
+	struct netfn_capwap_enc *enc;
 	struct net_device *old_next_dev;
 	struct netfn_capwap_tun *nct;
 

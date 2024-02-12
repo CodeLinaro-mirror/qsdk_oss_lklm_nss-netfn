@@ -33,7 +33,7 @@
  * netfn_capwap_enc_capwap()
  *	Encapsulate the CAPWAP header
  */
-static void netfn_capwap_enc_capwap(struct netfn_capwap_tun_enc *enc, struct sk_buff *skb, struct netfn_capwap_enc_mdata *mdata)
+static void netfn_capwap_enc_capwap(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct netfn_capwap_enc_mdata *mdata)
 {
 	struct netfn_capwap_hdr *nch = (struct netfn_capwap_hdr *)__skb_push(skb, sizeof(*nch));
 	struct netfn_capwap_prehdr *phdr = &mdata->phdr;
@@ -75,10 +75,10 @@ static void netfn_capwap_enc_capwap(struct netfn_capwap_tun_enc *enc, struct sk_
  * netfn_capwap_enc_l4()
  *	Encapsulate the UDP/UDPLite header
  */
-static void netfn_capwap_enc_l4(struct netfn_capwap_tun_enc *enc, struct sk_buff *skb)
+static void netfn_capwap_enc_l4(struct netfn_capwap_enc *enc, struct sk_buff *skb)
 {
 	struct udphdr *udph = (struct udphdr *)__skb_push(skb, sizeof(*udph));
-	struct netfn_capwap_tun_enc_hdr *hdr = &enc->hdr;
+	struct netfn_capwap_enc_hdr *hdr = &enc->hdr;
 
 	skb_reset_transport_header(skb);
 
@@ -102,9 +102,9 @@ static void netfn_capwap_enc_l4(struct netfn_capwap_tun_enc *enc, struct sk_buff
  * netfn_capwap_enc_l3()
  *	Encapsulate the IP header
  */
-static void netfn_capwap_enc_l3(struct netfn_capwap_tun_enc *enc, struct sk_buff *skb)
+static void netfn_capwap_enc_l3(struct netfn_capwap_enc *enc, struct sk_buff *skb)
 {
-	struct netfn_capwap_tun_enc_hdr *hdr = &enc->hdr;
+	struct netfn_capwap_enc_hdr *hdr = &enc->hdr;
 	struct ipv6hdr *ip6h;
 	struct iphdr *iph;
 
@@ -151,7 +151,7 @@ static void netfn_capwap_enc_l3(struct netfn_capwap_tun_enc *enc, struct sk_buff
  * netfn_capwap_enc_snap_hdr()
  *	Copy snap header with next protocol.
  */
-static inline void netfn_capwap_enc_snap_hdr(struct netfn_capwap_tun_enc *enc, struct sk_buff *skb)
+static inline void netfn_capwap_enc_snap_hdr(struct netfn_capwap_enc *enc, struct sk_buff *skb)
 {
 	struct __snap_hdr {
 		uint8_t hdr[NETFN_CAPWAP_SNAP_HDR_LEN];
@@ -167,7 +167,7 @@ static inline void netfn_capwap_enc_snap_hdr(struct netfn_capwap_tun_enc *enc, s
  * netfn_capwap_enc_80211()
  *	Converts the inner capwap packet from 802.3 to 802.11
  */
-static void netfn_capwap_enc_80211(struct netfn_capwap_tun_enc *enc, struct sk_buff *skb, void *preh)
+static void netfn_capwap_enc_80211(struct netfn_capwap_enc *enc, struct sk_buff *skb, void *preh)
 {
 	struct netfn_capwap_prehdr *phdr = preh;
 	struct ieee80211_hdr_3addr *wlan_hdr;
@@ -248,7 +248,7 @@ static void netfn_capwap_enc_80211(struct netfn_capwap_tun_enc *enc, struct sk_b
  * netfn_capwap_enc_frag()
  *	CAPWAP fragmentation routine
  */
-static bool netfn_capwap_enc_frag(struct netfn_capwap_tun_enc *enc, struct sk_buff *orig_skb, struct sk_buff_head *q_frag)
+static bool netfn_capwap_enc_frag(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, struct sk_buff_head *q_frag)
 {
 	struct netfn_capwap_enc_stats *stats = &enc->stats;
 	uint8_t *next_data = orig_skb->data;
@@ -311,7 +311,7 @@ static bool netfn_capwap_enc_frag(struct netfn_capwap_tun_enc *enc, struct sk_bu
  */
 static ssize_t netfn_capwap_enc_stats_show(struct file *fp, char __user *ubuf, size_t sz, loff_t *ppos)
 {
-	struct netfn_capwap_tun_enc *enc = fp->private_data;
+	struct netfn_capwap_enc *enc = fp->private_data;
 	struct netfn_capwap_enc_stats *stats = &enc->stats;
 	size_t enc_stats_sz, stats_sz;
 	ssize_t bytes_read = 0;
@@ -361,7 +361,7 @@ static const struct file_operations file_ops = {
  * netfn_capwap_enc_stats_read()
  *	Reads encap stats.
  */
-void netfn_capwap_enc_stats_read(struct netfn_capwap_tun_enc *enc, struct netfn_capwap_tun_stats *stats)
+void netfn_capwap_enc_stats_read(struct netfn_capwap_enc *enc, struct netfn_capwap_tun_stats *stats)
 {
 	uint64_t *dest = (uint64_t *)&stats->enc;
 	uint64_t *src = (uint64_t *)&enc->stats;
@@ -376,7 +376,7 @@ void netfn_capwap_enc_stats_read(struct netfn_capwap_tun_enc *enc, struct netfn_
  * netfn_capwap_enc()
  *	Parse, fragment and encapsulate.
  */
-bool netfn_capwap_enc(struct netfn_capwap_tun_enc *enc, struct sk_buff *orig_skb, struct sk_buff_head *q_frag)
+bool netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, struct sk_buff_head *q_frag)
 {
 	struct netfn_capwap_prehdr *phdr = (struct netfn_capwap_prehdr *)orig_skb->data;
 	struct netfn_capwap_enc_mdata mdata = {0};
@@ -452,10 +452,10 @@ bool netfn_capwap_enc(struct netfn_capwap_tun_enc *enc, struct sk_buff *orig_skb
  * netfn_capwap_enc_init()
  *	Encapsulation initialization.
  */
-bool netfn_capwap_enc_init(struct netfn_capwap_tun_enc *enc, struct netfn_capwap_enc_cfg *cfg, struct dentry *parent)
+bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc_cfg *cfg, struct dentry *parent)
 {
 	struct netfn_tuple_5tuple *tuple = &cfg->tuple.tuples.tuple_5;
-	struct netfn_capwap_tun_enc_hdr *hdr = &enc->hdr;
+	struct netfn_capwap_enc_hdr *hdr = &enc->hdr;
 
 	ether_addr_copy(&enc->bssid, cfg->bssid);
 	enc->outer_hdr_len = ETH_HLEN;
@@ -518,7 +518,7 @@ bool netfn_capwap_enc_init(struct netfn_capwap_tun_enc *enc, struct netfn_capwap
  * netfn_capwap_enc_mtu_update()
  *	Update the encap MTU
  */
-void netfn_capwap_enc_mtu_update(struct netfn_capwap_tun_enc *enc, unsigned int mtu)
+void netfn_capwap_enc_mtu_update(struct netfn_capwap_enc *enc, unsigned int mtu)
 {
 	enc->mtu = ((mtu - enc->outer_hdr_len) & ~(sizeof(uint64_t) - 1));
 }
