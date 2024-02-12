@@ -60,6 +60,7 @@ struct netfn_capwap_enc_cfg {
 	uint8_t bssid[ETH_ALEN];	/**< Basic service set ID. */
 	uint8_t snap_hdr[NETFN_CAPWAP_SNAP_HDR_LEN];
 					/**< Custom snap header. */
+	uint32_t reserve[4];		/**< Reserve for future use. */
 };
 
 /*
@@ -70,6 +71,7 @@ struct netfn_capwap_dec_cfg {
 	uint32_t features;		/**< Features enabled for tunnel. */
 	uint32_t max_frags;		/**< Maximum number of fragments expected. */
 	uint16_t max_payload_sz;	/**< Maximum size of the payload buffer. */
+	uint32_t reserve[4];		/**< Reserve for future use. */
 };
 
 /*
@@ -82,6 +84,7 @@ struct netfn_capwap_tun_cfg {
 	uint16_t id;				/**< Tunnel identifier. */
 	uint8_t capwap_ver;			/**< Capwap version. */
 	uint8_t features;			/**< Features enabled for tunnel. */
+	uint32_t reserve[4];		/**< Reserve for future use. */
 };
 
 /*
@@ -106,6 +109,7 @@ struct netfn_capwap_dec_stats {
 	uint64_t drop_malformed;		/**< Drop because of malformed packet. */
 	uint64_t drop_linearize_fail;		/**< Drop because of linearize failure. */
 	uint64_t drop_reasm_window;		/**< Drop because of a non-sequential fragment offset. */
+	uint64_t reserve[2];			/**< Reserve for future use. */
 };
 
 /*
@@ -125,6 +129,7 @@ struct netfn_capwap_enc_stats {
 	uint64_t drop_insufficient_hroom;	/**< Packets dropped because of insufficent headroom. */
 	uint64_t drop_direct_dtls;		/**< Packets dropped because of a DTLS packet. */
 	uint64_t drop_nwireless_len;		/**< Packets dropped because invalid nwireless len. */
+	uint64_t reserve[2];			/**< Reserve for future use. */
 };
 
 /*
