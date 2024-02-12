@@ -52,7 +52,7 @@ static int8_t *g_enc_stats_str[] = {
  */
 static inline void netfn_capwap_enc_winfo(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct netfn_capwap_enc_mdata *mdata)
 {
-	struct netfn_capwap_winfo *winfo = (struct netfn_capwap_winfo *)mdata->phdr.winfo;
+	struct netfn_capwap_winfo *winfo = (struct netfn_capwap_winfo *)mdata->phdr.wl_info;
 
 	/*
 	 * Add winfo only if set in winfo.
@@ -238,10 +238,10 @@ static void netfn_capwap_enc_80211(struct netfn_capwap_enc *enc, struct sk_buff 
 	 * Insert QoS header.
 	 */
 	if (enc->features & NETFN_CAPWAP_FEATURES_WLAN_QOS) {
-		uint16_t *qos = (uint16_t *)__skb_push(skb, sizeof(phdr->wlan_qos));
+		uint16_t *qos = (uint16_t *)__skb_push(skb, sizeof(phdr->wireless_qos));
 
 		fc |= IEEE80211_STYPE_QOS_DATA;
-		*qos = phdr->wlan_qos;
+		*qos = phdr->wireless_qos;
 	}
 
 	/*
