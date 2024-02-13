@@ -762,6 +762,33 @@ bool netfn_capwap_tun_unbind(struct net_device *dev)
 EXPORT_SYMBOL(netfn_capwap_tun_unbind);
 
 /*
+ * netfn_capwap_tun_flow_cookie_cfg()
+ *	Sets the flag to enable/disable
+ *	the Flow Cookie Lookup functionality.
+ */
+void netfn_capwap_tun_flow_cookie_cfg(struct net_device *dev, bool enable)
+{
+	struct netfn_capwap_tun *nct;
+	struct netfn_capwap_dec *dec;
+
+	BUG_ON(!dev);
+
+	nct = netdev_priv(dev);
+	dec = &nct->dec;
+
+	/*
+	 * Set the relevant flags here.
+	 */
+	if (enable) {
+		dec->features |= NETFN_CAPWAP_FEATURES_FLOW_COOKIE;
+		return;
+	}
+
+	dec->features &= ~NETFN_CAPWAP_FEATURES_FLOW_COOKIE;
+}
+EXPORT_SYMBOL(netfn_capwap_tun_flow_cookie_cfg);
+
+/*
  * netfn_capwap_tun_stats_get()
  *	Gets tunnel stats corresponding to dev.
  */

@@ -43,6 +43,14 @@
 #define NETFN_CAPWAPMGR_EXT_VALID_DTLS (NETFN_CAPWAPMGR_EXT_VALID_DTLS_ENC | NETFN_CAPWAPMGR_EXT_VALID_DTLS_DEC)
 
 /*
+ * We set the desired Hash table size here.
+ * User can choose the size from 1 to 4096.
+ * Any size other than this if configured,
+ * will be set to default.
+ */
+#define NETFN_CAPWAPMGR_FLOW_COOKIE_HASHTABLE_SIZE 4096
+
+/*
  * netfn_capwapmgr_stats
  *	Capwap manager stats.
  */
@@ -65,6 +73,7 @@ struct netfn_capwapmgr {
 	spinlock_t lock;			/* Global lock */
 	struct dentry *dentry;			/* Debugfs for driver stats */
 	struct netfn_capwapmgr_stats stats;	/* Stats */
+	struct netfn_flow_cookie_db *d;		/* Store the DB handle here */
 };
 
 extern struct netfn_capwapmgr g_mgr;	/* Global manager object */

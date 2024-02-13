@@ -71,6 +71,7 @@ struct netfn_capwapmgr_tun_ctx {
 	atomic64_t timer_resched;		/*< Flag to indicate if the stats sync timer can be re-attached */
 	DECLARE_BITMAP(state, NETFN_CAPWAPMGR_TUN_STATE_MAX);
 						/*< State of the tunnel */
+	uint64_t flow_cookie_num;		/*< Number of flow cookies configured for this tunnel */
 };
 
 /*

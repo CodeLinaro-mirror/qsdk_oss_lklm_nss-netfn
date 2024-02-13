@@ -342,6 +342,55 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_rule_destroy(struct netfn_capw
 	return NETFN_CAPWAPMGR_SUCCESS;
 }
 
+static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_cookie_add(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_capwapmgr_flow_cookie_cfg_info *fcinfo)
+{
+
+	/*
+	 * Account for the Flow Cookie Add operation here.
+	 * The Function Call ultimately hooks into the Flow Cookie Module
+	 * to perform the desired DB operation.
+	 */
+
+	if (netfn_flow_cookie_db_entry_add(ctx->mgr->d, &(fcinfo->tuple), &(fcinfo->flow_cookie)) == NETFN_FLOW_COOKIE_STATUS_FAILURE) {
+		atomic64_inc(&ctx->mgr->stats.error_stats[NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_ADD]);
+		return NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_ADD;
+	}
+
+	/*
+	 * rtnl lock protects concurrent updates.
+	 */
+	ctx->flow_cookie_num++;
+	if (ctx->flow_cookie_num == 1) {
+		netfn_capwap_tun_flow_cookie_cfg(ctx->capwap_dev, true);
+	}
+
+	return NETFN_CAPWAPMGR_SUCCESS;
+}
+
+static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_cookie_del(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_capwapmgr_flow_cookie_cfg_info *fcinfo)
+{
+
+	/*
+	 * Account for the Flow Cookie Delete operation here.
+	 * The Function Call ultimately hooks into the Flow Cookie Module
+	 * to perform the desired DB operation.
+	 */
+	if (netfn_flow_cookie_db_entry_del(ctx->mgr->d, &(fcinfo->tuple)) == NETFN_FLOW_COOKIE_STATUS_FAILURE) {
+		atomic64_inc(&ctx->mgr->stats.error_stats[NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_DEL]);
+		return NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_DEL;
+	}
+
+	/*
+	 * rtnl lock protects concurrent updates.
+	 */
+	ctx->flow_cookie_num--;
+	if (ctx->flow_cookie_num == 0) {
+		netfn_capwap_tun_flow_cookie_cfg(ctx->capwap_dev, false);
+	}
+
+	return NETFN_CAPWAPMGR_SUCCESS;
+}
+
 /*
  * netfn_capwapmgr_tun_init_cfg
  *	Validate tunnel configuration.
@@ -532,6 +581,8 @@ skip_dtls:
 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_TIMER_CONFIGURED) - 1;
 	__set_bit(bit_pos, ctx->state);
+
+	ctx->flow_cookie_num = 0;
 
 	/*
 	 * Keep a copy of tunnel configuration in tunnel context.
@@ -777,6 +828,10 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update(struct net_device *dev, struct 
 		break;
 	case NETFN_CAPWAPMGR_UPDATE_DTLS_DECAP_SESSION:
 		break;
+	case NETFN_CAPWAPMGR_ADD_NETFN_FLOW_COOKIE:
+		return netfn_capwapmgr_flow_cookie_add(ctx, &cfg->update_cfg.fcinfo);
+	case NETFN_CAPWAPMGR_DEL_NETFN_FLOW_COOKIE:
+		return netfn_capwapmgr_flow_cookie_del(ctx, &cfg->update_cfg.fcinfo);
 	default:
 		netfn_capwapmgr_warn("%px: Unknown cfg update type received", dev);
 		return NETFN_CAPWAPMGR_ERROR_MAX;

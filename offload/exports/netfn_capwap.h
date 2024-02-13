@@ -141,4 +141,32 @@ int netfn_capwap_tunid_stats_get(struct net_device *dev, uint8_t id, struct netf
  * @return: Pointer to private area.
  */
 void *netfn_capwap_tunid_pvt_get(struct net_device *dev);
+
+/*
+ * netfn_capwap_tun_flow_cookie_cfg()
+ *	Sets the flag to enable/disable
+ *	the Flow Cookie Lookup functionality.
+ *
+ * @dev: Netdevice.
+ * @bool: Enable the feature by sending true.
+ * @return: void.
+ */
+void netfn_capwap_tun_flow_cookie_cfg(struct net_device *dev, bool enable);
+
+/*
+ * netfn_capwap_set_db_handle()
+ *
+ * @netfn_flow_cookie_db: Netfn Flow Cookie DB handle.
+ * @return: void.
+ */
+void netfn_capwap_set_db_handle(struct netfn_flow_cookie_db *d);
+
+/*
+ * netfn_capwap_clear_db_handle()
+ *
+ * @void.
+ * @return: void.
+ */
+void netfn_capwap_clear_db_handle(void);
+
 #endif /* __NETFN_CAPWAP_H */
