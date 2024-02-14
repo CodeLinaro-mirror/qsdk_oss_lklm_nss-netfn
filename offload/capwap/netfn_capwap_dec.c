@@ -34,6 +34,28 @@
 #include "netfn_capwap_tun.h"
 #include "netfn_capwap_dec.h"
 
+#define NETFN_CAPWAP_DEC_STATS_MAX (sizeof(struct netfn_capwap_dec_stats) / sizeof(uint64_t))
+
+/*
+ * Decap statistics strings
+ */
+static int8_t *g_dec_stats_str[] = {
+	"num_frags",
+	"control_pkts",
+	"keepalive_pkts",
+	"fast_reasm",
+	"slow_reasm",
+	"drop_dup_frags",
+	"drop_dec_failure",
+	"drop_max_frags",
+	"drop_missing_frags",
+	"drop_large_frags",
+	"drop_csum_fail",
+	"drop_malformed",
+	"drop_linearize_fail",
+	"drop_reasm_window",
+};
+
 /*
  * netfn_capwap_dec_convert()
  *	Converts 802.11 to 802.3 pkt and adds meta header
@@ -123,6 +145,7 @@ static struct sk_buff *netfn_capwap_dec_fast_reasm(struct netfn_capwap_dec *dec,
 		struct sk_buff *skb)
 {
 	struct netfn_capwap_hdr_mdata *info1, *info2;
+	unsigned char *iter, *start, *end;
 	struct sk_buff *skb1, *skb2;
 	int err = 0;
 
@@ -161,10 +184,11 @@ static struct sk_buff *netfn_capwap_dec_fast_reasm(struct netfn_capwap_dec *dec,
 		return NULL;
 	}
 
-	/*
-	 * TODO: Setup cache line(s) based on src_len upto a max of 4
-	 */
-	prefetchw(skb_tail_pointer(skb1));
+	start = skb_tail_pointer(skb1);
+	end = start + skb2->len;
+	for (iter = start; iter < end; iter += PREFETCH_STRIDE) {
+		prefetchw(iter);
+	}
 
 	/*
 	 * Coalesce the 2 skbs.
@@ -515,11 +539,13 @@ done:
 static ssize_t netfn_capwap_dec_stats_show(struct file *fp, char __user *ubuf, size_t sz, loff_t *ppos)
 {
 	struct netfn_capwap_dec *dec = fp->private_data;
-	struct netfn_capwap_dec_stats *stats = &dec->stats;
+	uint64_t *stats = (uint64_t *)&dec->stats;
 	size_t dec_stats_sz, stats_sz;
 	ssize_t bytes_read = 0;
 	size_t size_wr = 0;
+	char *strings;
 	char *buf;
+	int i;
 
 	dec_stats_sz = sizeof(struct netfn_capwap_dec_stats) / sizeof(uint64_t) * NETFN_CAPWAP_DEC_STATS_STRLEN;
 	stats_sz = (NETFN_CAPWAP_DEC_STATS_WIDTH * NETFN_CAPWAP_DEC_STATS_STRLEN) + dec_stats_sz;
@@ -531,24 +557,18 @@ static ssize_t netfn_capwap_dec_stats_show(struct file *fp, char __user *ubuf, s
 	}
 
 	/*
-	 * TODO: Convert to scnpritf engine.
 	 * Print decap stats.
 	 */
+	BUILD_BUG_ON(ARRAY_SIZE(g_dec_stats_str) != NETFN_CAPWAP_DEC_STATS_MAX);
 	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "\n------------[decap stats start]----------\n");
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "num_frags", READ_ONCE(stats->num_frags));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "control_pkts", READ_ONCE(stats->control_pkts));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "keepalive_pkts", READ_ONCE(stats->keepalive_pkts));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "fast_reasm", READ_ONCE(stats->fast_reasm));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "slow_reasm", READ_ONCE(stats->slow_reasm));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "drop_dup_frags", READ_ONCE(stats->drop_dup_frags));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t = %llu\n", "drop_dec_failure", READ_ONCE(stats->drop_dec_failure));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "drop_max_frags", READ_ONCE(stats->drop_max_frags));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t = %llu\n", "drop_missing_frags", READ_ONCE(stats->drop_missing_frags));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t = %llu\n", "drop_large_frags", READ_ONCE(stats->drop_large_frags));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "drop_csum_fail", READ_ONCE(stats->drop_csum_fail));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "drop_malformed", READ_ONCE(stats->drop_malformed));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t = %llu\n", "drop_linearize_fail", READ_ONCE(stats->drop_linearize_fail));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t = %llu\n", "drop_reasm_window", READ_ONCE(stats->drop_reasm_window));
+
+	for (i = 0, strings = g_dec_stats_str[0]; i < ARRAY_SIZE(g_dec_stats_str); i++, stats++, strings++) {
+		size_t len = stats_sz - size_wr;
+		char *start = buf + size_wr;
+
+		size_wr += scnprintf(start, len, "%s\t\t = %llu\n", strings, READ_ONCE(*stats));
+	}
+
 	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "------------[decap stats end]-----------\n");
 
 	bytes_read = simple_read_from_buffer(ubuf, sz, ppos, buf, size_wr);
