@@ -20,4 +20,50 @@
  */
 #ifndef __NSS_FLOW_AUTO_FLOWCOOKIE_H
 #define __NSS_FLOW_AUTO_FLOWCOOKIE_H
+
+#include <netfn_auto.h>
+#include <netfn_flow_cookie.h>
+
+/*
+ * TODO: can be moved to netfn_auto.h
+ */
+uint8_t string_to_int(const char* str) {
+	const uint32_t prime = 16777619;
+	uint32_t hash = 2166136261;
+
+	while (*str) {
+		hash ^= (uint8_t)*str;
+		hash *= prime;
+		str++;
+	}
+
+	return (uint8_t)hash;
+}
+
+/*
+ * netfn_auto_flowcookie_parse_tuple()
+ * 	flowcookie tuple parse
+ */
+bool netfn_auto_flowcookie_parse_tuple(struct netfn_tuple *original, struct nlattr *tuple)
+{
+	return netfn_auto_parse_tuple(original, tuple);
+}
+
+/*
+ * netfn_auto_flowcookie_get_cmd_index()
+ * 	return the index of the flowcookie cmd
+ */
+int netfn_auto_flowcookie_get_cmd_index(const char *cmd)
+{
+	const char *flowcookie_cmds[] = {"RULE_ADD", "RULE_DEL", "RULE_INIT", "GET_FLOW_ID", "GET_FLOW_MARK", "GET_SAWF_HANDLE"};
+	int i;
+
+	for(i = 0; i < sizeof(flowcookie_cmds); i++) {
+		if (strcmp(cmd, flowcookie_cmds[i]) == 0) {
+			return i;
+		}
+	}
+
+	return -1;
+}
 #endif
