@@ -680,6 +680,7 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 			continue;
 		}
 
+reset_cache:
 		/*
 		 * Pull skb out of fast reasm queue and send it for slow reassembly.
 		 */
@@ -694,6 +695,16 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 		reasm_skb = netfn_capwap_dec_slow_reasm(dec, ctx, skb, &q_free);
 		if (reasm_skb) {
 			__skb_queue_tail(&q_frags, reasm_skb);
+		}
+
+		/*
+		 * We don't want to keep anything in reassembly cache until unless its
+		 * 2 fragments reassembly. Since at this point 2 frag reassembly would
+		 * have already been taken care so this is >2 frags reassembly.
+		 */
+		if (ctx->reasm_cache) {
+			skb = NULL;
+			goto reset_cache;
 		}
 	}
 
