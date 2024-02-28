@@ -96,6 +96,7 @@ static ssize_t netfn_dtls_tun_print_stats(struct file *fp, char __user *ubuf, si
 	len = snprintf(buf, max_len, "Session Added: %llu\n", stats.session_alloc);
 	len += snprintf(buf + len, max_len - len, "session Removed: %llu\n", stats.session_free);
 	len += snprintf(buf + len, max_len - len, "encap switch: %llu\n", stats.encap_switch);
+	len += snprintf(buf + len, max_len - len, "Decap switch: %llu\n", stats.decap_switch);
 	len += snprintf(buf + len, max_len - len, "Device Encapsulation Statistics:\n");
 	len += snprintf(buf + len, max_len - len, "\tTx packets: %llu\n", stats.tx_pkts);
 	len += snprintf(buf + len, max_len - len, "\tTx bytes: %llu\n", stats.tx_bytes);
@@ -500,10 +501,10 @@ done:
 EXPORT_SYMBOL(netfn_dtls_tun_session_del);
 
 /*
- * netfn_dtls_tun_session_encap_switch()
+ * netfn_dtls_tun_session_switch()
  *	Switch pending state into active state. Free active state if any.
  */
-void netfn_dtls_tun_session_encap_switch(struct net_device *dev)
+void netfn_dtls_tun_session_switch(struct net_device *dev, bool encap)
 {
 	struct netfn_dtls_tun *tun = netdev_priv(dev);
 	struct netfn_dtls_tun_stats *tun_stats;
@@ -512,7 +513,13 @@ void netfn_dtls_tun_session_encap_switch(struct net_device *dev)
 	struct netfn_dtls_session *active;
 
 	tun_stats = this_cpu_ptr(tun->stats_pcpu);
-	state = &tun->enc;
+	if (encap) {
+		tun_stats->encap_switch++;
+		state = &tun->enc;
+	} else {
+		tun_stats->decap_switch++;
+		state = &tun->dec;
+	}
 
 	/*
 	 * Switch Pending into Active
@@ -529,7 +536,6 @@ void netfn_dtls_tun_session_encap_switch(struct net_device *dev)
 	/*
 	 * If there was any active state, Free it.
 	 */
-	tun_stats->encap_switch++;
 	if (!active) {
 		return;
 	}
@@ -543,7 +549,7 @@ void netfn_dtls_tun_session_encap_switch(struct net_device *dev)
 	netfn_dtls_session_free(active);
 	tun_stats->session_free++;
 }
-EXPORT_SYMBOL(netfn_dtls_tun_session_encap_switch);
+EXPORT_SYMBOL(netfn_dtls_tun_session_switch);
 
 /*
  * netfn_dtls_tun_session_add()
