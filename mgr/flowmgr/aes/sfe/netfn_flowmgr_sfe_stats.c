@@ -202,12 +202,12 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_v4_get_stats(struct netfn_flowmgr_flow_con
 	sfe_stats.tuple.return_ident = 0;
 	if (tuple_type == NETFN_TUPLE_3TUPLE) {
 		sfe_stats.tuple.protocol = conn_stats->tuple.tuples.tuple_3.protocol;
-		sfe_stats.tuple.flow_ip = conn_stats->tuple.tuples.tuple_3.src_ip[0];
-		sfe_stats.tuple.return_ip = conn_stats->tuple.tuples.tuple_3.dest_ip[0];
+		sfe_stats.tuple.flow_ip = conn_stats->tuple.tuples.tuple_3.src_ip.ip4.s_addr;
+		sfe_stats.tuple.return_ip = conn_stats->tuple.tuples.tuple_3.dest_ip.ip4.s_addr;
 	} else if (tuple_type == NETFN_TUPLE_4TUPLE) {
 		sfe_stats.tuple.protocol = conn_stats->tuple.tuples.tuple_4.protocol;
-		sfe_stats.tuple.flow_ip = conn_stats->tuple.tuples.tuple_4.src_ip[0];
-		sfe_stats.tuple.return_ip = conn_stats->tuple.tuples.tuple_4.dest_ip[0];
+		sfe_stats.tuple.flow_ip = conn_stats->tuple.tuples.tuple_4.src_ip.ip4.s_addr;
+		sfe_stats.tuple.return_ip = conn_stats->tuple.tuples.tuple_4.dest_ip.ip4.s_addr;
 		if (conn_stats->tuple.tuples.tuple_4.ident_type == NETFN_4TUPLE_VALID_SRC_PORT) {
 			sfe_stats.tuple.flow_ident = conn_stats->tuple.tuples.tuple_4.l4_ident;
 		} else {
@@ -215,8 +215,8 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_v4_get_stats(struct netfn_flowmgr_flow_con
 		}
 	} else if (tuple_type == NETFN_TUPLE_5TUPLE) {
                 sfe_stats.tuple.protocol = conn_stats->tuple.tuples.tuple_5.protocol;
-                sfe_stats.tuple.flow_ip = conn_stats->tuple.tuples.tuple_5.src_ip[0];
-                sfe_stats.tuple.return_ip = conn_stats->tuple.tuples.tuple_5.dest_ip[0];
+                sfe_stats.tuple.flow_ip = conn_stats->tuple.tuples.tuple_5.src_ip.ip4.s_addr;
+                sfe_stats.tuple.return_ip = conn_stats->tuple.tuples.tuple_5.dest_ip.ip4.s_addr;
                 sfe_stats.tuple.flow_ident = conn_stats->tuple.tuples.tuple_5.l4_src_ident;
                 sfe_stats.tuple.return_ident = conn_stats->tuple.tuples.tuple_5.l4_dest_ident;
         }
@@ -501,14 +501,14 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_v6_get_stats(struct netfn_flowmgr_flow_con
 	sfe_stats.tuple.return_ident = 0;
 	if (tuple_type == NETFN_TUPLE_3TUPLE) {
 		sfe_stats.tuple.protocol = conn_stats->tuple.tuples.tuple_3.protocol;
-		memcpy(sfe_stats.tuple.flow_ip, conn_stats->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
-		memcpy(sfe_stats.tuple.return_ip, conn_stats->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(sfe_stats.tuple.flow_ip, conn_stats->tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(sfe_stats.tuple.return_ip, conn_stats->tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 		sfe_stats.tuple.flow_ident = 0;
 		sfe_stats.tuple.return_ident = 0;
 	} else if (tuple_type == NETFN_TUPLE_4TUPLE) {
 		sfe_stats.tuple.protocol = conn_stats->tuple.tuples.tuple_4.protocol;
-		memcpy(sfe_stats.tuple.flow_ip, conn_stats->tuple.tuples.tuple_4.src_ip, sizeof(uint32_t) * 4);
-		memcpy(sfe_stats.tuple.return_ip, conn_stats->tuple.tuples.tuple_4.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(sfe_stats.tuple.flow_ip, conn_stats->tuple.tuples.tuple_4.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(sfe_stats.tuple.return_ip, conn_stats->tuple.tuples.tuple_4.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 		if (conn_stats->tuple.tuples.tuple_4.ident_type == NETFN_4TUPLE_VALID_SRC_PORT) {
 			sfe_stats.tuple.flow_ident = conn_stats->tuple.tuples.tuple_4.l4_ident;
 		} else {
@@ -516,8 +516,8 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_v6_get_stats(struct netfn_flowmgr_flow_con
 		}
 	} else if (tuple_type == NETFN_TUPLE_5TUPLE) {
                 sfe_stats.tuple.protocol = conn_stats->tuple.tuples.tuple_5.protocol;
-		memcpy(sfe_stats.tuple.flow_ip, conn_stats->tuple.tuples.tuple_5.src_ip, sizeof(uint32_t) * 4);
-		memcpy(sfe_stats.tuple.return_ip, conn_stats->tuple.tuples.tuple_5.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(sfe_stats.tuple.flow_ip, conn_stats->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(sfe_stats.tuple.return_ip, conn_stats->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
                 sfe_stats.tuple.flow_ident = conn_stats->tuple.tuples.tuple_5.l4_src_ident;
                 sfe_stats.tuple.return_ident = conn_stats->tuple.tuples.tuple_5.l4_dest_ident;
         }

@@ -66,10 +66,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_destroy_tuple_info(stru
 		/*
 		 * IPs
 		 */
-		org_src_ip = original->tuple.tuples.tuple_3.src_ip[0];
-		org_dst_ip = original->tuple.tuples.tuple_3.dest_ip[0];
-		reply_src_ip = reply->tuple.tuples.tuple_3.src_ip[0];
-		reply_dst_ip = reply->tuple.tuples.tuple_3.dest_ip[0];
+		org_src_ip = (uint32_t)original->tuple.tuples.tuple_3.src_ip.ip4.s_addr;
+		org_dst_ip = (uint32_t)original->tuple.tuples.tuple_3.dest_ip.ip4.s_addr;
+		reply_src_ip = (uint32_t)reply->tuple.tuples.tuple_3.src_ip.ip4.s_addr;
+		reply_dst_ip = (uint32_t)reply->tuple.tuples.tuple_3.dest_ip.ip4.s_addr;
 
 		if (org_src_ip != reply_dst_ip || org_dst_ip != reply_src_ip) {
 			netfn_flowmgr_warn("Non-matching IP addresses in flow and return direction\n");
@@ -93,10 +93,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_destroy_tuple_info(stru
 		/*
 		 * IPs
 		 */
-		org_src_ip = original->tuple.tuples.tuple_4.src_ip[0];
-		org_dst_ip = original->tuple.tuples.tuple_4.dest_ip[0];
-		reply_src_ip = reply->tuple.tuples.tuple_4.src_ip[0];
-		reply_dst_ip = reply->tuple.tuples.tuple_4.dest_ip[0];
+		org_src_ip = (uint32_t)original->tuple.tuples.tuple_4.src_ip.ip4.s_addr;
+		org_dst_ip = (uint32_t)original->tuple.tuples.tuple_4.dest_ip.ip4.s_addr;
+		reply_src_ip = (uint32_t)reply->tuple.tuples.tuple_4.src_ip.ip4.s_addr;
+		reply_dst_ip = (uint32_t)reply->tuple.tuples.tuple_4.dest_ip.ip4.s_addr;
 
 		/*
 		 * Ports
@@ -140,10 +140,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_destroy_tuple_info(stru
 		/*
 		 * IPs
 		 */
-		org_src_ip = original->tuple.tuples.tuple_5.src_ip[0];
-		org_dst_ip = original->tuple.tuples.tuple_5.dest_ip[0];
-		reply_src_ip = reply->tuple.tuples.tuple_5.src_ip[0];
-		reply_dst_ip = reply->tuple.tuples.tuple_5.dest_ip[0];
+		org_src_ip = (uint32_t)original->tuple.tuples.tuple_5.src_ip.ip4.s_addr;
+		org_dst_ip = (uint32_t)original->tuple.tuples.tuple_5.dest_ip.ip4.s_addr;
+		reply_src_ip = (uint32_t)reply->tuple.tuples.tuple_5.src_ip.ip4.s_addr;
+		reply_dst_ip = (uint32_t)reply->tuple.tuples.tuple_5.dest_ip.ip4.s_addr;
 
 		/*
 		 * Ports
@@ -245,12 +245,12 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_destroy_v4_rule(struct netfn_flowmgr_destr
 
 	if (tuple_type == NETFN_TUPLE_3TUPLE) {
 		nirdm->tuple.protocol = original->tuple.tuples.tuple_3.protocol;
-		nirdm->tuple.flow_ip = original->tuple.tuples.tuple_3.src_ip[0];
-		nirdm->tuple.return_ip = original->tuple.tuples.tuple_3.dest_ip[0];
+		nirdm->tuple.flow_ip = original->tuple.tuples.tuple_3.src_ip.ip4.s_addr;
+		nirdm->tuple.return_ip = original->tuple.tuples.tuple_3.dest_ip.ip4.s_addr;
 	} else if (tuple_type == NETFN_TUPLE_4TUPLE) {
 		nirdm->tuple.protocol = original->tuple.tuples.tuple_4.protocol;
-		nirdm->tuple.flow_ip = original->tuple.tuples.tuple_4.src_ip[0];
-		nirdm->tuple.return_ip = original->tuple.tuples.tuple_4.dest_ip[0];
+		nirdm->tuple.flow_ip = original->tuple.tuples.tuple_4.src_ip.ip4.s_addr;
+		nirdm->tuple.return_ip = original->tuple.tuples.tuple_4.dest_ip.ip4.s_addr;
 		if (original->tuple.tuples.tuple_4.ident_type == NETFN_4TUPLE_VALID_SRC_PORT) {
 			nirdm->tuple.flow_ident = original->tuple.tuples.tuple_4.l4_ident;
 		} else {
@@ -258,8 +258,8 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_destroy_v4_rule(struct netfn_flowmgr_destr
 		}
 	} else {
 		nirdm->tuple.protocol = original->tuple.tuples.tuple_5.protocol;
-		nirdm->tuple.flow_ip = original->tuple.tuples.tuple_5.src_ip[0];
-		nirdm->tuple.return_ip = original->tuple.tuples.tuple_5.dest_ip[0];
+		nirdm->tuple.flow_ip = original->tuple.tuples.tuple_5.src_ip.ip4.s_addr;
+		nirdm->tuple.return_ip = original->tuple.tuples.tuple_5.dest_ip.ip4.s_addr;
 		nirdm->tuple.flow_ident = original->tuple.tuples.tuple_5.l4_src_ident;
 		nirdm->tuple.return_ident = original->tuple.tuples.tuple_5.l4_dest_ident;
 	}
@@ -466,10 +466,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 		/*
 		 * Non-xlate IPs
 		 */
-		org_src_ip = original->tuple.tuples.tuple_3.src_ip[0];
-		org_dst_ip = original->tuple.tuples.tuple_3.dest_ip[0];
-		reply_src_ip = reply->tuple.tuples.tuple_3.src_ip[0];
-		reply_dst_ip = reply->tuple.tuples.tuple_3.dest_ip[0];
+		org_src_ip = (uint32_t)original->tuple.tuples.tuple_3.src_ip.ip4.s_addr;
+		org_dst_ip = (uint32_t)original->tuple.tuples.tuple_3.dest_ip.ip4.s_addr;
+		reply_src_ip = (uint32_t)reply->tuple.tuples.tuple_3.src_ip.ip4.s_addr;
+		reply_dst_ip = (uint32_t)reply->tuple.tuples.tuple_3.dest_ip.ip4.s_addr;
 
 		/*
 		 * There are two cases
@@ -523,10 +523,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 		/*
 		 * Non-xlate IPs
 		 */
-		org_src_ip = original->tuple.tuples.tuple_4.src_ip[0];
-		org_dst_ip = original->tuple.tuples.tuple_4.dest_ip[0];
-		reply_src_ip = reply->tuple.tuples.tuple_4.src_ip[0];
-		reply_dst_ip = reply->tuple.tuples.tuple_4.dest_ip[0];
+		org_src_ip = (uint32_t)original->tuple.tuples.tuple_4.src_ip.ip4.s_addr;
+		org_dst_ip = (uint32_t)original->tuple.tuples.tuple_4.dest_ip.ip4.s_addr;
+		reply_src_ip = (uint32_t)reply->tuple.tuples.tuple_4.src_ip.ip4.s_addr;
+		reply_dst_ip = (uint32_t)reply->tuple.tuples.tuple_4.dest_ip.ip4.s_addr;
 
 		/*
 		 * Ports
@@ -621,10 +621,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v4_create_tuple_info(struc
 		/*
 		 * Non-xlate IPs
 		 */
-		org_src_ip = original->tuple.tuples.tuple_5.src_ip[0];
-		org_dst_ip = original->tuple.tuples.tuple_5.dest_ip[0];
-		reply_src_ip = reply->tuple.tuples.tuple_5.src_ip[0];
-		reply_dst_ip = reply->tuple.tuples.tuple_5.dest_ip[0];
+		org_src_ip = (uint32_t)original->tuple.tuples.tuple_5.src_ip.ip4.s_addr;
+		org_dst_ip = (uint32_t)original->tuple.tuples.tuple_5.dest_ip.ip4.s_addr;
+		reply_src_ip = (uint32_t)reply->tuple.tuples.tuple_5.src_ip.ip4.s_addr;
+		reply_dst_ip = (uint32_t)reply->tuple.tuples.tuple_5.dest_ip.ip4.s_addr;
 
 		/*
 		 * Ports
@@ -788,12 +788,12 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_create_v4_rule(struct netfn_flowmgr_create
 
 	if (tuple_type == NETFN_TUPLE_3TUPLE) {
 		nircm->tuple.protocol = original->tuple.tuples.tuple_3.protocol;
-		nircm->tuple.flow_ip = original->tuple.tuples.tuple_3.src_ip[0];
-		nircm->tuple.return_ip = original->tuple.tuples.tuple_3.dest_ip[0];
+		nircm->tuple.flow_ip = (uint32_t)original->tuple.tuples.tuple_3.src_ip.ip4.s_addr;
+		nircm->tuple.return_ip = (uint32_t)original->tuple.tuples.tuple_3.dest_ip.ip4.s_addr;
 	} else if (tuple_type == NETFN_TUPLE_4TUPLE) {
 		nircm->tuple.protocol = original->tuple.tuples.tuple_4.protocol;
-		nircm->tuple.flow_ip = original->tuple.tuples.tuple_4.src_ip[0];
-		nircm->tuple.return_ip = original->tuple.tuples.tuple_4.dest_ip[0];
+		nircm->tuple.flow_ip = (uint32_t)original->tuple.tuples.tuple_4.src_ip.ip4.s_addr;
+		nircm->tuple.return_ip = (uint32_t)original->tuple.tuples.tuple_4.dest_ip.ip4.s_addr;
 		nircm->tuple.return_ident = original->tuple.tuples.tuple_4.l4_ident;
 		if (original->tuple.tuples.tuple_4.ident_type == NETFN_4TUPLE_VALID_SRC_PORT) {
 			nircm->tuple.flow_ident = original->tuple.tuples.tuple_4.l4_ident;
@@ -803,8 +803,8 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_create_v4_rule(struct netfn_flowmgr_create
 		}
 	} else {
 		nircm->tuple.protocol = original->tuple.tuples.tuple_5.protocol;
-		nircm->tuple.flow_ip = original->tuple.tuples.tuple_5.src_ip[0];
-		nircm->tuple.return_ip = original->tuple.tuples.tuple_5.dest_ip[0];
+		nircm->tuple.flow_ip = (uint32_t)original->tuple.tuples.tuple_5.src_ip.ip4.s_addr;
+		nircm->tuple.return_ip = (uint32_t)original->tuple.tuples.tuple_5.dest_ip.ip4.s_addr;
 		nircm->tuple.flow_ident = original->tuple.tuples.tuple_5.l4_src_ident;
 		nircm->tuple.return_ident = original->tuple.tuples.tuple_5.l4_dest_ident;
 	}

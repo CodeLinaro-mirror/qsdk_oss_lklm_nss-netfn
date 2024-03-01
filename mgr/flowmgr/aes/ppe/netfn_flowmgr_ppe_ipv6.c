@@ -60,10 +60,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_ppe_validate_v6_tuple_info(struct netfn
 		/*
 		 * IPs
 		 */
-		memcpy(org_src_ip, original_tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
-		memcpy(org_dst_ip, original_tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_src_ip, reply_tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_dst_ip, reply_tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(org_src_ip, original_tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(org_dst_ip, original_tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_src_ip, reply_tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_dst_ip, reply_tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 
 		/*
 		 * Original flow rule ip info should match with reply direction
@@ -92,10 +92,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_ppe_validate_v6_tuple_info(struct netfn
 		/*
 		 * IPs
 		 */
-		memcpy(org_src_ip, original_tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
-		memcpy(org_dst_ip, original_tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_src_ip, reply_tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_dst_ip, reply_tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(org_src_ip, original_tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(org_dst_ip, original_tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_src_ip, reply_tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_dst_ip, reply_tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 
 		/*
 		 * Ports
@@ -204,21 +204,21 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v6_rule(struct netfn_flowmgr_create
 		 * Fill PPE three tuple info
 		 */
 		pd6rc->tuple.protocol = original->tuple.tuples.tuple_3.protocol;
-		memcpy(pd6rc->tuple.flow_ip, original->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
+		memcpy(pd6rc->tuple.flow_ip, original->tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 		netfn_flowmgr_ppe_endianess_be_to_le(pd6rc->tuple.flow_ip, NETFN_FLOWMGR_TUPLE_IP_VERSION_V6);
-		memcpy(pd6rc->tuple.return_ip, original->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(pd6rc->tuple.return_ip, original->tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 		netfn_flowmgr_ppe_endianess_be_to_le(pd6rc->tuple.return_ip, NETFN_FLOWMGR_TUPLE_IP_VERSION_V6);
 	} else if (tuple_type == NETFN_TUPLE_5TUPLE) {
 		/*
 		 * Fill PPE five tuple info
 		 */
 		pd6rc->tuple.protocol = original->tuple.tuples.tuple_5.protocol;
-		memcpy(pd6rc->tuple.flow_ip, original->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
+		memcpy(pd6rc->tuple.flow_ip, original->tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 		netfn_flowmgr_ppe_endianess_be_to_le(pd6rc->tuple.flow_ip, NETFN_FLOWMGR_TUPLE_IP_VERSION_V6);
-		memcpy(pd6rc->tuple.return_ip, original->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(pd6rc->tuple.return_ip, original->tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 		netfn_flowmgr_ppe_endianess_be_to_le(pd6rc->tuple.return_ip, NETFN_FLOWMGR_TUPLE_IP_VERSION_V6);
-		pd6rc->tuple.flow_ident = (uint32_t)original->tuple.tuples.tuple_5.l4_src_ident;
-		pd6rc->tuple.return_ident = (uint32_t)original->tuple.tuples.tuple_5.l4_dest_ident;
+		pd6rc->tuple.flow_ident = (uint32_t)ntohs(original->tuple.tuples.tuple_5.l4_src_ident);
+		pd6rc->tuple.return_ident = (uint32_t)ntohs(original->tuple.tuples.tuple_5.l4_dest_ident);
 	}
 
 	/*
@@ -332,7 +332,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v6_rule(struct netfn_flowmgr_create
 	 * Fill supported rule info
 	 */
 	org_rules = original->rule_info.rule_valid_flags;
-	reply_rules = original->rule_info.rule_valid_flags;
+	reply_rules = reply->rule_info.rule_valid_flags;
 
 	netfn_flowmgr_trace("org_rules = 0x%x\n", org_rules);
 	netfn_flowmgr_trace("reply_rules = 0x%x\n", reply_rules);
@@ -562,21 +562,21 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_destroy_v6_rule(struct netfn_flowmgr_destr
 		 * Fill PPE three tuple info
 		 */
 		pd6rd->tuple.protocol = original->tuple.tuples.tuple_3.protocol;
-		memcpy(pd6rd->tuple.flow_ip, original->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
+		memcpy(pd6rd->tuple.flow_ip, original->tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 		netfn_flowmgr_ppe_endianess_be_to_le(pd6rd->tuple.flow_ip, NETFN_FLOWMGR_TUPLE_IP_VERSION_V6);
-		memcpy(pd6rd->tuple.return_ip, original->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(pd6rd->tuple.return_ip, original->tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 		netfn_flowmgr_ppe_endianess_be_to_le(pd6rd->tuple.return_ip, NETFN_FLOWMGR_TUPLE_IP_VERSION_V6);
 	} else if (tuple_type == NETFN_TUPLE_5TUPLE) {
 		/*
 		 * Fill PPE five tuple info
 		 */
 		pd6rd->tuple.protocol = original->tuple.tuples.tuple_5.protocol;
-		memcpy(pd6rd->tuple.flow_ip, original->tuple.tuples.tuple_5.src_ip, sizeof(uint32_t) * 4);
+		memcpy(pd6rd->tuple.flow_ip, original->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 		netfn_flowmgr_ppe_endianess_be_to_le(pd6rd->tuple.flow_ip, NETFN_FLOWMGR_TUPLE_IP_VERSION_V6);
-		memcpy(pd6rd->tuple.return_ip, original->tuple.tuples.tuple_5.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(pd6rd->tuple.return_ip, original->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 		netfn_flowmgr_ppe_endianess_be_to_le(pd6rd->tuple.return_ip, NETFN_FLOWMGR_TUPLE_IP_VERSION_V6);
-		pd6rd->tuple.flow_ident = original->tuple.tuples.tuple_5.l4_src_ident;
-		pd6rd->tuple.return_ident = original->tuple.tuples.tuple_5.l4_dest_ident;;
+		pd6rd->tuple.flow_ident = (uint32_t)ntohs(original->tuple.tuples.tuple_5.l4_src_ident);
+		pd6rd->tuple.return_ident = (uint32_t)ntohs(original->tuple.tuples.tuple_5.l4_dest_ident);
 	}
 
 	/*
