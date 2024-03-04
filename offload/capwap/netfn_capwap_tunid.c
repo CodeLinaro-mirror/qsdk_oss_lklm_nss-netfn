@@ -103,7 +103,17 @@ static netdev_tx_t netfn_capwap_tunid_tx(struct sk_buff *skb, struct net_device 
 	struct netfn_capwap_prehdr *pre = (struct netfn_capwap_prehdr *)skb->data;
 	struct netfn_capwap_tunid *ncti = netdev_priv(dev);
 	struct netfn_capwap_pkt_stats *stats = &ncti->stats;
+	uint32_t tunid = pre->tun_id;
 	struct net_device *tun_dev;
+
+	/*
+	 * Check if tunid is valid.
+	 */
+	if (tunid < 0 || tunid >= NETFN_CAPWAP_MAX_IDS) {
+		pr_warn("%px: Invalid id(%d) allowed(0 to %d)\n", &global_nc, tunid, NETFN_CAPWAP_MAX_IDS - 1);
+		dev_kfree_skb(skb);
+		return NETDEV_TX_OK;
+	}
 
 	rcu_read_lock_bh();
 	tun_dev = rcu_dereference(ncti->tunnels[pre->tun_id]);
@@ -225,7 +235,7 @@ struct net_device *netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, st
 	BUG_ON(!dev);
 
 	if (id < 0 || id >= NETFN_CAPWAP_MAX_IDS) {
-		pr_warn("%px: Invalid id(%d) allowed(1 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS);
+		pr_warn("%px: Invalid id(%d) allowed(0 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS - 1);
 		return NULL;
 	}
 
@@ -306,7 +316,7 @@ bool netfn_capwap_tunid_del(struct net_device *dev, uint8_t id)
 	BUG_ON(!dev);
 
 	if (id < 0 || id >= NETFN_CAPWAP_MAX_IDS) {
-		pr_warn("%px: Invalid id(%d) allowed(1 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS);
+		pr_warn("%px: Invalid id(%d) allowed(0 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS - 1);
 		return false;
 	}
 
@@ -343,7 +353,7 @@ bool netfn_capwap_tunid_bind(struct net_device *dev, uint8_t id, struct net_devi
 	BUG_ON(!next);
 
 	if (id < 0 || id >= NETFN_CAPWAP_MAX_IDS) {
-		pr_warn("%px: Invalid id(%d) allowed(1 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS);
+		pr_warn("%px: Invalid id(%d) allowed(0 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS - 1);
 		return false;
 	}
 
@@ -385,7 +395,7 @@ int netfn_capwap_tunid_stats_get(struct net_device *dev, uint8_t id, struct netf
 	BUG_ON(!stats);
 
 	if (id < 0 || id >= NETFN_CAPWAP_MAX_IDS) {
-		pr_warn("%px: Invalid id(%d) allowed(1 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS);
+		pr_warn("%px: Invalid id(%d) allowed(0 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS - 1);
 		return -EINVAL;
 	}
 
