@@ -50,6 +50,7 @@ typedef uint16_t netfn_flowmgr_ret_t;
 #define NETFN_FLOWMGR_VALID_RULE_FLAG_DST_NAT				0x1000  /**< Dst NAT rule is valid */
 #define NETFN_FLOWMGR_VALID_RULE_FLAG_MAC				0x2000  /**< MAC rule is valid */
 #define NETFN_FLOWMGR_VALID_RULE_FLAG_TCP				0x4000  /**< TCP rule is valid */
+#define NETFN_FLOWMGR_VALID_RULE_FLAG_NOEDIT_RULE			0x8000  /**< Noedit rule is valid */
 
 /**
  * enum netfn_flowmgr_ret_status
