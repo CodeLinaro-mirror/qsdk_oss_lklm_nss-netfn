@@ -44,10 +44,7 @@
 static bool netfn_capwap_tun_rx(struct netfn_capwap_tun *nct, struct sk_buff *skb)
 {
 	struct sk_buff_head q_head;
-	uint64_t tx_bytes = 0;
-
-	NETFN_CAPWAP_TUN_STATS_INC(&nct->stats.rx_pkts);
-	NETFN_CAPWAP_TUN_STATS_ADD(&nct->stats.rx_bytes, skb->len);
+	uint64_t rx_bytes = 0;
 
 	__skb_queue_head_init(&q_head);
 	__skb_queue_head(&q_head, skb);
@@ -62,10 +59,13 @@ static bool netfn_capwap_tun_rx(struct netfn_capwap_tun *nct, struct sk_buff *sk
 	/*
 	 * RPS the packet to forwarding core.
 	 */
-	netfn_pkt_steer_send_list(&nct->rx_steer, &q_head, NETFN_CAPWAP_RPS_CORE, &tx_bytes);
+	netfn_pkt_steer_send_list(&nct->rx_steer, &q_head, NETFN_CAPWAP_RPS_CORE, &rx_bytes);
 	if (unlikely(skb_queue_len(&q_head))) {
 		goto fail;
 	}
+
+	NETFN_CAPWAP_TUN_STATS_INC(&nct->stats.rx_pkts);
+	NETFN_CAPWAP_TUN_STATS_ADD(&nct->stats.rx_bytes, rx_bytes);
 
 	return true;
 fail:
@@ -148,8 +148,8 @@ static netdev_tx_t netfn_capwap_tun_tx(struct sk_buff *skb, struct net_device *d
 	 * Number of wireless sections shouldn't exceed max count.
 	 */
 	if (unlikely(phdr->nwireless > NETFN_CAPWAP_MAX_NWIRELESS)) {
-		pr_warn_ratelimited("%px: Number of wireless sections exceeds max count(%d).\n",
-				phdr, NETFN_CAPWAP_MAX_NWIRELESS);
+		pr_warn_ratelimited("%px: Number of wireless sections %d exceeds max count(%d).\n",
+				phdr, phdr->nwireless, NETFN_CAPWAP_MAX_NWIRELESS);
 		goto fail;
 	}
 
@@ -412,12 +412,52 @@ bool netfn_capwap_tun_vp_err(struct ppe_vp_cb_info *info, void *cb_data)
 }
 
 /*
+ * netfn_capwap_tun_list_rx()
+ *     Common rx handling for dev rx handler and VP handler.
+ */
+static bool netfn_capwap_tun_list_rx(struct netfn_capwap_tun *nct, struct sk_buff_head *q_head)
+{
+	int len = skb_queue_len(q_head);
+	uint64_t rx_bytes = 0;
+
+	/*
+	 * Decapsulate and reassemble the skb
+	 */
+	if (unlikely(!netfn_capwap_dec_rx_skbs(&nct->dec, q_head))) {
+		goto fail;
+	}
+
+	/*
+	 * RPS the packet to forwarding core.
+	 */
+	netfn_pkt_steer_send_list(&nct->rx_steer, q_head, NETFN_CAPWAP_RPS_CORE, &rx_bytes);
+
+fail:
+	NETFN_CAPWAP_TUN_STATS_ADD(&nct->stats.rx_failures, skb_queue_len(q_head));
+	NETFN_CAPWAP_TUN_STATS_ADD(&nct->stats.rx_pkts, len - skb_queue_len(q_head));
+	NETFN_CAPWAP_TUN_STATS_ADD(&nct->stats.rx_bytes, rx_bytes);
+	dev_kfree_skb_list_fast(q_head);
+
+	return true;
+}
+
+/*
  * netfn_capwap_tun_vp_rx()
  *	VP callback for receiving packets.
  */
 bool netfn_capwap_tun_vp_rx(struct ppe_vp_cb_info *info, void *cb_data)
 {
 	netfn_capwap_tun_rx(cb_data, info->skb);
+	return true;
+}
+
+/*
+ * netfn_capwap_tun_vp_list_rx()
+ *     VP callback for receiving list of packets.
+ */
+bool netfn_capwap_tun_vp_list_rx(struct net_device *dev, struct sk_buff_head *q_head, void *cb_data)
+{
+	netfn_capwap_tun_list_rx(cb_data, q_head);
 	return true;
 }
 
@@ -435,6 +475,7 @@ static struct net_device *netfn_capwap_tun_vp_attach(struct net_device *dev)
 	 */
 	vpai.type = PPE_VP_TYPE_SW_L3;
 	vpai.dst_cb = netfn_capwap_tun_vp_rx;
+	vpai.dst_list_cb = netfn_capwap_tun_vp_list_rx;
 	vpai.dst_cb_data = netdev_priv(dev);
 	vpai.src_cb = netfn_capwap_tun_vp_err;
 	vpai.src_cb_data = netdev_priv(dev);

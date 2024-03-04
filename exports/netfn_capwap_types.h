@@ -48,8 +48,8 @@
 #define NETFN_CAPWAP_MAX_BUF_SZ			9000
 #define NETFN_CAPWAP_MAX_FRAGS 			10
 
-#define NETFN_CAPWAP_DATA_PORT			5257
-#define NETFN_CAPWAP_CTRL_PORT			5256
+#define NETFN_CAPWAP_DATA_PORT			5247
+#define NETFN_CAPWAP_CTRL_PORT			5246
 
 /*
  * netfn_capwap_enc_cfg
