@@ -30,7 +30,6 @@
 		*((uint64_t *)sptr) += value; \
 		})
 
-
 /*
  * netfn_capwap_tun
  * 	CAPWAP tunnel structure
