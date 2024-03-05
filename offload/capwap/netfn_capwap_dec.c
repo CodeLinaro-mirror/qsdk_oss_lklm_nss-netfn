@@ -214,37 +214,55 @@ static struct sk_buff *netfn_capwap_dec_fast_reasm(struct netfn_capwap_dec *dec,
  * netfn_capwap_dec_linearize()
  *	Linearizes the chain of skbs
  */
-static struct sk_buff *netfn_capwap_dec_linearize(struct netfn_capwap_frags *frags)
+static struct sk_buff *netfn_capwap_dec_linearize(struct netfn_capwap_frags *frags, struct netfn_capwap_dec_stats *stats)
 {
+	struct sk_buff *iter, *tmp, *skb = NULL;
 	struct netfn_capwap_hdr_mdata *mdata;
-	struct sk_buff *iter, *skb;
-	uint16_t skb_size;
+	uint16_t skb_size, expect_offset = 0;
+	struct sk_buff_head q_tmp;
 
 	skb_size = frags->tot_sz + NETFN_CAPWAP_HEADROOM_RESERVE + NETFN_CAPWAP_TAILROOM_RESERVE;
 	skb = dev_alloc_skb(skb_size);
 	if (!skb) {
 		pr_debug("%px: Unable to allocate skb of size(%d)\n", &frags->list, skb_size);
-		goto done;
+		dev_kfree_skb_list_fast(&frags->list);
+		return NULL;
 	}
 
 	skb_reserve(skb, NETFN_CAPWAP_HEADROOM_RESERVE);
 	mdata = NETFN_CAPWAP_CB(skb);
 
-	/*
-	 * TODO: Handle offset corruption case.
-	 */
+	skb_queue_head_init(&q_tmp);
 
-	skb_queue_walk(&frags->list, iter) {
+restart:
+	skb_queue_walk_safe(&frags->list, iter, tmp) {
 		uint16_t offset = NETFN_CAPWAP_CB(iter)->frag_offset;
-		if (offset == 0) { /* first fragment */
-			*mdata = *NETFN_CAPWAP_CB(iter);
-		}
 
-		memcpy(skb->data + offset, iter->data, iter->len);
+		if (expect_offset == offset) {
+			expect_offset += iter->len;
+			if (offset == 0) { /* first fragment */
+				*mdata = *NETFN_CAPWAP_CB(iter);
+			}
+
+			memcpy(skb->data + offset, iter->data, iter->len);
+			__skb_unlink(skb, &frags->list);
+			__skb_queue_tail(&q_tmp, skb);
+			goto restart;
+		}
 	}
 
 	__skb_put(skb, frags->tot_sz);
-done:
+	dev_kfree_skb_list_fast(&q_tmp);
+
+	/*
+	 * If we have fragments left then fragments were corrupted.
+	 */
+	if (!skb_queue_empty(&frags->list)) {
+		NETFN_CAPWAP_TUN_STATS_INC(&stats->drop_malformed);
+		dev_kfree_skb(skb);
+		skb = NULL;
+	}
+
 	dev_kfree_skb_list_fast(&frags->list);
 	return skb;
 }
@@ -316,7 +334,7 @@ static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec *dec,
 		return NULL;
 	}
 
-	reasm_skb = netfn_capwap_dec_linearize(frags);
+	reasm_skb = netfn_capwap_dec_linearize(frags, stats);
 	if (!reasm_skb) {
 		NETFN_CAPWAP_TUN_STATS_INC(&stats->drop_linearize_fail);
 	}
