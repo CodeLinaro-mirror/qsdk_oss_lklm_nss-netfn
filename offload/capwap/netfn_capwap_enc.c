@@ -29,6 +29,23 @@
 #include "netfn_capwap_tun.h"
 #include "netfn_capwap_enc.h"
 
+#define NETFN_CAPWAP_ENC_STATS_MAX (sizeof(struct netfn_capwap_enc_stats) / sizeof(uint64_t))
+
+/*
+ * Encap statistics strings
+ */
+static int8_t *g_enc_stats_str[] = {
+	"num_pkts",
+	"num_frags",
+	"keepalive_pkts",
+	"drop_queue_full",
+	"drop_mem_alloc",
+	"drop_ver_mismatch",
+	"drop_insufficient_hroom",
+	"drop_direct_dtls",
+	"drop_nwireless_len",
+};
+
 /*
  * netfn_capwap_enc_capwap()
  *	Encapsulate the CAPWAP header
@@ -312,11 +329,13 @@ static bool netfn_capwap_enc_frag(struct netfn_capwap_enc *enc, struct sk_buff *
 static ssize_t netfn_capwap_enc_stats_show(struct file *fp, char __user *ubuf, size_t sz, loff_t *ppos)
 {
 	struct netfn_capwap_enc *enc = fp->private_data;
-	struct netfn_capwap_enc_stats *stats = &enc->stats;
+	uint64_t *stats = (uint64_t *)&enc->stats;
 	size_t enc_stats_sz, stats_sz;
 	ssize_t bytes_read = 0;
 	size_t size_wr = 0;
+	char *strings;
 	char *buf;
+	int i;
 
 	enc_stats_sz = sizeof(struct netfn_capwap_enc_stats) / sizeof(uint64_t) * NETFN_CAPWAP_ENC_STATS_STRLEN;
 	stats_sz = (NETFN_CAPWAP_ENC_STATS_WIDTH * NETFN_CAPWAP_ENC_STATS_STRLEN) + enc_stats_sz;
@@ -328,19 +347,18 @@ static ssize_t netfn_capwap_enc_stats_show(struct file *fp, char __user *ubuf, s
 	}
 
 	/*
-	 * TODO: Convert to scnpritf engine.
 	 * Print encap stats.
 	 */
+	BUILD_BUG_ON(ARRAY_SIZE(g_enc_stats_str) != NETFN_CAPWAP_ENC_STATS_MAX);
 	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "\n------------[encap stats start]----------\n");
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "num_pkts", READ_ONCE(stats->num_pkts));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "num_frags", READ_ONCE(stats->num_frags));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "keepalive_pkt", READ_ONCE(stats->keepalive_pkts));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "drop_queue_full", READ_ONCE(stats->drop_queue_full));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "drop_mem_alloc", READ_ONCE(stats->drop_mem_alloc));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t = %llu\n", "drop_ver_mismatch", READ_ONCE(stats->drop_ver_mis));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t = %llu\n", "drop_insufficient_hroom", READ_ONCE(stats->drop_insufficient_hroom));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t = %llu\n", "drop_direct_dtls", READ_ONCE(stats->drop_direct_dtls));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t = %llu\n", "drop_nwireless_len", READ_ONCE(stats->drop_nwireless_len));
+
+	for (i = 0, strings = g_enc_stats_str[0]; i < ARRAY_SIZE(g_enc_stats_str); i++, stats++, strings++) {
+		size_t len = stats_sz - size_wr;
+		char *start = buf + size_wr;
+
+		size_wr += scnprintf(start, len, "%s\t\t = %llu\n", strings, READ_ONCE(*stats));
+	}
+
 	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "------------[encap stats end]-----------\n");
 
 	bytes_read = simple_read_from_buffer(ubuf, sz, ppos, buf, size_wr);
