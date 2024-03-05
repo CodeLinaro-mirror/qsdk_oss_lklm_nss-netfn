@@ -656,6 +656,7 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 		 * Non-fragmented skb.
 		 */
 		if (!is_frag) {
+			netfn_capwap_dec_convert(dec, skb);
 			__skb_queue_tail(&q_frags, skb);
 			continue;
 		}
