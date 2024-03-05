@@ -108,7 +108,7 @@ static void netfn_capwap_enc_capwap(struct netfn_capwap_enc *enc, struct sk_buff
  * netfn_capwap_enc_l4()
  *	Encapsulate the UDP/UDPLite header
  */
-static void netfn_capwap_enc_l4(struct netfn_capwap_enc *enc, struct sk_buff *skb)
+static void netfn_capwap_enc_l4(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct netfn_capwap_enc_mdata *mdata)
 {
 	struct udphdr *udph = (struct udphdr *)__skb_push(skb, sizeof(*udph));
 	struct netfn_capwap_enc_hdr *hdr = &enc->hdr;
@@ -135,7 +135,7 @@ static void netfn_capwap_enc_l4(struct netfn_capwap_enc *enc, struct sk_buff *sk
  * netfn_capwap_enc_l3()
  *	Encapsulate the IP header
  */
-static void netfn_capwap_enc_l3(struct netfn_capwap_enc *enc, struct sk_buff *skb)
+static void netfn_capwap_enc_l3(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct netfn_capwap_enc_mdata *mdata)
 {
 	struct netfn_capwap_enc_hdr *hdr = &enc->hdr;
 	struct ipv6hdr *ip6h;
@@ -150,7 +150,7 @@ static void netfn_capwap_enc_l3(struct netfn_capwap_enc *enc, struct sk_buff *sk
 
 		iph->version = 4;
 		iph->ihl = sizeof(*iph) >> 2;
-		iph->tos = hdr->tos;
+		iph->tos = mdata->phdr.dscp;
 		iph->tot_len = htons(skb->len);
 		iph->id = htons(enc->ipv4_id++);
 		iph->frag_off = 0;
@@ -169,7 +169,7 @@ static void netfn_capwap_enc_l3(struct netfn_capwap_enc *enc, struct sk_buff *sk
 	skb->protocol = htons(ETH_P_IPV6);
 
 	ip6h->version = 6;
-	ip6_flow_hdr(ip6h, hdr->tos, 0);	/* Sets dscp and flow label. */
+	ip6_flow_hdr(ip6h, mdata->phdr.dscp, 0);	/* Sets dscp and flow label. */
 	ip6h->nexthdr = hdr->proto_next_hdr;
 	ip6h->payload_len = htons(skb->len - sizeof(*ip6h));
 	ip6h->hop_limit = hdr->ttl;
@@ -478,8 +478,8 @@ bool netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, st
 			continue;
 		}
 
-		netfn_capwap_enc_l4(enc, skb);	/* UDP or UDPLite */
-		netfn_capwap_enc_l3(enc, skb);
+		netfn_capwap_enc_l4(enc, skb, &mdata);	/* UDP or UDPLite */
+		netfn_capwap_enc_l3(enc, skb, &mdata);
 	}
 
 	return true;
