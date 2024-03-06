@@ -31,7 +31,6 @@
 #include <ppe_drv_iface.h>
 #include <netfn_capwapmgr.h>
 #include <netfn_capwapmgr_legacy.h>
-#include <netfn_capwapmgr_metaheader.h>
 #include "netfn_capwapmgr_priv.h"
 #include "netfn_capwapmgr_tun.h"
 #include "netfn_capwapmgr_tunid.h"
