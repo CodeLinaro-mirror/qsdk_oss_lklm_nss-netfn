@@ -21,6 +21,7 @@
 
 #include "netfn_pkt_steer.h"
 #include "netfn_capwap_dec.h"
+#include "netfn_capwap_enc.h"
 
 #define NETFN_CAPWAP_TUN_RX_BUDGET 64
 #define NETFN_CAPWAP_TUN_TX_BUDGET 64
@@ -29,48 +30,6 @@
 		*((uint64_t *)sptr) += value; \
 		})
 
-/*
- * TODO: Move this to enc.h
- */
-/*
- * netfn_capwap_tun_enc_hdr
- *	Encapsulation header
- */
-struct netfn_capwap_tun_enc_hdr {
-	__be32 src_ip[4];		/* Source IP for tunnel. */
-	__be32 dest_ip[4];		/* Destination IP for tunnel. */
-	__be16 src_port;		/* Source port */
-	__be16 dest_port;		/* Destination port */
-	__u8 proto_next_hdr;		/* L4 proto. */
-	__u8 ip_version;		/* IP version. */
-	__u8 ttl;			/* Time to live. */
-	__u8 tos;			/* Type of service. */
-	__u8 csum_cov;			/* Checksum coverage. */
-};
-
-/*
- * TODO: Move this to enc.h
- */
-/*
- * netfn_capwap_tun_enc
- *	Encapsulation state
- */
-struct netfn_capwap_tun_enc {
-	struct net_device *dev;		/* Device pointer for tunnel. */
-	struct netfn_capwap_enc_stats stats;	/* Encap tunnel stats. */
-
-	struct netfn_capwap_tun_enc_hdr hdr;	/* Encapsulation header per tunnel. */
-	uint32_t features;			/* Features enabled for the tunnel. */
-
-	unsigned int mtu;			/* MTU considered for fragmentation. */
-	uint16_t ipv4_id;		/* IPv4 ID for the tunnel. */
-	uint16_t frag_id;		/* Fragment ID per ipv4_id. */
-
-	uint16_t outer_hdr_len;		/* Outer header length for the tunnel. */
-	uint8_t snap_hdr[NETFN_CAPWAP_SNAP_HDR_LEN];
-					/* Custom snap header. */
-	uint8_t bssid;			/* Basic service set ID. */
-};
 
 /*
  * netfn_capwap_tun
@@ -83,7 +42,7 @@ struct netfn_capwap_tun {
 	struct net_device *vp_dev;		/* Pointer to VP dev. */
 
 	struct netfn_capwap_pkt_stats stats;	/* Tunnel stats. */
-	struct netfn_capwap_tun_enc enc;	/* Tunnel encap object. */
+	struct netfn_capwap_enc enc;	/* Tunnel encap object. */
 	struct netfn_capwap_dec dec;		/* Tunnel decap object. */
 	struct dentry *dentry;			/* Debug entry for the tunnel. */
 

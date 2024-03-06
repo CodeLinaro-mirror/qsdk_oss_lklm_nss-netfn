@@ -197,14 +197,14 @@ static int netfn_dtls_tun_mtu(struct net_device *dev, int mtu)
  * netfn_dtls_tun_vp_err()
  *	VP callback for outer exception.
  */
-bool netfn_dtls_tun_vp_err(struct net_device *dev, struct sk_buff *skb, void *cb_data)
+bool netfn_dtls_tun_vp_err(struct ppe_vp_cb_info *info, void *cb_data)
 {
 	struct netfn_dtls_tun_stats *tun_stats;
 	struct netfn_dtls_tun *tun = cb_data;
 
 	tun_stats = this_cpu_ptr(tun->stats_pcpu);
 	tun_stats->tx_fail++;
-	consume_skb(skb);
+	consume_skb(info->skb);
 	return true;
 }
 
@@ -212,10 +212,11 @@ bool netfn_dtls_tun_vp_err(struct net_device *dev, struct sk_buff *skb, void *cb
  * netfn_dtls_tun_rcv()
  *	Handle UDP/UDPlite encapsulated DTLS+CAPWAP packets.
  */
-bool netfn_dtls_tun_rcv(struct net_device *dev, struct sk_buff *skb, void *cb_data)
+bool netfn_dtls_tun_rcv(struct ppe_vp_cb_info *info, void *cb_data)
 {
 	struct netfn_dtls_tun_stats *tun_stats;
 	struct netfn_dtls_tun *tun = cb_data;
+	struct sk_buff *skb = info->skb;
 	struct netfn_dtls_session *ses;
 	struct eip_dtls_hdr *dtls_hdr;
 	size_t hdr_len, dtls_offst;
@@ -258,7 +259,7 @@ bool netfn_dtls_tun_rcv(struct net_device *dev, struct sk_buff *skb, void *cb_da
 	 */
 	ses = rcu_dereference_bh(tun->dec.active);
 	if (!ses || (ses->epoch != dtls_hdr->epoch)) {
-		pr_debug("DTLS session not found tun(%p) epoch(%x)\n", dev, dtls_hdr->epoch);
+		pr_debug("DTLS session not found tun(%p) epoch(%x)\n", skb->dev, dtls_hdr->epoch);
 		tun_stats->rx_fail_session++;
 
 		rcu_read_unlock_bh();

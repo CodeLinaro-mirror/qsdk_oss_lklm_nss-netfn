@@ -393,12 +393,12 @@ static const struct file_operations file_ops = {
  * netfn_capap_tun_vp_err()
  *	VP callback for outer exception.
  */
-bool netfn_capwap_tun_vp_err(struct net_device *dev, struct sk_buff *skb, void *cb_data)
+bool netfn_capwap_tun_vp_err(struct ppe_vp_cb_info *info, void *cb_data)
 {
 	struct netfn_capwap_tun *nct = cb_data;
 
 	NETFN_CAPWAP_TUN_STATS_INC(&nct->stats.tx_failures);
-	dev_kfree_skb(skb);
+	dev_kfree_skb(info->skb);
 	return true;
 }
 
@@ -406,9 +406,9 @@ bool netfn_capwap_tun_vp_err(struct net_device *dev, struct sk_buff *skb, void *
  * netfn_capwap_tun_vp_rx()
  *	VP callback for receiving packets.
  */
-bool netfn_capwap_tun_vp_rx(struct net_device *dev, struct sk_buff *skb, void *cb_data)
+bool netfn_capwap_tun_vp_rx(struct ppe_vp_cb_info *info, void *cb_data)
 {
-	netfn_capwap_tun_rx(cb_data, skb);
+	netfn_capwap_tun_rx(cb_data, info->skb);
 	return true;
 }
 
@@ -702,7 +702,7 @@ EXPORT_SYMBOL(netfn_capwap_tun_free);
  */
 bool netfn_capwap_tun_bind(struct net_device *dev, struct net_device *next)
 {
-	struct netfn_capwap_tun_enc *enc;
+	struct netfn_capwap_enc *enc;
 	struct net_device *old_next_dev;
 	struct netfn_capwap_tun *nct;
 
