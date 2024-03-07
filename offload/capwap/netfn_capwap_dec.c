@@ -142,7 +142,7 @@ add_prehdr:
  *	Verify if given 2 skbs can be reassembled.
  */
 static struct sk_buff *netfn_capwap_dec_fast_reasm(struct netfn_capwap_dec *dec, struct netfn_capwap_dec_ctx *ctx,
-		struct sk_buff *skb)
+		struct sk_buff *skb, struct sk_buff_head *q_free)
 {
 	struct netfn_capwap_hdr_mdata *info1, *info2;
 	unsigned char *iter, *start, *end;
@@ -194,7 +194,7 @@ static struct sk_buff *netfn_capwap_dec_fast_reasm(struct netfn_capwap_dec *dec,
 	 * Coalesce the 2 skbs.
 	 */
 	__skb_put_data(skb1, skb2->data, skb2->len);
-	dev_kfree_skb(skb2);
+	__skb_queue_head(q_free, skb2);
 
 	ctx->reasm_cache = NULL;
 
@@ -202,7 +202,7 @@ static struct sk_buff *netfn_capwap_dec_fast_reasm(struct netfn_capwap_dec *dec,
 	 * Convert to 802.11 if needed and attach meta header.
 	 */
 	if (!netfn_capwap_dec_convert(dec, skb1)) {
-		dev_kfree_skb(skb1);
+		__skb_queue_head(q_free, skb1);
 		return NULL;
 	}
 
@@ -272,7 +272,7 @@ restart:
  *	Reassemble the packets.
  */
 static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec *dec, struct netfn_capwap_dec_ctx *ctx,
-		struct sk_buff *skb)
+		struct sk_buff *skb, struct sk_buff_head *q_free)
 {
 	struct netfn_capwap_dec_stats *stats = &dec->stats;
 	struct netfn_capwap_hdr_mdata *info;
@@ -343,7 +343,7 @@ static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec *dec,
 	 * Convert to 802.11 if needed and attach meta header.
 	 */
 	if (!netfn_capwap_dec_convert(dec, reasm_skb)) {
-		dev_kfree_skb(reasm_skb);
+		__skb_queue_head(q_free, reasm_skb);
 		goto done;
 	}
 
@@ -627,6 +627,7 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 	struct netfn_capwap_dec_ctx *ctx;
 	struct sk_buff *skb, *reasm_skb;
 	struct sk_buff_head q_frags;
+	struct sk_buff_head q_free;
 	bool is_frag = false;
 
 	rcu_read_lock_bh();
@@ -638,6 +639,7 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 	}
 
 	__skb_queue_head_init(&q_frags);
+	__skb_queue_head_init(&q_free);
 	while (likely(skb_queue_len(q_head))) {
 		skb = __skb_dequeue(q_head);
 
@@ -648,7 +650,7 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 		 */
 		if (!netfn_capwap_dec(dec, skb, &is_frag)) {
 			NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.drop_dec_failure);
-			dev_kfree_skb(skb);
+			__skb_queue_head(&q_free, skb);
 			continue;
 		}
 
@@ -672,7 +674,7 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 		/*
 		 * Handle reassembly for 2 consecutive fragments.
 		 */
-		reasm_skb = netfn_capwap_dec_fast_reasm(dec, ctx, skb);
+		reasm_skb = netfn_capwap_dec_fast_reasm(dec, ctx, skb, &q_free);
 		if (likely(reasm_skb)) {
 			__skb_queue_tail(&q_frags, reasm_skb);
 			continue;
@@ -689,7 +691,7 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 		 * However, if these are new fragments then automatically park them in
 		 * the fragment list for future reassembly.
 		 */
-		reasm_skb = netfn_capwap_dec_slow_reasm(dec, ctx, skb);
+		reasm_skb = netfn_capwap_dec_slow_reasm(dec, ctx, skb, &q_free);
 		if (reasm_skb) {
 			__skb_queue_tail(&q_frags, reasm_skb);
 		}
@@ -700,6 +702,11 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 	 */
 	skb_queue_splice_tail(&q_frags, q_head);
 	rcu_read_unlock_bh();
+
+	/*
+	 * Free the fragments.
+	 */
+	dev_kfree_skb_list_fast(&q_free);
 	return true;
 }
 
