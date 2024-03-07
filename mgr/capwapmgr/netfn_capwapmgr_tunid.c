@@ -48,7 +48,6 @@ struct net_device *netfn_capwapmgr_tunid_dev_alloc(void)
 	dev_hold(dev);
 	ctx = netfn_capwap_tunid_pvt_get(dev);
 
-	spin_lock_init(&ctx->lock);
 	bitmap_zero(ctx->active_tunnels, NETFN_CAPWAPMGR_TUNNELS_MAX);
 	memset(ctx->tunnels, 0, sizeof(ctx->tunnels));
 
@@ -56,6 +55,7 @@ struct net_device *netfn_capwapmgr_tunid_dev_alloc(void)
 	 * deref: netfn_capwapmgr_tunid_free.
 	 */
 	ctx->mgr = netfn_capwapmgr_ref(mgr);
+	atomic_inc(&mgr->stats.tunid_dev_alloc);
 	return dev;
 }
 EXPORT_SYMBOL(netfn_capwapmgr_tunid_dev_alloc);
@@ -63,17 +63,19 @@ EXPORT_SYMBOL(netfn_capwapmgr_tunid_dev_alloc);
 /*
  * netfn_capwapmgr_tunid_dev_free()
  *	Free CAPWAP tunid dev.
- *
  */
 netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_dev_free(struct net_device *dev)
 {
 	struct netfn_capwapmgr_tunid_ctx *ctx = NULL;
 	struct netfn_capwapmgr *mgr = &g_mgr;
 
+	mutex_lock(&mgr->lock);
 	ctx = netfn_capwap_tunid_pvt_get(dev);
 	if (!bitmap_empty(ctx->active_tunnels, NETFN_CAPWAPMGR_TUNNELS_MAX)) {
+		mutex_unlock(&mgr->lock);
 		netfn_capwapmgr_warn("%p: Tun-ID still contains active tunnels\n", dev);
-   		return NETFN_CAPWAPMGR_ERROR_MAX;
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_TUNID_ACTIVE]);
+		return NETFN_CAPWAPMGR_ERROR_TUNID_ACTIVE;
 	}
 
 	/*
@@ -81,15 +83,19 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_dev_free(struct net_device *dev)
 	 */
 	dev_put(dev);
 	if (!netfn_capwap_tunid_free(dev)) {
-		netfn_capwapmgr_warn("%px: Failed to free tunid dev\n", dev);
 		dev_hold(dev);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
+		mutex_unlock(&mgr->lock);
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_TUNID_FREE]);
+		netfn_capwapmgr_warn("%px: Failed to free tunid dev\n", dev);
+		return NETFN_CAPWAPMGR_ERROR_TUNID_FREE;
 	}
 
 	/*
 	 * ref:netfn_capwapmgr_tunid_alloc().
 	 */
 	netfn_capwapmgr_deref(mgr);
+	mutex_unlock(&mgr->lock);
+	atomic_inc(&mgr->stats.tunid_dev_free);
 	return NETFN_CAPWAPMGR_SUCCESS;
 }
 EXPORT_SYMBOL(netfn_capwapmgr_tunid_dev_free);
@@ -97,39 +103,42 @@ EXPORT_SYMBOL(netfn_capwapmgr_tunid_dev_free);
 /*
  * netfn_capwapmgr_tunid_toggle_state
  *	Enable/disable a tunid tunnel.
- *
- * NOTE:This API should be called with rtnl lock held.
  */
 netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_toggle_state(struct net_device *dev, uint8_t tun_id, bool enable)
 {
 	struct netfn_capwapmgr_tun_ctx *tunid_ctx = NULL;
 	struct netfn_capwapmgr_tunid_ctx *ctx = NULL;
+	struct netfn_capwapmgr *mgr = &g_mgr;
 	struct net_device *tunid_dev = NULL;
 	long bit_pos;
-
-	BUG_ON(!rtnl_is_locked());
 
 	/*
 	 * Check for out of bound tunnel id.
 	 */
 	if(tun_id >= NETFN_CAPWAPMGR_TUNNELS_MAX) {
 		netfn_capwapmgr_warn("%p: Tunnel ID %d out of bound\n", dev, tun_id);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_TUNID_OUT_OF_RANGE]);
+		return NETFN_CAPWAPMGR_ERROR_TUNID_OUT_OF_RANGE;
 	}
 
 	/*
 	 * Get tunid dev context from offload engine.
 	 */
+	mutex_lock(&mgr->lock);
 	ctx = netfn_capwap_tunid_pvt_get(dev);
 	if (!test_bit(tun_id, ctx->active_tunnels)) {
+		mutex_unlock(&mgr->lock);
 		netfn_capwapmgr_warn("%px: Tunnel Id %d Does not exist\n", dev, tun_id);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_TUNID_INACTIVE]);
+		return NETFN_CAPWAPMGR_ERROR_TUNID_INACTIVE;
 	}
 
 	tunid_ctx = ctx->tunnels[tun_id];
 	tunid_dev = tunid_ctx->capwap_dev;
 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_ENABLED) - 1;
+
+	rtnl_lock();
 	if (enable) {
 		dev_open(tunid_dev, NULL);
 		__set_bit(bit_pos, tunid_ctx->state);
@@ -138,6 +147,8 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_toggle_state(struct net_device *dev,
 		__clear_bit(bit_pos, tunid_ctx->state);
 	}
 
+	rtnl_unlock();
+	mutex_unlock(&mgr->lock);
 	return NETFN_CAPWAPMGR_SUCCESS;
 }
 EXPORT_SYMBOL(netfn_capwapmgr_tunid_toggle_state);
@@ -149,8 +160,10 @@ EXPORT_SYMBOL(netfn_capwapmgr_tunid_toggle_state);
  */
 netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_del(struct net_device *dev, uint8_t tun_id)
 {
+	netfn_capwapmgr_ret_t status = NETFN_CAPWAPMGR_SUCCESS;
 	struct netfn_capwapmgr_tun_ctx *tunid_ctx = NULL;
 	struct netfn_capwapmgr_tunid_ctx *ctx = NULL;
+	struct netfn_capwapmgr *mgr = &g_mgr;
 	struct net_device *tunid_dev = NULL;
 
 	/*
@@ -158,29 +171,32 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_del(struct net_device *dev, uint8_t 
 	 */
 	if(tun_id >= NETFN_CAPWAPMGR_TUNNELS_MAX) {
 		netfn_capwapmgr_warn("%p: Tunnel ID %d out of bound\n", dev, tun_id);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_TUNID_OUT_OF_RANGE]);
+		return NETFN_CAPWAPMGR_ERROR_TUNID_OUT_OF_RANGE;
 	}
 
 	/*
 	 * Get tunid dev context from offload engine.
 	 */
+	mutex_lock(&mgr->lock);
 	ctx = netfn_capwap_tunid_pvt_get(dev);
-	spin_lock(&ctx->lock);
 	if (!__test_and_clear_bit(tun_id, ctx->active_tunnels)) {
+		mutex_unlock(&mgr->lock);
 		netfn_capwapmgr_warn("%px: Tunnel Id %d Does not exist\n", dev, tun_id);
-		spin_unlock(&ctx->lock);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_TUNID_INACTIVE]);
+		return NETFN_CAPWAPMGR_ERROR_TUNID_INACTIVE;
 	}
 
 	tunid_ctx = ctx->tunnels[tun_id];
 	tunid_dev = tunid_ctx->capwap_dev;
-	spin_unlock(&ctx->lock);
 
 	/*
 	 * De-initialize the tunnel.
 	 */
 	if (!netfn_capwapmgr_tun_deinit(tunid_ctx)) {
+		mutex_unlock(&mgr->lock);
 		netfn_capwapmgr_warn("%px: Tunnel Id %d deinit failed\n", dev, tun_id);
+		status = NETFN_CAPWAPMGR_ERROR_TUN_DEINIT;
 		goto fail;
 	}
 
@@ -193,8 +209,10 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_del(struct net_device *dev, uint8_t 
 	 * Delete capwap tunnel.
 	 */
 	if (!netfn_capwap_tunid_del(dev, tun_id)) {
-		netfn_capwapmgr_warn("%px: Failed to free capwap tun \n", dev);
 		dev_hold(tunid_dev);
+		mutex_unlock(&mgr->lock);
+		netfn_capwapmgr_warn("%px: Failed to free capwap tun \n", dev);
+		status = NETFN_CAPWAPMGR_ERROR_TUNID_DEL;
 		goto fail;
 	}
 
@@ -202,10 +220,12 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_del(struct net_device *dev, uint8_t 
 	 * Clear the tunnel context
 	 */
 	ctx->tunnels[tun_id] = NULL;
+	mutex_unlock(&mgr->lock);
 	return NETFN_CAPWAPMGR_SUCCESS;
 fail:
 	__set_bit(tun_id, ctx->active_tunnels);
-	return NETFN_CAPWAPMGR_ERROR_MAX;
+	atomic64_inc(&g_mgr.stats.error_stats[status]);
+	return status;
 }
 EXPORT_SYMBOL(netfn_capwapmgr_tunid_del);
 
@@ -215,8 +235,11 @@ EXPORT_SYMBOL(netfn_capwapmgr_tunid_del);
  */
 netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_add(struct net_device *dev, uint8_t tun_id, struct netfn_capwapmgr_tun_cfg *cfg)
 {
+
+	netfn_capwapmgr_ret_t status = NETFN_CAPWAPMGR_SUCCESS;
 	struct netfn_capwapmgr_tun_ctx *tunid_ctx = NULL;
 	struct netfn_capwapmgr_tunid_ctx *ctx = NULL;
+	struct netfn_capwapmgr *mgr = &g_mgr;
 	struct net_device *tunid_dev = NULL;
 	bool tun_init_ret = false;
 
@@ -225,20 +248,25 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_add(struct net_device *dev, uint8_t 
 	 */
 	if(tun_id >= NETFN_CAPWAPMGR_TUNNELS_MAX) {
 		netfn_capwapmgr_warn("%p: Tunnel ID %d out of bound\n", dev, tun_id);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_TUNID_OUT_OF_RANGE]);
+		return NETFN_CAPWAPMGR_ERROR_TUNID_OUT_OF_RANGE;
 	}
 
 	/*
 	 * Validate and initialize the configuration.
 	 */
-	if (netfn_capwapmgr_tun_init_cfg(cfg) != NETFN_CAPWAPMGR_SUCCESS) {
+	status = netfn_capwapmgr_tun_init_cfg(cfg);
+	if (status != NETFN_CAPWAPMGR_SUCCESS) {
 		netfn_capwapmgr_warn("%px: Tunnel Id %d Failed to validate tunnel config\n", dev, tun_id);
-		goto fail;
+		return status;
 	}
 
+	mutex_lock(&mgr->lock);
 	tunid_dev = netfn_capwap_tunid_add(dev, tun_id, &cfg->capwap, &cfg->tuple, sizeof(struct netfn_capwapmgr_tun_ctx));
 	if (!tunid_dev) {
+		mutex_unlock(&mgr->lock);
 		netfn_capwapmgr_warn("%px: Tunnel Id %d add failed\n", dev, tun_id);
+		status = NETFN_CAPWAPMGR_ERROR_TUNID_ADD;
 		goto fail;
 	}
 
@@ -250,7 +278,9 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_add(struct net_device *dev, uint8_t 
 	 */
 	tun_init_ret = netfn_capwapmgr_tun_init(tunid_ctx, cfg);
 	if (!tun_init_ret) {
+		mutex_unlock(&mgr->lock);
 		netfn_capwapmgr_warn("%px:Failed to initialize the capwap tunnel\n", cfg);
+		status = NETFN_CAPWAPMGR_ERROR_TUN_INIT;
 		goto fail;
 	}
 
@@ -258,10 +288,10 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_add(struct net_device *dev, uint8_t 
 	 * Get tunid dev context from offload engine.
 	 */
 	ctx = netfn_capwap_tunid_pvt_get(dev);
-	spin_lock(&ctx->lock);
 	if (__test_and_set_bit(tun_id, ctx->active_tunnels)) {
+		mutex_unlock(&mgr->lock);
 		netfn_capwapmgr_warn("%px: Tunnel ID %d unavailable\n", dev, tun_id);
-		spin_unlock(&ctx->lock);
+		status = NETFN_CAPWAPMGR_ERROR_TUNID_INACTIVE;
 		goto fail;
 	}
 
@@ -271,7 +301,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_add(struct net_device *dev, uint8_t 
 	dev_hold(tunid_dev);
 
 	ctx->tunnels[tun_id] = tunid_ctx;
-	spin_unlock(&ctx->lock);
+	mutex_unlock(&mgr->lock);
 	return NETFN_CAPWAPMGR_SUCCESS;
 
 fail:
@@ -283,7 +313,8 @@ fail:
 		netfn_capwap_tunid_del(dev, tun_id);
 	}
 
-	return NETFN_CAPWAPMGR_ERROR_MAX;
+	atomic64_inc(&g_mgr.stats.error_stats[status]);
+	return status;
 }
 EXPORT_SYMBOL(netfn_capwapmgr_tunid_add);
 
@@ -297,6 +328,7 @@ struct net_device *netfn_capwapmgr_tunid_get_dtls_dev(struct net_device *dev, ui
 {
 	struct netfn_capwapmgr_tun_ctx *tunid_ctx = NULL;
 	struct netfn_capwapmgr_tunid_ctx *ctx = NULL;
+	struct netfn_capwapmgr *mgr = &g_mgr;
 	struct net_device *dtls_dev = NULL;
 
 	/*
@@ -304,19 +336,20 @@ struct net_device *netfn_capwapmgr_tunid_get_dtls_dev(struct net_device *dev, ui
 	 */
 	if(tun_id >= NETFN_CAPWAPMGR_TUNNELS_MAX) {
 		netfn_capwapmgr_warn("%p: Tunnel ID %d out of bound\n", dev, tun_id);
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_TUNID_OUT_OF_RANGE]);
 		return dtls_dev;
 	}
 
+	mutex_lock(&mgr->lock);	
 	ctx = netfn_capwap_tunid_pvt_get(dev);
 
-	spin_lock(&ctx->lock);
 	tunid_ctx = ctx->tunnels[tun_id];
 	if (test_bit(tun_id, ctx->active_tunnels)) {
 		dtls_dev = netfn_capwapmgr_tun_get_dtls_dev(tunid_ctx->capwap_dev);
 		dev_hold(dtls_dev);
 	}
 
-	spin_unlock(&ctx->lock);
+	mutex_unlock(&mgr->lock);
 	return dtls_dev;
 }
 EXPORT_SYMBOL(netfn_capwapmgr_tunid_get_dtls_dev);
@@ -325,22 +358,23 @@ EXPORT_SYMBOL(netfn_capwapmgr_tunid_get_dtls_dev);
  * netfn_capwapmgr_tunid_update()
  *	Update tunnel configuration
  *
- * NOTE:This API should be called with rtnl lock held.
  */
 netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_update(struct net_device *dev, uint8_t tun_id, struct netfn_capwapmgr_tun_update *cfg)
 {
 	netfn_capwapmgr_ret_t ret = NETFN_CAPWAPMGR_ERROR_MAX;
 	struct netfn_capwapmgr_tun_ctx *tunid_ctx = NULL;
 	struct netfn_capwapmgr_tunid_ctx *ctx = NULL;
-
-	BUG_ON(!rtnl_is_locked());
+	struct netfn_capwapmgr *mgr = &g_mgr;
 
 	/*
 	 * Check for out of bound tunnel id.
 	 */
+	mutex_lock(&mgr->lock);
 	if(tun_id >= NETFN_CAPWAPMGR_TUNNELS_MAX) {
+		mutex_unlock(&mgr->lock);
 		netfn_capwapmgr_warn("%p: Tunnel ID %d out of bound\n", dev, tun_id);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_TUNID_OUT_OF_RANGE]);
+		return NETFN_CAPWAPMGR_ERROR_TUNID_OUT_OF_RANGE;
 	}
 
 	ctx = netfn_capwap_tunid_pvt_get(dev);
@@ -350,6 +384,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_update(struct net_device *dev, uint8
 		ret = netfn_capwapmgr_tun_update(tunid_ctx->capwap_dev, cfg);
 	}
 
+	mutex_unlock(&mgr->lock);
 	return ret;
 }
 EXPORT_SYMBOL(netfn_capwapmgr_tunid_update);
@@ -360,27 +395,30 @@ EXPORT_SYMBOL(netfn_capwapmgr_tunid_update);
  */
 netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_get_stats(struct net_device *dev, uint8_t tun_id, struct netfn_capwapmgr_tun_stats *stats)
 {
-	netfn_capwapmgr_ret_t ret = NETFN_CAPWAPMGR_ERROR_MAX;
+	netfn_capwapmgr_ret_t status = NETFN_CAPWAPMGR_ERROR_MAX;
 	struct netfn_capwapmgr_tun_ctx *tunid_ctx = NULL;
+	struct netfn_capwapmgr *mgr = &g_mgr;
 	struct netfn_capwapmgr_tunid_ctx *ctx = NULL;
 
 	/*
 	 * Check for out of bound tunnel id.
 	 */
+	mutex_lock(&mgr->lock);
 	if(tun_id >= NETFN_CAPWAPMGR_TUNNELS_MAX) {
+		mutex_unlock(&mgr->lock);
 		netfn_capwapmgr_warn("%p: Tunnel ID %d out of bound\n", dev, tun_id);
-		return ret;
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_TUNID_OUT_OF_RANGE]);
+		return NETFN_CAPWAPMGR_ERROR_TUNID_OUT_OF_RANGE;
 	}
 
 	ctx = netfn_capwap_tunid_pvt_get(dev);
 
-	spin_lock(&ctx->lock);
 	tunid_ctx = ctx->tunnels[tun_id];
 	if (test_bit(tun_id, ctx->active_tunnels)) {
-		ret = netfn_capwapmgr_tun_get_stats(tunid_ctx->capwap_dev, stats);
+		status = netfn_capwapmgr_tun_get_stats(tunid_ctx->capwap_dev, stats);
 	}
 
-	spin_unlock(&ctx->lock);
-	return ret;
+	mutex_unlock(&mgr->lock);
+	return status;
 }
 EXPORT_SYMBOL(netfn_capwapmgr_tunid_get_stats);
