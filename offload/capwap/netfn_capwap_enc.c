@@ -50,7 +50,7 @@ static int8_t *g_enc_stats_str[] = {
  * netfn_capwap_enc_winfo()
  *	Encapsulate with winfo
  */
-static inline void netfn_capwap_enc_winfo(struct netfn_capwap_tun_enc *enc, struct sk_buff *skb, struct netfn_capwap_enc_mdata *mdata)
+static inline void netfn_capwap_enc_winfo(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct netfn_capwap_enc_mdata *mdata)
 {
 	struct netfn_capwap_winfo *winfo = (struct netfn_capwap_winfo *)mdata->phdr.winfo;
 
