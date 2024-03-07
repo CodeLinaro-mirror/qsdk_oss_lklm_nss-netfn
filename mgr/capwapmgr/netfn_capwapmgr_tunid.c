@@ -105,6 +105,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_toggle_state(struct net_device *dev,
 	struct netfn_capwapmgr_tun_ctx *tunid_ctx = NULL;
 	struct netfn_capwapmgr_tunid_ctx *ctx = NULL;
 	struct net_device *tunid_dev = NULL;
+	long bit_pos;
 
 	BUG_ON(!rtnl_is_locked());
 
@@ -128,7 +129,15 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_toggle_state(struct net_device *dev,
 	tunid_ctx = ctx->tunnels[tun_id];
 	tunid_dev = tunid_ctx->capwap_dev;
 
-	enable ? dev_open(tunid_dev, NULL) : dev_close(tunid_dev);
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_ENABLED) - 1;
+	if (enable) {
+		dev_open(tunid_dev, NULL);
+		__set_bit(bit_pos, tunid_ctx->state);
+	} else {
+		dev_close(tunid_dev);
+		__clear_bit(bit_pos, tunid_ctx->state);
+	}
+
 	return NETFN_CAPWAPMGR_SUCCESS;
 }
 EXPORT_SYMBOL(netfn_capwapmgr_tunid_toggle_state);
