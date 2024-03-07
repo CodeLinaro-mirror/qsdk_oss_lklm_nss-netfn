@@ -107,6 +107,15 @@ static netdev_tx_t netfn_capwap_tun_tx(struct sk_buff *skb, struct net_device *d
 	needed_troom = dev->needed_tailroom;
 
 	/*
+	 * In case of non-linear SKB we would like to linearize
+	 * skb_linearize() internally checks if pkt is non-linear.
+	 */
+	if (skb_linearize(skb)) {
+		goto fail;
+	}
+
+
+	/*
 	 * Check if we have sufficient headroom and tailroom.
 	 */
 	expand_skb = (skb_cloned(skb) || (skb_headroom(skb) < needed_hroom) || (skb_tailroom(skb) < needed_troom));
