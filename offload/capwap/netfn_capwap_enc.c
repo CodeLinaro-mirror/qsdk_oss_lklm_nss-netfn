@@ -499,7 +499,7 @@ bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc
 
 	ether_addr_copy(&enc->bssid, cfg->bssid);
 	enc->outer_hdr_len = ETH_HLEN;
-	enc->features = cfg->features;
+	enc->features = nct->features;
 
 	/*
 	 * TODO: Add vlan and pppoe.

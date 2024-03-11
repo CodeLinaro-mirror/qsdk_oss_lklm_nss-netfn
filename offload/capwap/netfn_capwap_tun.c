@@ -599,6 +599,7 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, stru
 	nct->nc = nc;
 	nct->dev = dev;
 	nct->id = cfg->id;
+	nct->features = cfg->features;
 	memset(&nct->stats, 0, sizeof(nct->stats));
 
 	/*

@@ -54,7 +54,6 @@
  *	Encapsulation configuration
  */
 struct netfn_capwap_enc_cfg {
-	uint32_t features;		/**< Features enabled for tunnel. */
 	uint32_t flags;			/**< Vlan/pppoe/udplite_checksum configured. */
 	uint16_t csum_cov;		/**< UDP Checksum coverage. */
 	uint16_t mtu;			/**< MTU to be configured for fragmentation. */
@@ -71,7 +70,6 @@ struct netfn_capwap_enc_cfg {
  *	Decapsulation configuration
  */
 struct netfn_capwap_dec_cfg {
-	uint32_t features;		/**< Features enabled for tunnel. */
 	uint32_t max_frags;		/**< Maximum number of fragments expected. */
 	uint16_t max_payload_sz;	/**< Maximum size of the payload buffer. */
 	uint32_t reserve[4];		/**< Reserve for future use. */
@@ -84,9 +82,9 @@ struct netfn_capwap_dec_cfg {
 struct netfn_capwap_tun_cfg {
 	struct netfn_capwap_enc_cfg enc;	/**< Encap configuration of tunnel. */
 	struct netfn_capwap_dec_cfg dec;	/**< Decap configuration of tunnel. */
+	uint32_t features;			/**< Features enabled for tunnel. */
 	uint16_t id;				/**< Tunnel identifier. */
 	uint8_t capwap_ver;			/**< Capwap version. */
-	uint8_t features;			/**< Features enabled for tunnel. */
 	uint32_t reserve[4];		/**< Reserve for future use. */
 };
 
