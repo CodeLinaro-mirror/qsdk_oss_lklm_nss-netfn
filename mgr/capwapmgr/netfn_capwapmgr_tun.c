@@ -470,7 +470,7 @@ bool netfn_capwapmgr_tun_init(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_
 	ret = netfn_dtls_tun_session_add(ctx->dtls_dev, &cfg->ext_cfg.dec, &dec_tuple);
 	if (ret) {
 		netfn_capwapmgr_warn("Failed to add Decap dtls session %d\n", ret);
-		netfn_dtls_tun_session_del(ctx->dtls_dev, true, htons(cfg->ext_cfg.enc.epoch));
+		netfn_dtls_tun_session_del(ctx->dtls_dev, true, cfg->ext_cfg.enc.epoch);
 		goto fail;
 	}
 
@@ -554,8 +554,8 @@ fail:
 	 */
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_CONFIGURED) - 1;
 	if (__test_and_clear_bit(bit_pos, ctx->state)) {
-		netfn_dtls_tun_session_del(ctx->dtls_dev, false, htons(cfg->ext_cfg.dec.epoch));
-		netfn_dtls_tun_session_del(ctx->dtls_dev, true, htons(cfg->ext_cfg.enc.epoch));
+		netfn_dtls_tun_session_del(ctx->dtls_dev, false, cfg->ext_cfg.dec.epoch);
+		netfn_dtls_tun_session_del(ctx->dtls_dev, true, cfg->ext_cfg.enc.epoch);
 	}
 
 	/*
@@ -640,8 +640,8 @@ bool netfn_capwapmgr_tun_deinit(struct netfn_capwapmgr_tun_ctx *ctx)
 	 */
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_CONFIGURED) - 1;
 	if (__test_and_clear_bit(bit_pos, ctx->state)) {
-		netfn_dtls_tun_session_del(ctx->dtls_dev, false, htons(ctx->cfg.ext_cfg.dec.epoch));
-		netfn_dtls_tun_session_del(ctx->dtls_dev, true, htons(ctx->cfg.ext_cfg.enc.epoch));
+		netfn_dtls_tun_session_del(ctx->dtls_dev, false, ctx->cfg.ext_cfg.dec.epoch);
+		netfn_dtls_tun_session_del(ctx->dtls_dev, true, ctx->cfg.ext_cfg.enc.epoch);
 
 		/*
 		 * Free the DTLS net device.
