@@ -220,8 +220,8 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_rule_create(struct netfn_capwa
 	uint32_t ext_valid_flags = cfg->ext_cfg.ext_valid_flags;
 
 	/*
-	 * Original flow rule will route the UL capwap packets from WAN netdevice to CAPWAP netdevice.
-	 * Reply flow rule will route the packets from CAPWAP netdevice to WAN netdevice.
+	 * Original flow rule will route the UL capwap packets from CAPWAP netdevice to WAN netdevice.
+	 * Reply flow rule will route the packets from WAN netdevice to CAPWAP netdevice.
 	 */
 
 	/*
@@ -266,14 +266,19 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_rule_create(struct netfn_capwa
 	/*
 	 * Update flow rules for both the directions.
 	 */
-	memcpy(&reply.flow_info, flow, sizeof(struct netfn_flowmgr_flow_info));
+	memcpy(&original.flow_info, flow, sizeof(struct netfn_flowmgr_flow_info));
 
-	original.flow_info.in_dev = flow->out_dev;
-	original.flow_info.out_dev = flow->in_dev;
-	original.flow_info.top_indev = flow->top_indev;
-	original.flow_info.top_outdev = flow->top_outdev;
-	original.flow_info.flow_mtu = flow->flow_mtu;
+	reply.flow_info.in_dev = flow->out_dev;
+	reply.flow_info.out_dev = flow->in_dev;
+	reply.flow_info.top_indev = flow->top_indev;
+	reply.flow_info.top_outdev = flow->top_outdev;
+	reply.flow_info.flow_mtu = flow->flow_mtu;
 
+	/*
+	 * Update the mac address for the reply flow rule.
+	 */
+	memcpy(reply.flow_info.flow_src_mac, flow->flow_dest_mac, ETH_ALEN);
+	memcpy(reply.flow_info.flow_dest_mac, flow->flow_src_mac, ETH_ALEN);
 	/*
 	 * Mark the flow type as VP for both original and reply direction flows.
 	 */
@@ -350,13 +355,13 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tun_init_cfg(struct netfn_capwapmgr_tun_cf
 	 */
 	tuple = &cfg->tuple;
 	valid_ext = cfg->ext_cfg.ext_valid_flags;
-	if (!cfg->flow.in_dev) {
+	if (!cfg->flow.out_dev) {
 		netfn_capwapmgr_warn("%px: NULL Wan netdevice\n", cfg);
 		return NETFN_CAPWAPMGR_ERROR_NULL_WAN_NDEV;
 	}
 
 	if ((valid_ext & NETFN_CAPWAPMGR_EXT_VALID_VLAN) || (valid_ext & NETFN_CAPWAPMGR_EXT_VALID_PPPOE)) {
-		if (!cfg->flow.top_indev) {
+		if (!cfg->flow.top_outdev) {
 			netfn_capwapmgr_warn("%px: NULL top netdevice\n", cfg);
 			return NETFN_CAPWAPMGR_ERROR_NULL_TOP_NDEV;
 		}
@@ -421,8 +426,11 @@ bool netfn_capwapmgr_tun_init(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_
 	long bit_pos;
 	int ret = 0;
 
-	cfg->flow.out_dev = capwap_dev;
-	cfg->flow.top_outdev = capwap_dev;
+	/*
+	 * Flow rule is for the UL direction (CAPWAP netdevice to WAN netdevice).
+	 */
+	cfg->flow.in_dev = capwap_dev;
+	cfg->flow.top_indev = capwap_dev;
 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_CAPWAP_CONFIGURED) - 1;
 	__set_bit(bit_pos, ctx->state);
@@ -445,10 +453,10 @@ bool netfn_capwapmgr_tun_init(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_
 	netfn_capwapmgr_tun_get_reply(&cfg->tuple, &dec_tuple);
 
 	/*
-	 * When DTLS is enabled, the out dev for flow rule will be the dtls dev.
+	 * When DTLS is enabled, the in dev for flow rule will be the dtls dev.
 	 */
-	cfg->flow.out_dev = ctx->dtls_dev;
-	cfg->flow.top_outdev = ctx->dtls_dev;
+	cfg->flow.in_dev = ctx->dtls_dev;
+	cfg->flow.top_indev = ctx->dtls_dev;
 
 	/*
 	 * Create Encap and decap sessions.
@@ -482,12 +490,12 @@ skip_dtls:
 	/*
 	 * Configure flow rule.
 	 *
-	 * If Top Indev is not passed to us,
+	 * If Top Out Dev is not passed to us,
 	 * It means WAN interface does not have an interface
 	 * heirarchy.
 	 */
-	if (!cfg->flow.top_indev) {
-		cfg->flow.top_indev = cfg->flow.in_dev;
+	if (!cfg->flow.top_outdev) {
+		cfg->flow.top_outdev = cfg->flow.out_dev;
 	}
 
 	if (netfn_capwapmgr_flow_rule_create(cfg) != NETFN_CAPWAPMGR_SUCCESS) {
@@ -676,12 +684,12 @@ struct net_device *netfn_capwapmgr_tun_alloc(struct netfn_capwapmgr_tun_cfg *cfg
 	}
 
 	/*
-	 * Update the flow rule's destination as capwap.
+	 * Update the flow rule's IN dev as CAPWAP dev.
 	 */
 	dev_hold(capwap_dev);
 	ctx = netfn_capwap_tun_pvt_get(capwap_dev);
 	ctx->capwap_dev = capwap_dev;
-	cfg->flow.out_dev = capwap_dev;
+	cfg->flow.in_dev = capwap_dev;
 
 	if (!netfn_capwapmgr_tun_init(ctx, cfg)) {
 		netfn_capwapmgr_warn("%px:Failed to initialize the capwap tunnel\n", cfg);
