@@ -50,13 +50,6 @@ static void netfn_capwapmgr_tun_stats_sync(struct timer_list *t)
 	memcpy(&stats.tuple, &ctx->cfg.tuple, sizeof(netfn_tuple_t));
 
 	/*
-	 * TODO: Flow manager currently expects source and destination port in
-	 * host order. Once its fixed, update this.
-	 */
-	stats.tuple.tuples.tuple_5.l4_src_ident = ntohs(stats.tuple.tuples.tuple_5.l4_src_ident);
-	stats.tuple.tuples.tuple_5.l4_dest_ident = ntohs(stats.tuple.tuples.tuple_5.l4_dest_ident);
-
-	/*
 	 * Get the stats associated with the tuple information from the flowmgr.
 	 */
 	netfn_flowmgr_get_conn_stats(&stats, NETFN_FLOWMGR_ACCEL_MODE_PPE);
@@ -77,7 +70,6 @@ static void netfn_capwapmgr_tun_stats_sync(struct timer_list *t)
 
 	/*
 	 * If tunnel free is not in progress, re-attach the timer.
-	 *
 	 */
 	if (atomic64_read(&ctx->timer_resched)) {
 		next_timer_jiffies = jiffies + msecs_to_jiffies(NETFN_CAPWAPMGR_STATS_SYNC_FREQ);
@@ -116,11 +108,11 @@ static int netfn_capwapmgr_tun_stats_print(struct seq_file *sf, void *ptr)
 		seq_printf(sf, "\tSource Port:0x%d\n", ntohs(ftuple->l4_src_ident));
 		seq_printf(sf, "\tDestination Port:0x%d\n", ntohs(ftuple->l4_dest_ident));
 	if (ip_version == NETFN_FLOWMGR_TUPLE_IP_VERSION_V4) {
-		seq_printf(sf, "\tSource IP:%pI4n\n", ftuple->src_ip);
-		seq_printf(sf, "\tDestination IP:%pI4n\n", ftuple->dest_ip);
+		seq_printf(sf, "\tSource IP:%pI4n\n", &ftuple->src_ip.ip4.s_addr);
+		seq_printf(sf, "\tDestination IP:%pI4n\n", &ftuple->dest_ip.ip4.s_addr);
 	} else {
-		seq_printf(sf, "\tSource IP:%pI6n\n", ftuple->src_ip);
-		seq_printf(sf, "\tDestination IP:%pI6n\n", ftuple->dest_ip);
+		seq_printf(sf, "\tSource IP:%pI6n\n", ftuple->src_ip.ip6.s6_addr32);
+		seq_printf(sf, "\tDestination IP:%pI6n\n", ftuple->dest_ip.ip6.s6_addr32);
 	}
 
 	seq_puts(sf, "\n CAPWAP offload stats \n");
@@ -181,28 +173,39 @@ const struct file_operations netfn_capwapmgr_tun_stats_ops = {
  */
 static void netfn_capwapmgr_tun_get_reply(netfn_tuple_t *orig, netfn_tuple_t *reply)
 {
+	struct netfn_tuple_5tuple *orig_t5, *reply_t5;
 	BUG_ON(orig == reply);
+
+	orig_t5 = &orig->tuples.tuple_5;
+	reply_t5 = &reply->tuples.tuple_5;
 
 	reply->ip_version = orig->ip_version;
 	reply->tuple_type = orig->tuple_type;
-	reply->tuples.tuple_5.protocol = orig->tuples.tuple_5.protocol;
+	reply_t5->protocol = orig_t5->protocol;
 
-	reply->tuples.tuple_5.src_ip[0] = orig->tuples.tuple_5.dest_ip[0];
-	if (orig->ip_version == 6) {
-		reply->tuples.tuple_5.src_ip[1] = orig->tuples.tuple_5.dest_ip[1];
-		reply->tuples.tuple_5.src_ip[2] = orig->tuples.tuple_5.dest_ip[2];
-		reply->tuples.tuple_5.src_ip[3] = orig->tuples.tuple_5.dest_ip[3];
+	if (orig->ip_version == 4) {
+		reply_t5->src_ip.ip4.s_addr = orig_t5->dest_ip.ip4.s_addr;
+		reply_t5->dest_ip.ip4.s_addr = orig_t5->src_ip.ip4.s_addr;
+	} else {
+		/*
+		 * Get Source IP in reply direction.
+		 */
+		reply_t5->src_ip.ip6.s6_addr32[0] = orig_t5->dest_ip.ip6.s6_addr32[0];
+		reply_t5->src_ip.ip6.s6_addr32[1] = orig_t5->dest_ip.ip6.s6_addr32[1];
+		reply_t5->src_ip.ip6.s6_addr32[2] = orig_t5->dest_ip.ip6.s6_addr32[2];
+		reply_t5->src_ip.ip6.s6_addr32[3] = orig_t5->dest_ip.ip6.s6_addr32[3];
+
+		/*
+		 * Get Destination IP in reply direction.
+		 */
+		reply_t5->dest_ip.ip6.s6_addr32[0] = orig_t5->src_ip.ip6.s6_addr32[0];
+		reply_t5->dest_ip.ip6.s6_addr32[1] = orig_t5->src_ip.ip6.s6_addr32[1];
+		reply_t5->dest_ip.ip6.s6_addr32[2] = orig_t5->src_ip.ip6.s6_addr32[2];
+		reply_t5->dest_ip.ip6.s6_addr32[3] = orig_t5->src_ip.ip6.s6_addr32[3];
 	}
 
-	reply->tuples.tuple_5.dest_ip[0] = orig->tuples.tuple_5.src_ip[0];
-	if (orig->ip_version == 6) {
-		reply->tuples.tuple_5.dest_ip[1] = orig->tuples.tuple_5.src_ip[1];
-		reply->tuples.tuple_5.dest_ip[2] = orig->tuples.tuple_5.src_ip[2];
-		reply->tuples.tuple_5.dest_ip[3] = orig->tuples.tuple_5.src_ip[3];
-	}
-
-	reply->tuples.tuple_5.l4_src_ident = orig->tuples.tuple_5.l4_dest_ident;
-	reply->tuples.tuple_5.l4_dest_ident = orig->tuples.tuple_5.l4_src_ident;
+	reply_t5->l4_src_ident = orig_t5->l4_dest_ident;
+	reply_t5->l4_dest_ident = orig_t5->l4_src_ident;
 }
 
 /*

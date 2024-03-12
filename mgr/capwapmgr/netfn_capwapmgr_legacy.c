@@ -264,14 +264,11 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 
 		/*
 		 * Copy over the 5 tuple.
-		 *
-		 * FIXME: Flowmanager, expects IP address to be passed in network order
-		 * whereas the port information in host order.
 		 */
 		tuple->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V4;
 		tuple->tuple_type = NETFN_TUPLE_5TUPLE;
-		tuple->tuples.tuple_5.src_ip[0] = htonl(v4->dest_ip);
-		tuple->tuples.tuple_5.dest_ip[0] = htonl(v4->src_ip);
+		tuple->tuples.tuple_5.src_ip.ip4.s_addr = htonl(v4->dest_ip);
+		tuple->tuples.tuple_5.dest_ip.ip4.s_addr = htonl(v4->src_ip);
 		tuple->tuples.tuple_5.l4_src_ident = htons((uint16_t)v4->dest_port);
 		tuple->tuples.tuple_5.l4_dest_ident = htons((uint16_t)v4->src_port);
 		tuple->tuples.tuple_5.protocol = (uint8_t)v4->protocol;
@@ -315,16 +312,16 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		tuple->tuples.tuple_5.protocol = (uint8_t)v6->protocol;
 		tuple->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V6;
 		tuple->tuple_type = NETFN_TUPLE_5TUPLE;
-		tuple->tuples.tuple_5.src_ip[0] = ntohl(v6->dest_ip[0]);
-		tuple->tuples.tuple_5.src_ip[1] = ntohl(v6->dest_ip[1]);
-		tuple->tuples.tuple_5.src_ip[2] = ntohl(v6->dest_ip[2]);
-		tuple->tuples.tuple_5.src_ip[3] = ntohl(v6->dest_ip[3]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[0] = htonl(v6->dest_ip[0]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[1] = htonl(v6->dest_ip[1]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[2] = htonl(v6->dest_ip[2]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[3] = htonl(v6->dest_ip[3]);
 		tuple->tuples.tuple_5.l4_src_ident = htons((uint16_t)v6->dest_port);
 
-		tuple->tuples.tuple_5.dest_ip[0] = ntohl(v6->src_ip[0]);
-		tuple->tuples.tuple_5.dest_ip[1] = ntohl(v6->src_ip[1]);
-		tuple->tuples.tuple_5.dest_ip[2] = ntohl(v6->src_ip[2]);
-		tuple->tuples.tuple_5.dest_ip[3] = ntohl(v6->src_ip[3]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[0] = htonl(v6->src_ip[0]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[1] = htonl(v6->src_ip[1]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[2] = htonl(v6->src_ip[2]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[3] = htonl(v6->src_ip[3]);
 		tuple->tuples.tuple_5.l4_dest_ident = htons((uint16_t)v6->src_port);
 	}
 
