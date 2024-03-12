@@ -34,6 +34,7 @@
 #include "netfn_capwap_tun.h"
 #include "netfn_capwap_dec.h"
 
+#define NETFN_CAPWAP_MAX_STRLEN 25
 #define NETFN_CAPWAP_DEC_STATS_MAX (sizeof(struct netfn_capwap_dec_stats) / sizeof(uint64_t))
 
 /*
@@ -564,7 +565,6 @@ static ssize_t netfn_capwap_dec_stats_show(struct file *fp, char __user *ubuf, s
 	size_t dec_stats_sz, stats_sz;
 	ssize_t bytes_read = 0;
 	size_t size_wr = 0;
-	char *strings;
 	char *buf;
 	int i;
 
@@ -581,16 +581,16 @@ static ssize_t netfn_capwap_dec_stats_show(struct file *fp, char __user *ubuf, s
 	 * Print decap stats.
 	 */
 	BUILD_BUG_ON(ARRAY_SIZE(g_dec_stats_str) != NETFN_CAPWAP_DEC_STATS_MAX);
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "\n------------[decap stats start]----------\n");
+	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "\n---------------[decap stats start]-------------\n");
 
-	for (i = 0, strings = g_dec_stats_str[0]; i < ARRAY_SIZE(g_dec_stats_str); i++, stats++, strings++) {
+	for (i = 0; i < ARRAY_SIZE(g_dec_stats_str); i++, stats++) {
 		size_t len = stats_sz - size_wr;
 		char *start = buf + size_wr;
 
-		size_wr += scnprintf(start, len, "%s\t\t = %llu\n", strings, READ_ONCE(*stats));
+		size_wr += scnprintf(start, len, "%-*s\t\t = %llu\n", NETFN_CAPWAP_MAX_STRLEN, g_dec_stats_str[i], READ_ONCE(*stats));
 	}
 
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "------------[decap stats end]-----------\n");
+	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "---------------[decap stats end]--------------\n");
 
 	bytes_read = simple_read_from_buffer(ubuf, sz, ppos, buf, size_wr);
 	vfree(buf);
