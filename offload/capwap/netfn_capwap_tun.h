@@ -49,6 +49,7 @@ struct netfn_capwap_tun {
 	struct netfn_pkt_steer tx_steer;	/* Tx packet steering handle. */
 	struct netfn_pkt_steer rx_steer;	/* Rx Packet steering handle. */
 	uint32_t flags;				/* Flags for this tunnel. */
+	uint16_t id;				/* Tunnel identifier. */
 	uint8_t pvt[] __attribute__((aligned (sizeof(uint32_t))));
 						/* User private area pointer. */
 };

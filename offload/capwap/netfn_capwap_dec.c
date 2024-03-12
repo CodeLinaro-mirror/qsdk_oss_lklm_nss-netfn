@@ -502,6 +502,7 @@ static bool netfn_capwap_dec(struct netfn_capwap_dec *dec, struct sk_buff *skb, 
 	uint8_t *start, *next_hdr;
 	uint8_t exception = 0;
 
+	preh.tun_id = dec->id;
 	start = next_hdr = skb->data;
 
 	/*
@@ -714,11 +715,12 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
  * netfn_capwap_dec_init()
  *	Initializes the decap object.
  */
-bool netfn_capwap_dec_init(struct netfn_capwap_dec *dec, struct netfn_capwap_dec_cfg *cfg, struct dentry *parent)
+bool netfn_capwap_dec_init(struct netfn_capwap_dec *dec, struct netfn_capwap_dec_cfg *cfg, struct netfn_capwap_tun *nct)
 {
 	dec->max_frags = cfg->max_frags;
 	dec->max_payload_sz = cfg->max_payload_sz;
 	dec->features = cfg->features;
+	dec->id = nct->id;
 
 	/*
 	 * TODO: Remove this once inner sgt is enabled.
@@ -731,7 +733,7 @@ bool netfn_capwap_dec_init(struct netfn_capwap_dec *dec, struct netfn_capwap_dec
 	/*
 	 * Allocate debugfs entry.
 	 */
-	if (!debugfs_create_file("decap", S_IRUGO, parent, dec, &file_ops)) {
+	if (!debugfs_create_file("decap", S_IRUGO, nct->dentry, dec, &file_ops)) {
 		pr_warn("%p: Failed to create encap debug entry.\n", dec);
 		return false;
 	}
