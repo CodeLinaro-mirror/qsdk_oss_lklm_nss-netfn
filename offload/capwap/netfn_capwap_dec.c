@@ -248,8 +248,8 @@ restart:
 			}
 
 			memcpy(skb->data + offset, iter->data, iter->len);
-			__skb_unlink(skb, &frags->list);
-			__skb_queue_tail(&q_tmp, skb);
+			__skb_unlink(iter, &frags->list);
+			__skb_queue_tail(&q_tmp, iter);
 			goto restart;
 		}
 	}
