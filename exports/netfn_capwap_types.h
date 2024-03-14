@@ -42,6 +42,8 @@
 #define NETFN_CAPWAP_PKT_TYPE_WINFO		0x0008
 #define NETFN_CAPWAP_PKT_TYPE_80211		0x0010
 #define NETFN_CAPWAP_PKT_TYPE_8023		0x0020
+#define NETFN_CAPWAP_PKT_TYPE_SCS_ID_VALID	0x0040
+#define NETFN_CAPWAP_PKT_TYPE_SDWF_ID_VALID	0x0080
 
 #define NETFN_CAPWAP_WIRELESS_INFO_LEN		8
 #define NETFN_CAPWAP_SNAP_HDR_LEN 		6
@@ -161,6 +163,10 @@ struct netfn_capwap_tun_stats {
 
 /*
  * netfn_capwap_prehdr.
+ *
+ * NOTE: This structure is a copy of nss_capwap_metaheader.
+ * When updating this structure, nss_capwap_metaheader should also
+ * be updated.
  */
 struct netfn_capwap_prehdr {
 	uint8_t version;	/* CAPWAP version */
@@ -173,9 +179,14 @@ struct netfn_capwap_prehdr {
 	uint16_t wireless_qos;	/* 802.11e qos info */
 	uint16_t outer_sgt;	/* Security Group Tag value in the TrustSec header */
 	uint16_t inner_sgt;	/* Security Group Tag value in the TrustSec header */
-	uint16_t vapid;		/* VAP ID info */
 	uint32_t flow_id;       /* Flow ID of the pkt fragment */
-	uint16_t reserved;	/* Reserved for backward compatibility */
+	union {
+		struct {
+			uint16_t vapid;		/* VAP ID info */
+			uint16_t reserved;	/* Reserved for backward compatibility */
+		};
+		uint32_t scs_sdwf_id;	/* SCS or SDWF Identification */
+	};
 
 	/*
 	 * Put the wl_info at last so we don't have copy if 802.11 to 802.3 conversion did not happen

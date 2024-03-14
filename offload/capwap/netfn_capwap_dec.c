@@ -68,8 +68,10 @@ static bool netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buf
 {
 	bool flow_id_lookup_needed = dec->features & NETFN_CAPWAP_FEATURES_FLOW_COOKIE;
 	struct netfn_capwap_dec_stats *stats = &dec->stats;
+	netfn_flow_cookie_status_t nfc_status;
 	struct ieee80211_hdr_3addr *wlan_hdr;
 	struct netfn_capwap_hdr_mdata *mdata;
+	struct netfn_flow_cookie nfc = {0};
 	struct netfn_capwap_prehdr *phdr;
 	struct netfn_flow_cookie_db *d;
 	uint8_t *start, *next_hdr;
@@ -168,7 +170,14 @@ add_prehdr:
 	 * from the Netfn Flow Cookie DB
 	 * to the Meta Data Header here.
 	 */
-	phdr->flow_id = netfn_flow_cookie_db_entry_get_flow_id_using_skb(d, skb, offset);
+	nfc_status = netfn_flow_cookie_db_entry_get_flow_cookie_using_skb(d, skb, offset, &nfc);
+	if (nfc_status != NETFN_FLOW_COOKIE_STATUS_SUCCESS) {
+		return true;
+	}
+
+	phdr->flow_id = nfc.flow_id;
+	phdr->scs_sdwf_id = nfc.scs_id;
+	phdr->type |= (nfc.valid_flag & NETFN_CAPWAP_DEC_PHDR_TYPE_MASK);
 	return true;
 }
 

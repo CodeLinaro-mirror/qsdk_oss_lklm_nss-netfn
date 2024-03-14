@@ -22,10 +22,15 @@
 #ifndef __NETFN_FLOW_COOKIE_EXPORT_H
 #define __NETFN_FLOW_COOKIE_EXPORT_H
 
-#define NETFN_FLOW_COOKIE_SAWF_VALID 0x0000001
-#define NETFN_FLOW_COOKIE_SCS_VALID 0x00000002
-#define NETFN_FLOW_COOKIE_FLOW_MARK_VALID 0x00000004
-#define NETFN_FLOW_COOKIE_FLOW_ID_VALID 0x00000008
+#define NETFN_FLOW_COOKIE_FLOW_MARK_VALID 0x00000001
+#define NETFN_FLOW_COOKIE_FLOW_ID_VALID 0x00000002
+
+/*
+ * SAWF and SCS flags are set to these values
+ * to match the packet type fields in capwap offload.
+ */
+#define NETFN_FLOW_COOKIE_SAWF_VALID 0x0000040
+#define NETFN_FLOW_COOKIE_SCS_VALID 0x00000080
 
 struct netfn_flow_cookie_db;			/**< DataBase Structure */
 

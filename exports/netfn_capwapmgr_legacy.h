@@ -73,7 +73,6 @@
 #define NSS_CAPWAPMGR_FEATURE_OUTER_TRUSTSEC_ENABLED    NETFN_CAPWAP_FEATURES_OUTER_SGT      /* Tunnel enabled outer trustsec. */
 #define NSS_CAPWAPMGR_FEATURE_WIRELESS_QOS_ENABLED      NETFN_CAPWAP_FEATURES_WLAN_QOS      /* Tunnel enabled wireless QoS. */
 
-
 /*
  * CAPWAP version
  */
@@ -101,7 +100,10 @@
 				/**< T=1, then set wbid=1. */
 #define NSS_CAPWAP_PKT_TYPE_802_3		NETFN_CAPWAP_PKT_TYPE_8023
 				/**< Data is in 802.3 format. */
-
+#define NSS_CAPWAP_PKT_TYPE_SCS_ID_VALID	NETFN_CAPWAP_PKT_TYPE_SCS_ID_VALID
+				/**< Inner SCS ID valid. */
+#define NSS_CAPWAP_PKT_TYPE_SDWF_ID_VALID	NETFN_CAPWAP_PKT_TYPE_SDWF_ID_VALID
+				/**< Inner SDWF ID valid. */
 
 #define NSS_CAPWAP_WINFO_SZ NETFN_CAPWAP_WIRELESS_INFO_LEN
 				/**< Size of Wireless Info. */
@@ -128,9 +130,14 @@ struct nss_capwap_metaheader {
 	uint16_t outer_sgt;	/**< Security Group Tag value in the TrustSec header. */
 	uint16_t inner_sgt;	/**< Security Group Tag value in the TrustSec header. */
 	uint32_t flow_id;	/**< Flow identification. */
-	uint16_t vapid;		/**< VAP ID info. */
+	union {
+		struct {
+			uint16_t vapid;		/**< VAP ID info. */
+			uint16_t reserved;	/**< Reserved for backwards comparibility. */
+		};
 
-	uint16_t reserved;	/**< Reserved for backwards comparibility. */
+		uint32_t scs_sdwf_id;		/**< SCS/SDWF ID. */
+	};
 
 	/*
 	 * Put the wl_info at last so we don't have to do copy if 802.11 to 802.3 conversion did not happen.
@@ -1149,6 +1156,160 @@ static inline nss_capwapmgr_status_t nss_capwapmgr_dtls_rekey_tx_cipher_switch(s
 
 	return netfn_capwapmgr_status2legacy_status(netfn_ret);
 }
+
+/*
+ * Flow rule add types. Mutually exclusive fields.
+ * This indicates whether SCS or SDWF ID is configured for inner packet lookup.
+ */
+#define NSS_CAPWAPMR_FLOW_ATTR_SCS_VALID NETFN_CAPWAP_PKT_TYPE_SCS_ID_VALID					/**< SCS Identification valid in flow attributes. */
+#define NSS_CAPWAPMR_FLOW_ATTR_SDWF_VALID NETFN_CAPWAP_PKT_TYPE_SDWF_ID_VALID
+			/**< SDWF Identification valid in flow attributes. */
+
+/**
+ * nss_capwap_flow_attr
+ *	Inner Flow attributes.
+ */
+struct nss_capwap_flow_attr {
+	uint8_t type;			/**< Type to indicate if SCS is valid or SAWF is valid. */
+	uint32_t flow_id;		/**< Flow Identification. */
+	uint32_t scs_sdwf_id;		/**< SCS or SDWF Identification. */
+};
+
+/**
+ * nss_capwapmgr_flow_info
+ *	Inner flow information.
+ */
+struct nss_capwapmgr_flow_info {
+	uint16_t ip_version;	/**< IP version. */
+	uint16_t protocol;	/**< Protocol. */
+	uint32_t src_ip[4];	/**< Source IP address. */
+	uint32_t dst_ip[4];	/**< Destination IP address. */
+	uint16_t src_port;	/**< Source port. */
+	uint16_t dst_port;	/**< Destination port. */
+	struct nss_capwap_flow_attr flow_attr;
+				/**< Flow attributes. */
+};
+
+/**
+ * nss_capwapmgr_add_flow_rule
+ *	Send a flow rule add message to NSS.
+ *
+ * @datatypes
+ * net_device
+ *
+ * @param[in] netdevice	CAPWAP netdevice.
+ * @param[in] tunnel_id	Tunnel ID of the tunnel.
+ * @param[in] flow_info	Flow information.
+ *
+ * @return
+ * nss_capwapmgr_status_t
+ */
+static inline nss_capwapmgr_status_t nss_capwapmgr_add_flow_rule(struct net_device *dev, uint8_t tunnel_id, struct nss_capwapmgr_flow_info *flow_info)
+{
+	netfn_capwapmgr_ret_t netfn_ret = NETFN_CAPWAPMGR_SUCCESS;
+	struct netfn_capwapmgr_tun_update cfg = {0};
+	netfn_tuple_t *tuple;
+	struct netfn_flow_cookie *nfc;
+
+	cfg.type = NETFN_CAPWAPMGR_ADD_NETFN_FLOW_COOKIE;
+
+	tuple = &cfg.update_cfg.fci.tuple;
+	tuple->tuple_type = NETFN_TUPLE_5TUPLE;
+
+	if (flow_info->ip_version == NETFN_FLOWMGR_TUPLE_IP_VERSION_V4) {
+		tuple->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V4;
+		tuple->tuples.tuple_5.src_ip.ip4.s_addr = htonl(flow_info->src_ip[0]);
+		tuple->tuples.tuple_5.dest_ip.ip4.s_addr = htonl(flow_info->dst_ip[0]);
+		tuple->tuples.tuple_5.l4_src_ident = htons(flow_info->src_port);
+		tuple->tuples.tuple_5.l4_dest_ident = htons(flow_info->dst_port);
+		tuple->tuples.tuple_5.protocol = (uint8_t)flow_info->protocol;
+	} else {
+		tuple->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V6;
+
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[0] = htonl(flow_info->src_ip[0]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[1] = htonl(flow_info->src_ip[1]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[2] = htonl(flow_info->src_ip[2]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[3] = htonl(flow_info->src_ip[3]);
+		tuple->tuples.tuple_5.l4_src_ident = htons(flow_info->src_port);
+
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[0] = htonl(flow_info->dst_ip[0]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[1] = htonl(flow_info->dst_ip[1]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[2] = htonl(flow_info->dst_ip[2]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[3] = htonl(flow_info->dst_ip[3]);
+		tuple->tuples.tuple_5.l4_dest_ident = htons(flow_info->dst_port);
+
+		tuple->tuples.tuple_5.protocol = (uint8_t)flow_info->protocol;
+	}
+
+	nfc = &cfg.update_cfg.fci.nfc;
+	nfc->valid_flag = flow_info->flow_attr.type;
+	nfc->flow_id = flow_info->flow_attr.flow_id;
+	nfc->scs_id = flow_info->flow_attr.scs_sdwf_id;
+	rtnl_lock();
+	netfn_ret = netfn_capwapmgr_tunid_update(dev, tunnel_id, &cfg);
+	rtnl_unlock();
+
+	return netfn_capwapmgr_status2legacy_status(netfn_ret);
+}
+
+/**
+ * nss_capwapmgr_del_flow_rule
+ *	Send a flow rule delete message to NSS.
+ *
+ * @datatypes
+ * net_device
+ *
+ * @param[in] netdevice	CAPWAP netdevice.
+ * @param[in] tunnel_id	Tunnel ID of the tunnel.
+ * @param[in] flow_info Flow information.
+ *
+ * @return
+ * nss_capwapmgr_status_t
+ */
+static inline nss_capwapmgr_status_t nss_capwapmgr_del_flow_rule(struct net_device *dev, uint8_t tunnel_id, struct nss_capwapmgr_flow_info *flow_info)
+{
+	netfn_capwapmgr_ret_t netfn_ret = NETFN_CAPWAPMGR_SUCCESS;
+	struct netfn_capwapmgr_tun_update cfg = {0};
+	netfn_tuple_t *tuple;
+
+	cfg.type = NETFN_CAPWAPMGR_DEL_NETFN_FLOW_COOKIE;
+
+	tuple = &cfg.update_cfg.fci.tuple;
+	tuple->tuple_type = NETFN_TUPLE_5TUPLE;
+
+	if (flow_info->ip_version == NETFN_FLOWMGR_TUPLE_IP_VERSION_V4) {
+		tuple->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V4;
+		tuple->tuples.tuple_5.src_ip.ip4.s_addr = htonl(flow_info->src_ip[0]);
+		tuple->tuples.tuple_5.dest_ip.ip4.s_addr = htonl(flow_info->dst_ip[0]);
+		tuple->tuples.tuple_5.l4_src_ident = htons(flow_info->src_port);
+		tuple->tuples.tuple_5.l4_dest_ident = htons(flow_info->dst_port);
+		tuple->tuples.tuple_5.protocol = (uint8_t)flow_info->protocol;
+	} else {
+		tuple->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V6;
+
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[0] = htonl(flow_info->src_ip[0]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[1] = htonl(flow_info->src_ip[1]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[2] = htonl(flow_info->src_ip[2]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[3] = htonl(flow_info->src_ip[3]);
+		tuple->tuples.tuple_5.l4_src_ident = htons(flow_info->src_port);
+
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[0] = htonl(flow_info->dst_ip[0]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[1] = htonl(flow_info->dst_ip[1]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[2] = htonl(flow_info->dst_ip[2]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[3] = htonl(flow_info->dst_ip[3]);
+		tuple->tuples.tuple_5.l4_dest_ident = htons(flow_info->dst_port);
+
+		tuple->tuples.tuple_5.protocol = (uint8_t)flow_info->protocol;
+	}
+
+	rtnl_lock();
+	netfn_ret = netfn_capwapmgr_tunid_update(dev, tunnel_id, &cfg);
+	rtnl_unlock();
+
+	return netfn_capwapmgr_status2legacy_status(netfn_ret);
+}
+
+
 
 #if defined(NETFN_CAPWAPMGR_ONE_NETDEV)
 /**

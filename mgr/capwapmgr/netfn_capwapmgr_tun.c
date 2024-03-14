@@ -344,16 +344,19 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_rule_destroy(struct netfn_capw
 	return NETFN_CAPWAPMGR_SUCCESS;
 }
 
-static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_cookie_add(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_capwapmgr_flow_cookie_cfg_info *fcinfo)
+/*
+ * netfn_capwapmgr_flow_cookie_add
+ *	Add flow cookie to flow db.
+ */
+static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_cookie_add(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_capwapmgr_fc_info *fci)
 {
-
 	/*
 	 * Account for the Flow Cookie Add operation here.
 	 * The Function Call ultimately hooks into the Flow Cookie Module
 	 * to perform the desired DB operation.
 	 */
 
-	if (netfn_flow_cookie_db_entry_add(ctx->mgr->d, &(fcinfo->tuple), &(fcinfo->flow_cookie)) == NETFN_FLOW_COOKIE_STATUS_FAILURE) {
+	if (netfn_flow_cookie_db_entry_add(ctx->mgr->d, &(fci->tuple), &(fci->nfc)) == NETFN_FLOW_COOKIE_STATUS_FAILURE) {
 		atomic64_inc(&ctx->mgr->stats.error_stats[NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_ADD]);
 		return NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_ADD;
 	}
@@ -369,15 +372,18 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_cookie_add(struct netfn_capwap
 	return NETFN_CAPWAPMGR_SUCCESS;
 }
 
-static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_cookie_del(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_capwapmgr_flow_cookie_cfg_info *fcinfo)
+/*
+ * netfn_capwapmgr_flow_cookie_del
+ *	Delete flow cookie from flow db.
+ */
+static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_cookie_del(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_capwapmgr_fc_info *fci)
 {
-
 	/*
 	 * Account for the Flow Cookie Delete operation here.
 	 * The Function Call ultimately hooks into the Flow Cookie Module
 	 * to perform the desired DB operation.
 	 */
-	if (netfn_flow_cookie_db_entry_del(ctx->mgr->d, &(fcinfo->tuple)) == NETFN_FLOW_COOKIE_STATUS_FAILURE) {
+	if (netfn_flow_cookie_db_entry_del(ctx->mgr->d, &(fci->tuple)) == NETFN_FLOW_COOKIE_STATUS_FAILURE) {
 		atomic64_inc(&ctx->mgr->stats.error_stats[NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_DEL]);
 		return NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_DEL;
 	}

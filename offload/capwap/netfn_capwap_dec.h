@@ -23,6 +23,8 @@
 #define NETFN_CAPWAP_DEC_STATS_STRLEN 20
 #define NETFN_CAPWAP_DEC_STATS_WIDTH 82
 
+#define NETFN_CAPWAP_DEC_PHDR_TYPE_MASK 0xFFFF
+
 struct netfn_capwap_tun;
 
 /*

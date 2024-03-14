@@ -266,6 +266,8 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
         bool dtls_enabled = !!(capwap_rule->enabled_features & NSS_CAPWAPMGR_FEATURE_DTLS_ENABLED);
 	netfn_tuple_t *tuple;
 
+	BUILD_BUG_ON(sizeof(struct nss_capwap_metaheader) != sizeof(struct netfn_capwap_prehdr));
+
 	if (!v4 && !v6) {
 		netfn_capwapmgr_warn("Invalid ip create rule for tunnel: %d\n", tunnel_id);
 		return NETFN_CAPWAPMGR_ERROR_MAX;
