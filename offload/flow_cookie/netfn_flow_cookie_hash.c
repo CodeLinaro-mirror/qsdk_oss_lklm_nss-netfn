@@ -25,10 +25,36 @@
 #include <linux/types.h>
 #include "netfn_flow_cookie_hash.h"
 
-uint32_t netfn_flow_cookie_hash_compute(uint8_t protocol, uint32_t src_ip[4], uint16_t src_ident,
+uint32_t netfn_flow_cookie_hash_compute_v4(uint8_t protocol, uint32_t src_ip, uint16_t src_ident,
+			uint32_t dest_ip, uint16_t dest_ident)
+{
+	uint32_t hash = 0;
+
+	/*
+	 * Following Hash Function is a generic one
+	 * and used at various other modules.
+	 * Moreover, detailed experimentation has also been performed
+	 * and it has been certified that the performace results
+	 * are well in acceptable range.
+	 */
+
+	hash ^= (ntohl(src_ip ^ dest_ip));
+
+	hash ^= (protocol ^ (ntohs((src_ident) ^ (dest_ident))));
+
+	/*
+	 * We perform AND with the NETFN_FLOW_COOKIE_HASH_MASK for the obtained hash_idx
+	 * to ensure that we never go out of the boundary chosen.
+	 */
+	hash = ((hash >> NETFN_FLOW_COOKIE_HASH_SHIFT) ^ hash) & NETFN_FLOW_COOKIE_HASH_MASK;
+
+	return hash;
+}
+
+uint32_t netfn_flow_cookie_hash_compute_v6(uint8_t protocol, uint32_t src_ip[4], uint16_t src_ident,
 			uint32_t dest_ip[4], uint16_t dest_ident)
 {
-	uint32_t hash;
+	uint32_t hash = 0;
 	uint8_t idx;
 
 	/*
@@ -40,25 +66,16 @@ uint32_t netfn_flow_cookie_hash_compute(uint8_t protocol, uint32_t src_ip[4], ui
 	 */
 
 	for (idx = 0; idx < 4; idx++) {
-		hash ^= ntohl(src_ip[idx] ^ dest_ip[idx]);
+		hash ^= (ntohl(src_ip[idx] ^ dest_ip[idx]));
 	}
 
-	hash ^= (protocol ^ ntohs((src_ident) ^ (dest_ident)));
+	hash ^= (protocol ^ (ntohs((src_ident) ^ (dest_ident))));
 
 	/*
 	 * We perform AND with the NETFN_FLOW_COOKIE_HASH_MASK for the obtained hash_idx
 	 * to ensure that we never go out of the boundary chosen.
 	 */
 	hash = ((hash >> NETFN_FLOW_COOKIE_HASH_SHIFT) ^ hash) & NETFN_FLOW_COOKIE_HASH_MASK;
-
-#ifdef HASH_TEST
-	/*
-	 * Use the following to test any new Hash functions basing on the User’s interest.
-	 * hash = hash_v6_test(hh, hash, protocol, src_ip0, src_ip1, src_ip2, src_ip3,
-	 * 				src_ident, dest_ip0, dest_ip1, dest_ip2, dest_ip3, dest_ident);
-	 */
-
-#endif /* HASH_TEST */
 
 	return hash;
 }

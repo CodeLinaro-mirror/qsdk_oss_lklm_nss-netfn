@@ -20,7 +20,8 @@
  * netfn_flow_cookie.c
  *      Network Flow Cookie Functionality Manager
  */
-#include <linux/types.h>
+#include <linux/in.h>
+#include <linux/in6.h>
 #include <linux/module.h>
 #include <linux/debugfs.h>
 #include <netfn_flow_cookie.h>

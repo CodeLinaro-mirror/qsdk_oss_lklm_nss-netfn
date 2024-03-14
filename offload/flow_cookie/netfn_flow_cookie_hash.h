@@ -26,5 +26,8 @@
 #define NETFN_FLOW_COOKIE_HASH_SHIFT 12
 #define NETFN_FLOW_COOKIE_HASH_MASK ((1 << NETFN_FLOW_COOKIE_HASH_SHIFT) - 1)
 
-extern uint32_t netfn_flow_cookie_hash_compute(uint8_t protocol, uint32_t src_ip[4], uint16_t src_ident,
+extern uint32_t netfn_flow_cookie_hash_compute_v4(uint8_t protocol, uint32_t src_ip, uint16_t src_ident,
+				uint32_t dest_ip, uint16_t dest_ident);
+
+extern uint32_t netfn_flow_cookie_hash_compute_v6(uint8_t protocol, uint32_t src_ip[4], uint16_t src_ident,
 				uint32_t dest_ip[4], uint16_t dest_ident);

@@ -79,5 +79,4 @@ extern bool netfn_flow_cookie_db_hash_table_alloc(struct netfn_flow_cookie_db *d
  * Performs Hash function computations and returns
  * the Hash Index for the 5 tuple info of the flow provided.
  */
-inline uint32_t netfn_flow_cookie_db_calculate_hash_idx(struct netfn_flow_cookie_db *d, uint32_t *src_ip, uint16_t src_port,
-		uint32_t *dst_ip, uint16_t dst_port, uint8_t protocol, uint8_t ip_ver);
+inline uint32_t netfn_flow_cookie_db_calculate_hash_idx(struct netfn_flow_cookie_db *d, struct netfn_tuple *t);
