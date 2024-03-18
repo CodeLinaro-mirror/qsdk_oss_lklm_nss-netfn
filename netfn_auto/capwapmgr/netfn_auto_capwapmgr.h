@@ -53,7 +53,8 @@ int netfn_auto_capwapmgr_get_cmd_index(const char *cmd)
 		"CAPWAPMGR_LEGACY_DTLS_REKEY_RX_CIPHER_UPDATE",
 		"CAPWAPMGR_LEGACY_DTLS_REKEY_TX_CIPHER_UPDATE",
 		"CAPWAPMGR_LEGACY_DTLS_REKEY_RX_CIPHER_SWITCH",
-		"CAPWAPMGR_LEGACY_DTLS_REKEY_TX_CIPHER_SWITCH"};
+		"CAPWAPMGR_LEGACY_DTLS_REKEY_TX_CIPHER_SWITCH",
+		"CAPWAPMGR_LEGACY_CONFIG_FLOW_RULE"};
 
 	int i = 0;
 	for(i = 0; i < sizeof(capwapmgr_cmds)/sizeof(capwapmgr_cmds[0]); i++) {

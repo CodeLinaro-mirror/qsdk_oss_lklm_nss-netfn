@@ -480,6 +480,7 @@ enum netfn_auto_capwap_legacy_vlan_tag {
 };
 
 enum netfn_auto_capwap_legacy_flowcookie {
+	ADD = 212,
 	SCS_SDWF_ID = 25,
 	TYPE = 141,
 	CAPWAP_LEGACY_FLOWCOOKIE_MAX,

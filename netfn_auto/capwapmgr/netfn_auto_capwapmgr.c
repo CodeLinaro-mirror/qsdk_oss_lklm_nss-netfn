@@ -451,7 +451,8 @@ int netfn_auto_capwap_legacy_update_path_mtu(struct sk_buff *skb, struct genl_in
 {
 	char *dev_name;
 	struct net_device *dev;
-	uint8_t tunnel_id, path_mtu;
+	uint8_t tunnel_id;
+	uint32_t path_mtu;
 	nss_capwapmgr_status_t ret;
 
 	if (info->attrs[NET_DEV]) {
@@ -471,7 +472,7 @@ int netfn_auto_capwap_legacy_update_path_mtu(struct sk_buff *skb, struct genl_in
 	}
 
 	if (info->attrs[PATH_MTU]) {
-		path_mtu = (uint8_t)nla_get_u32(info->attrs[PATH_MTU]);
+		path_mtu = nla_get_u32(info->attrs[PATH_MTU]);
 		netfn_auto_info("CAPWAP_LEGACY_UPDATE_PATH_MTU: %d\n", path_mtu);
 	}
 
@@ -490,7 +491,7 @@ int netfn_auto_capwap_legacy_update_dest_mac(struct sk_buff *skb, struct genl_in
 	struct net_device *dev;
 	uint8_t tunnel_id;
 	char *mac;
-	uint8_t *mac_addr;
+	uint8_t mac_addr[ETH_ALEN];
 	nss_capwapmgr_status_t ret;
 
 	if (info->attrs[NET_DEV]) {
@@ -686,8 +687,8 @@ int netfn_auto_capwap_legacy_config_dtls(struct sk_buff *skb, struct genl_info *
 	}
 
 	if (info->attrs[ENABLE_DTLS]) {
-		enable_dtls = (uint8_t)nla_get_u32(info->attrs[TUNNEL_ID]);
-		netfn_auto_info("CAPWAP_LEGACY_CONFIG_DTLS_TUNNEL_ID: %d\n", tunnel_id);
+		enable_dtls = (uint8_t)nla_get_u32(info->attrs[ENABLE_DTLS]);
+		netfn_auto_info("CAPWAP_LEGACY_CONFIG_DTLS_ENABLE: %d\n", enable_dtls);
 	}
 
 	if(info->attrs[DTLS_DATA]) {
@@ -895,6 +896,113 @@ static inline int netfn_auto_capwap_legacy_dtls_rekey_tx_cipher_switch(struct sk
 }
 
 /*
+ * netfn_auto_capwap_legacy_add_flow_rule()
+ * 	netfn auto capwap legacy flow rule add
+ */
+static inline int netfn_auto_capwap_legacy_add_flow_rule(struct sk_buff *skb, struct genl_info *info)
+{
+	struct nss_capwapmgr_flow_info capwapmgr_flow_info = {0};
+	nss_capwapmgr_status_t ret = NSS_CAPWAPMGR_SUCCESS;
+	struct net_device *dev;
+	uint8_t tunnel_id;
+	char *dev_name, *data;
+	bool add;
+
+	if (info->attrs[NET_DEV]) {
+		dev_name = nla_data(info->attrs[NET_DEV]);
+		if(dev_name) {
+			pr_err("\nCAPWAP_LEGACY_ADD_FLOW_RULE_DEV: %s\n", dev_name);
+		} else {
+			pr_err("\nCAPWAP_LEGACY_ADD_FLOW_RULE_DEV\n");
+			return -EINVAL;
+		}
+		dev = dev_get_by_name(&init_net, dev_name);
+	}
+
+	if (info->attrs[TUNNEL_ID]) {
+		tunnel_id = (uint8_t)nla_get_u32(info->attrs[TUNNEL_ID]);
+		pr_err("\nCAPWAP_LEGACY_ADD_FLOW_RULE_TUNNEL_ID: %d\n", tunnel_id);
+	}
+
+	if (info->attrs[FLOW_INFO]) {
+		struct nlattr *attr, *flow_info = info->attrs[FLOW_INFO];
+		int rem;
+
+		nla_for_each_nested(attr, flow_info, rem) {
+			switch(attr->nla_type) {
+			case IP_VERSION:
+				capwapmgr_flow_info.ip_version = (uint16_t)nla_get_u32(attr);
+				pr_err("\nCAPWAPMGR FLOW INFO IP_VER: %d\n", capwapmgr_flow_info.ip_version);
+			break;
+
+			case PROTOCOL:
+				capwapmgr_flow_info.protocol = (uint16_t)nla_get_u32(attr);
+				pr_err("\nCAPWAPMGR FLOW INFO PROTOCOL: %d\n", capwapmgr_flow_info.protocol);
+			break;
+
+			case SRC_IP:
+				data = nla_data(attr);
+				if (!netfn_auto_verify_ip(data, capwapmgr_flow_info.src_ip, capwapmgr_flow_info.ip_version)) {
+					pr_err("\nWRONG IP FOR SRC IP IN CAPWAPMGR FLOW INFO\n");
+					return -EINVAL;
+				}
+			break;
+
+			case DEST_IP:
+				data = nla_data(attr);
+				if (!netfn_auto_verify_ip(data, capwapmgr_flow_info.dst_ip, capwapmgr_flow_info.ip_version)) {
+					pr_err("\nWRONG IP FOR DST IP IN CAPWAPMGR FLOW INFO\n");
+					return -EINVAL;
+				}
+			break;
+
+			case SRC_PORT:
+				capwapmgr_flow_info.src_port = (uint16_t)nla_get_u32(attr);
+				pr_err("\nCAPWAPMGR FLOW INFO SRC_PORT: %d\n", capwapmgr_flow_info.src_port);
+			break;
+
+			case DEST_PORT:
+				capwapmgr_flow_info.dst_port = (uint16_t)nla_get_u32(attr);
+				pr_err("\nCAPWAPMGR FLOW INFO DST_PORT: %d\n", capwapmgr_flow_info.dst_port);
+			break;
+
+			case TYPE:
+				capwapmgr_flow_info.flow_attr.type = (uint8_t)nla_get_u32(attr);
+				pr_err("\nCAPWAPMGR FLOW INFO FLOW ATTR TYPE: %d\n", capwapmgr_flow_info.flow_attr.type);
+			break;
+
+			case FLOW_ID:
+				capwapmgr_flow_info.flow_attr.flow_id = nla_get_u32(attr);
+				pr_err("\nCAPWAPMGR FLOW INFO FLOW ATTR FLOW ID: %d\n", capwapmgr_flow_info.flow_attr.flow_id);
+			break;
+
+			case SCS_SDWF_ID:
+				capwapmgr_flow_info.flow_attr.scs_sdwf_id = nla_get_u32(attr);
+				pr_err("\nCAPWAPMGR FLOW INFO FLOW ATTR SCS SDWF ID: %d\n", capwapmgr_flow_info.flow_attr.scs_sdwf_id);
+			break;
+
+			case ADD:
+				add = !!nla_get_u32(attr);
+				pr_err("\nCAPWAPMGR flow add called : %d\n", add);
+			break;
+
+			default:
+				pr_err("\nWrong attr in CAPWAP_LEGACY_ADD_FLOW_RULE\n");
+			}
+		}
+	}
+
+	if (add) {
+		ret = nss_capwapmgr_add_flow_rule(dev, tunnel_id, &capwapmgr_flow_info);
+		netfn_auto_info_always("nss capwapmgr flow rule add: %d\n", ret);
+	} else {
+		ret = nss_capwapmgr_del_flow_rule(dev, tunnel_id, &capwapmgr_flow_info);
+		netfn_auto_info_always("nss capwapmgr flow rule del: %d\n", ret);
+	}
+	return ret;
+}
+
+/*
  * netfn_auto_capwapmgr_genl_cmd()
  * 	Generic command for capwapmgr family.
  */
@@ -979,6 +1087,9 @@ static inline int netfn_auto_capwapmgr_genl_cmd(struct sk_buff *skb, struct genl
 			break;
 		case 17:
 			netfn_auto_capwap_legacy_dtls_rekey_tx_cipher_switch(skb, info);
+			break;
+		case 18:
+			netfn_auto_capwap_legacy_add_flow_rule(skb, info);
 			break;
 		default:
 			netfn_auto_warn("Wrong cmd for capwapmgr\n");
