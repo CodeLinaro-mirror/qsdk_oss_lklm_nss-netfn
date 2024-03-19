@@ -96,6 +96,7 @@ struct netfn_capwap_tun_cfg {
  */
 struct netfn_capwap_dec_stats {
 	uint64_t num_frags;			/**< Number of fragments received. */
+	uint64_t dtls_pkts;			/**< DTLS pkts received directly. */
 	uint64_t control_pkts;			/**< Control packets. */
 	uint64_t keepalive_pkts;		/**< Keep alive packets recieved. */
 	uint64_t fast_reasm;			/**< Fast reassembly hits. */

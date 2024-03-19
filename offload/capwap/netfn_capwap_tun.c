@@ -602,7 +602,7 @@ static void netfn_capwap_tun_rx_cb(struct netfn_pkt_steer *rx_steer, struct sk_b
 			skb->skb_iif = nct->dev->ifindex;
 		}
 
-		rx_handler = rcu_dereference(dev->rx_handler);
+		rx_handler = rcu_dereference(skb->dev->rx_handler);
 		if (likely(rx_handler) && (rx_handler(&skb) == RX_HANDLER_CONSUMED)) {
 			continue;
 		}
