@@ -277,14 +277,20 @@ EXPORT_SYMBOL(netfn_flow_cookie_db_instance_deref);
  * 32 bit hash index
  *
  */
-inline uint32_t netfn_flow_cookie_db_calculate_hash_idx(struct netfn_flow_cookie_db *d, uint32_t *src_ip, uint16_t src_port,
-		uint32_t *dst_ip, uint16_t dst_port, uint8_t protocol, uint8_t ip_ver)
+inline uint32_t netfn_flow_cookie_db_calculate_hash_idx(struct netfn_flow_cookie_db *d, struct netfn_tuple *t)
 {
-	uint16_t hash_mask;
+	uint16_t hash_mask = 0;
 
 	hash_mask = d->hash_size - 1;
 
-	return netfn_flow_cookie_hash_compute(protocol, src_ip, src_port, dst_ip, dst_port) & hash_mask;
+	if (t->ip_version == NETFN_FLOWMGR_TUPLE_IP_VERSION_V4) {
+		return netfn_flow_cookie_hash_compute_v4(t->tuples.tuple_5.protocol, t->tuples.tuple_5.src_ip.ip4.s_addr,
+				t->tuples.tuple_5.l4_src_ident, t->tuples.tuple_5.dest_ip.ip4.s_addr, t->tuples.tuple_5.l4_dest_ident) & hash_mask;
+	} else if (t->ip_version == NETFN_FLOWMGR_TUPLE_IP_VERSION_V6) {
+		return netfn_flow_cookie_hash_compute_v6(t->tuples.tuple_5.protocol, t->tuples.tuple_5.src_ip.ip6.s6_addr32,
+				t->tuples.tuple_5.l4_src_ident, t->tuples.tuple_5.dest_ip.ip6.s6_addr32, t->tuples.tuple_5.l4_dest_ident) & hash_mask;
+	}
+	return 0;
 }
 
 /*
@@ -311,8 +317,8 @@ static void netfn_flow_cookie_db_lookup_flow(struct netfn_flow_cookie_db *d, str
 		hlist_for_each_entry_rcu(flow, &(d->db_table[hash_idx]), node) {
 			if (likely(flow->tuple.tuples.tuple_5.l4_src_ident == t->tuples.tuple_5.l4_src_ident)
 					&& likely(flow->tuple.tuples.tuple_5.l4_dest_ident == t->tuples.tuple_5.l4_dest_ident)
-					&& likely(flow->tuple.tuples.tuple_5.src_ip[0] == t->tuples.tuple_5.src_ip[0])
-					&& likely(flow->tuple.tuples.tuple_5.dest_ip[0] == t->tuples.tuple_5.dest_ip[0])
+					&& likely(flow->tuple.tuples.tuple_5.src_ip.ip4.s_addr == t->tuples.tuple_5.src_ip.ip4.s_addr)
+					&& likely(flow->tuple.tuples.tuple_5.dest_ip.ip4.s_addr == t->tuples.tuple_5.dest_ip.ip4.s_addr)
 					&& likely(flow->tuple.tuples.tuple_5.protocol == t->tuples.tuple_5.protocol)
 					&& likely(flow->tuple.ip_version == t->ip_version)) {
 				*flow_fetched = flow;
@@ -325,14 +331,14 @@ static void netfn_flow_cookie_db_lookup_flow(struct netfn_flow_cookie_db *d, str
 		hlist_for_each_entry_rcu(flow, &(d->db_table[hash_idx]), node) {
 			if (likely(flow->tuple.tuples.tuple_5.l4_src_ident == t->tuples.tuple_5.l4_src_ident)
 					&& likely(flow->tuple.tuples.tuple_5.l4_dest_ident == t->tuples.tuple_5.l4_dest_ident)
-					&& likely(flow->tuple.tuples.tuple_5.src_ip[3] == t->tuples.tuple_5.src_ip[3])
-					&& likely(flow->tuple.tuples.tuple_5.src_ip[2] == t->tuples.tuple_5.src_ip[2])
-					&& likely(flow->tuple.tuples.tuple_5.src_ip[1] == t->tuples.tuple_5.src_ip[1])
-					&& likely(flow->tuple.tuples.tuple_5.src_ip[0] == t->tuples.tuple_5.src_ip[0])
-					&& likely(flow->tuple.tuples.tuple_5.dest_ip[3] == t->tuples.tuple_5.dest_ip[3])
-					&& likely(flow->tuple.tuples.tuple_5.dest_ip[2] == t->tuples.tuple_5.dest_ip[2])
-					&& likely(flow->tuple.tuples.tuple_5.dest_ip[1] == t->tuples.tuple_5.dest_ip[1])
-					&& likely(flow->tuple.tuples.tuple_5.dest_ip[0] == t->tuples.tuple_5.dest_ip[0])
+					&& likely(flow->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32[3] == t->tuples.tuple_5.src_ip.ip6.s6_addr32[3])
+					&& likely(flow->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32[2] == t->tuples.tuple_5.src_ip.ip6.s6_addr32[2])
+					&& likely(flow->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32[1] == t->tuples.tuple_5.src_ip.ip6.s6_addr32[1])
+					&& likely(flow->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32[0] == t->tuples.tuple_5.src_ip.ip6.s6_addr32[0])
+					&& likely(flow->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32[3] == t->tuples.tuple_5.dest_ip.ip6.s6_addr32[3])
+					&& likely(flow->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32[2] == t->tuples.tuple_5.dest_ip.ip6.s6_addr32[2])
+					&& likely(flow->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32[1] == t->tuples.tuple_5.dest_ip.ip6.s6_addr32[1])
+					&& likely(flow->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32[0] == t->tuples.tuple_5.dest_ip.ip6.s6_addr32[0])
 					&& likely(flow->tuple.tuples.tuple_5.protocol == t->tuples.tuple_5.protocol)
 					&& likely(flow->tuple.ip_version == t->ip_version)) {
 				*flow_fetched = flow;
@@ -373,8 +379,7 @@ static netfn_flow_cookie_status_t _netfn_flow_cookie_db_get_cookie(struct netfn_
 	 */
 	netfn_flow_cookie_db_instance_ref(d);
 
-	hash_idx = netfn_flow_cookie_db_calculate_hash_idx(d, t->tuples.tuple_5.src_ip, t->tuples.tuple_5.l4_src_ident,  t->tuples.tuple_5.dest_ip,
-			t->tuples.tuple_5.l4_dest_ident,  t->tuples.tuple_5.protocol, t->ip_version);
+	hash_idx = netfn_flow_cookie_db_calculate_hash_idx(d, t);
 
 	rcu_read_lock_bh();
 	netfn_flow_cookie_db_lookup_flow(d, t, hash_idx, &flow);
@@ -441,8 +446,8 @@ static netfn_flow_cookie_status_t netfn_flow_cookie_db_entry_extract_tuple_ipv4(
 
 		t->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V4;
 		t->tuple_type = NETFN_TUPLE_5TUPLE;
-		t->tuples.tuple_5.src_ip[0] = ntohl(iph->saddr);
-		t->tuples.tuple_5.dest_ip[0] = ntohl(iph->daddr);
+		t->tuples.tuple_5.src_ip.ip4.s_addr = ntohl(iph->saddr);
+		t->tuples.tuple_5.dest_ip.ip4.s_addr = ntohl(iph->daddr);
 		t->tuples.tuple_5.l4_src_ident = ntohs(tcph->source);
 		t->tuples.tuple_5.l4_dest_ident = ntohs(tcph->dest);
 		t->tuples.tuple_5.protocol = iph->protocol;
@@ -456,8 +461,8 @@ static netfn_flow_cookie_status_t netfn_flow_cookie_db_entry_extract_tuple_ipv4(
 
 		t->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V4;
 		t->tuple_type = NETFN_TUPLE_5TUPLE;
-		t->tuples.tuple_5.src_ip[0] = ntohl(iph->saddr);
-		t->tuples.tuple_5.dest_ip[0] = ntohl(iph->daddr);
+		t->tuples.tuple_5.src_ip.ip4.s_addr = ntohl(iph->saddr);
+		t->tuples.tuple_5.dest_ip.ip4.s_addr = ntohl(iph->daddr);
 		t->tuples.tuple_5.l4_src_ident = ntohs(udph->source);
 		t->tuples.tuple_5.l4_dest_ident = ntohs(udph->dest);
 		t->tuples.tuple_5.protocol = iph->protocol;
@@ -502,14 +507,14 @@ static netfn_flow_cookie_status_t netfn_flow_cookie_db_entry_extract_tuple_ipv6(
 
 		t->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V6;
 		t->tuple_type = NETFN_TUPLE_5TUPLE;
-		t->tuples.tuple_5.src_ip[0] = ntohl(ip6h->saddr.s6_addr32[0]);
-		t->tuples.tuple_5.src_ip[1] = ntohl(ip6h->saddr.s6_addr32[1]);
-		t->tuples.tuple_5.src_ip[2] = ntohl(ip6h->saddr.s6_addr32[2]);
-		t->tuples.tuple_5.src_ip[3] = ntohl(ip6h->saddr.s6_addr32[3]);
-		t->tuples.tuple_5.dest_ip[0] = ntohl(ip6h->daddr.s6_addr32[0]);
-		t->tuples.tuple_5.dest_ip[1] = ntohl(ip6h->daddr.s6_addr32[1]);
-		t->tuples.tuple_5.dest_ip[2] = ntohl(ip6h->daddr.s6_addr32[2]);
-		t->tuples.tuple_5.dest_ip[3] = ntohl(ip6h->daddr.s6_addr32[3]);
+		t->tuples.tuple_5.src_ip.ip6.s6_addr32[0] = ntohl(ip6h->saddr.s6_addr32[0]);
+		t->tuples.tuple_5.src_ip.ip6.s6_addr32[1] = ntohl(ip6h->saddr.s6_addr32[1]);
+		t->tuples.tuple_5.src_ip.ip6.s6_addr32[2] = ntohl(ip6h->saddr.s6_addr32[2]);
+		t->tuples.tuple_5.src_ip.ip6.s6_addr32[3] = ntohl(ip6h->saddr.s6_addr32[3]);
+		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[0] = ntohl(ip6h->daddr.s6_addr32[0]);
+		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[1] = ntohl(ip6h->daddr.s6_addr32[1]);
+		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[2] = ntohl(ip6h->daddr.s6_addr32[2]);
+		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[3] = ntohl(ip6h->daddr.s6_addr32[3]);
 		t->tuples.tuple_5.l4_src_ident = ntohs(tcph->source);
 		t->tuples.tuple_5.l4_dest_ident = ntohs(tcph->dest);
 		t->tuples.tuple_5.protocol = ip6h->nexthdr;
@@ -523,14 +528,14 @@ static netfn_flow_cookie_status_t netfn_flow_cookie_db_entry_extract_tuple_ipv6(
 
 		t->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V6;
 		t->tuple_type = NETFN_TUPLE_5TUPLE;
-		t->tuples.tuple_5.src_ip[0] = ntohl(ip6h->saddr.s6_addr32[0]);
-		t->tuples.tuple_5.src_ip[1] = ntohl(ip6h->saddr.s6_addr32[1]);
-		t->tuples.tuple_5.src_ip[2] = ntohl(ip6h->saddr.s6_addr32[2]);
-		t->tuples.tuple_5.src_ip[3] = ntohl(ip6h->saddr.s6_addr32[3]);
-		t->tuples.tuple_5.dest_ip[0] = ntohl(ip6h->daddr.s6_addr32[0]);
-		t->tuples.tuple_5.dest_ip[1] = ntohl(ip6h->daddr.s6_addr32[1]);
-		t->tuples.tuple_5.dest_ip[2] = ntohl(ip6h->daddr.s6_addr32[2]);
-		t->tuples.tuple_5.dest_ip[3] = ntohl(ip6h->daddr.s6_addr32[3]);
+		t->tuples.tuple_5.src_ip.ip6.s6_addr32[0] = ntohl(ip6h->saddr.s6_addr32[0]);
+		t->tuples.tuple_5.src_ip.ip6.s6_addr32[1] = ntohl(ip6h->saddr.s6_addr32[1]);
+		t->tuples.tuple_5.src_ip.ip6.s6_addr32[2] = ntohl(ip6h->saddr.s6_addr32[2]);
+		t->tuples.tuple_5.src_ip.ip6.s6_addr32[3] = ntohl(ip6h->saddr.s6_addr32[3]);
+		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[0] = ntohl(ip6h->daddr.s6_addr32[0]);
+		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[1] = ntohl(ip6h->daddr.s6_addr32[1]);
+		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[2] = ntohl(ip6h->daddr.s6_addr32[2]);
+		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[3] = ntohl(ip6h->daddr.s6_addr32[3]);
 		t->tuples.tuple_5.l4_src_ident = ntohs(udph->source);
 		t->tuples.tuple_5.l4_dest_ident = ntohs(udph->dest);
 		t->tuples.tuple_5.protocol = ip6h->nexthdr;
@@ -572,8 +577,7 @@ netfn_flow_cookie_status_t netfn_flow_cookie_db_entry_add(struct netfn_flow_cook
 
 	spin_lock_bh(&nfc_ctx->lock);
 
-	hash_idx = netfn_flow_cookie_db_calculate_hash_idx(d, t->tuples.tuple_5.src_ip, t->tuples.tuple_5.l4_src_ident,  t->tuples.tuple_5.dest_ip,
-			t->tuples.tuple_5.l4_dest_ident,  t->tuples.tuple_5.protocol, t->ip_version);
+	hash_idx = netfn_flow_cookie_db_calculate_hash_idx(d, t);
 
 	rcu_read_lock_bh();
 	netfn_flow_cookie_db_lookup_flow(d, t, hash_idx, &flow_found);
@@ -589,7 +593,6 @@ netfn_flow_cookie_status_t netfn_flow_cookie_db_entry_add(struct netfn_flow_cook
 		atomic64_inc(&d->db_base_stats[NETFN_FLOW_COOKIE_DB_FLOW_RULE_ADD_OPS_FAILED_DUE_TO_OTHER_REASONS]);
 		atomic64_inc(&nfc_ctx->gbl_base_stats[NETFN_FLOW_COOKIE_GBL_FLOW_RULE_ADD_OPS_FAILED]);
 		atomic64_inc(&d->db_base_stats[NETFN_FLOW_COOKIE_DB_FLOW_RULE_ADD_OPS_FAILED]);
-		atomic64_inc(&flow_found->Hit_count);
 
 		spin_unlock_bh(&nfc_ctx->lock);
 
@@ -621,14 +624,6 @@ netfn_flow_cookie_status_t netfn_flow_cookie_db_entry_add(struct netfn_flow_cook
 
 	flow->tuple.tuples.tuple_5.l4_src_ident = t->tuples.tuple_5.l4_src_ident;
 	flow->tuple.tuples.tuple_5.l4_dest_ident = t->tuples.tuple_5.l4_dest_ident;
-	flow->tuple.tuples.tuple_5.src_ip[0] = t->tuples.tuple_5.src_ip[0];
-	flow->tuple.tuples.tuple_5.src_ip[1] = t->tuples.tuple_5.src_ip[1];
-	flow->tuple.tuples.tuple_5.src_ip[2] = t->tuples.tuple_5.src_ip[2];
-	flow->tuple.tuples.tuple_5.src_ip[3] = t->tuples.tuple_5.src_ip[3];
-	flow->tuple.tuples.tuple_5.dest_ip[0] = t->tuples.tuple_5.dest_ip[0];
-	flow->tuple.tuples.tuple_5.dest_ip[1] = t->tuples.tuple_5.dest_ip[1];
-	flow->tuple.tuples.tuple_5.dest_ip[2] = t->tuples.tuple_5.dest_ip[2];
-	flow->tuple.tuples.tuple_5.dest_ip[3] = t->tuples.tuple_5.dest_ip[3];
 	flow->tuple.tuples.tuple_5.protocol = t->tuples.tuple_5.protocol;
 	flow->tuple.ip_version = t->ip_version;
 	flow->flow_cookie.valid_flag = cookie->valid_flag;
@@ -640,28 +635,18 @@ netfn_flow_cookie_status_t netfn_flow_cookie_db_entry_add(struct netfn_flow_cook
 
 	if (t->ip_version == NETFN_FLOWMGR_TUPLE_IP_VERSION_V4) {
 
-		netfn_flow_cookie_info("Performing the Flow Rule Add %p: hash %x "
-				"protocol %d, ip_ver %d, src %pI4(%d), dst %pI4(%d)",
-				d, hash_idx, flow->tuple.tuples.tuple_5.protocol, flow->tuple.ip_version,
-				&flow->tuple.tuples.tuple_5.src_ip[0], flow->tuple.tuples.tuple_5.l4_src_ident,
-				&flow->tuple.tuples.tuple_5.dest_ip[0], flow->tuple.tuples.tuple_5.l4_dest_ident);
-
-		/*
-		 * Fill all the higher fields with zeroes
-		 * to mimic the src and dst ip addresses to
-		 * be of IPV6 version.
-		 */
-		flow->tuple.tuples.tuple_5.src_ip[1] = flow->tuple.tuples.tuple_5.src_ip[2] = flow->tuple.tuples.tuple_5.src_ip[3] = 0;
-		flow->tuple.tuples.tuple_5.dest_ip[1] = flow->tuple.tuples.tuple_5.dest_ip[2] = flow->tuple.tuples.tuple_5.dest_ip[3] = 0;
-		netfn_flow_cookie_info("Faking Ipv4 addresses to be of Ipv6");
-
+		flow->tuple.tuples.tuple_5.src_ip.ip4.s_addr = t->tuples.tuple_5.src_ip.ip4.s_addr;
+		flow->tuple.tuples.tuple_5.dest_ip.ip4.s_addr = t->tuples.tuple_5.dest_ip.ip4.s_addr;
 	} else if (t->ip_version == NETFN_FLOWMGR_TUPLE_IP_VERSION_V6) {
 
-		netfn_flow_cookie_info("Performing the Flow Rule Add %p: hash %x "
-			"protocol %d, ip_ver %d, src %pI6(%d), dst %pI6(%d)",
-			d, hash_idx, flow->tuple.tuples.tuple_5.protocol, flow->tuple.ip_version,
-			flow->tuple.tuples.tuple_5.src_ip, flow->tuple.tuples.tuple_5.l4_src_ident,
-			flow->tuple.tuples.tuple_5.dest_ip, flow->tuple.tuples.tuple_5.l4_dest_ident);
+		flow->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32[0] = t->tuples.tuple_5.src_ip.ip6.s6_addr32[0];
+		flow->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32[1] = t->tuples.tuple_5.src_ip.ip6.s6_addr32[1];
+		flow->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32[2] = t->tuples.tuple_5.src_ip.ip6.s6_addr32[2];
+		flow->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32[3] = t->tuples.tuple_5.src_ip.ip6.s6_addr32[3];
+		flow->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32[0] = t->tuples.tuple_5.dest_ip.ip6.s6_addr32[0];
+		flow->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32[1] = t->tuples.tuple_5.dest_ip.ip6.s6_addr32[1];
+		flow->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32[2] = t->tuples.tuple_5.dest_ip.ip6.s6_addr32[2];
+		flow->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32[3] = t->tuples.tuple_5.dest_ip.ip6.s6_addr32[3];
 	}
 
 	/*
@@ -707,8 +692,7 @@ netfn_flow_cookie_status_t netfn_flow_cookie_db_entry_del(struct netfn_flow_cook
 
 	spin_lock_bh(&nfc_ctx->lock);
 
-	hash_idx = netfn_flow_cookie_db_calculate_hash_idx(d, t->tuples.tuple_5.src_ip, t->tuples.tuple_5.l4_src_ident,
-			t->tuples.tuple_5.dest_ip, t->tuples.tuple_5.l4_dest_ident, t->tuples.tuple_5.protocol, t->ip_version);
+	hash_idx = netfn_flow_cookie_db_calculate_hash_idx(d, t);
 
 	rcu_read_lock_bh();
 	netfn_flow_cookie_db_lookup_flow(d, t, hash_idx, &flow);

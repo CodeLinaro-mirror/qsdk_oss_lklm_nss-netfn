@@ -16,7 +16,6 @@
  *******************************************************************************
  */
 
-#include <linux/types.h>
 #include <linux/module.h>
 #include <netfn_types.h>
 
