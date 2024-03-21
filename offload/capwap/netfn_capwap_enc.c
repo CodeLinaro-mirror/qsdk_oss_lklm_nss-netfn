@@ -44,6 +44,8 @@ static int8_t *g_enc_stats_str[] = {
 	"drop_insufficient_hroom",
 	"drop_direct_dtls",
 	"drop_nwireless_len",
+	"res1",
+	"res2",
 };
 
 /*

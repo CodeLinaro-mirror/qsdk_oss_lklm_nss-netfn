@@ -54,6 +54,8 @@ static int8_t *g_dec_stats_str[] = {
 	"drop_malformed",
 	"drop_linearize_fail",
 	"drop_reasm_window",
+	"res1",
+	"res2",
 };
 
 /*
