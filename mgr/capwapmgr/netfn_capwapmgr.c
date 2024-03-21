@@ -63,6 +63,12 @@ static const char *netfn_capwapmgr_stats_str[] = {
 					/**< Failed to free capwap tunid dev in offload engine */
 	"CAPWAP offlaod tunid dev bind failed",
 					/**< Failed to free capwap tunid dev in offload engine */
+	"CAPWAP offload netfn flow cookie DB alloc failed",
+					/**< Failed to instantiate the flow cookie DB in offload engine */
+	"CAPWAP offload netfn flow cookie add failed",
+					/**< Failed to add flow cookie entry as reported in offload engine */
+	"CAPWAP offload netfn flow cookie delete failed",
+					/**< Failed to delete flow cookie entry as reported in offload engine */
 };
 
 /*
@@ -134,7 +140,7 @@ const struct file_operations netfn_capwapmgr_stats_ops = {
 int __init netfn_capwapmgr_init_module(void)
 {
 	struct netfn_capwapmgr *mgr = &g_mgr;
-
+	struct netfn_flow_cookie_db *d;
 
 	/*
 	 * Deref: netfn_capwapmgr_exit_module().
@@ -142,6 +148,31 @@ int __init netfn_capwapmgr_init_module(void)
 	init_completion(&mgr->completion);
 	kref_init(&mgr->ref);
 	spin_lock_init(&mgr->lock);
+
+	/*
+	 * Instantiate the Flow Cookie Data Base here.
+	 */
+	d = netfn_flow_cookie_db_alloc(NETFN_CAPWAPMGR_FLOW_COOKIE_HASHTABLE_SIZE);
+	if (!d) {
+		atomic64_inc(&mgr->stats.error_stats[NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_DB_ALLOC]);
+		netfn_capwapmgr_warn("Failed Instantiating a FLOW DB instance "
+			"from CAPWAP Manager Module");
+		return -1;
+	}
+
+	/*
+	 * Assign the DB handle to
+	 * the CAPWAP Manager module here.
+	 */
+	spin_lock_bh(&mgr->lock);
+	mgr->d = d;
+	spin_unlock_bh(&mgr->lock);
+
+	/*
+	 * Pass the DB handle to
+	 * the Capwap offload module here.
+	 */
+	netfn_capwap_set_db_handle(mgr->d);
 
 #if defined(NETFN_CAPWAPMGR_ONE_NETDEV)
 	netfn_capwapmgr_dev = netfn_capwapmgr_tunid_dev_alloc();
@@ -179,6 +210,27 @@ void __exit netfn_capwapmgr_exit_module(void)
 #if defined(NETFN_CAPWAPMGR_ONE_NETDEV)
 	netfn_capwapmgr_tunid_dev_free(netfn_capwapmgr_dev);
 #endif
+
+	/*
+	 * Latch onto CAPWAP Offload to ensure that
+	 * the ref is cleared on DB handle.
+	 * netfn_flow_cookie_db_instance_deref() as implemented
+	 * in the DB free API internally will take care this
+	 * by safely performing the DB free operation by tracking
+	 * the ref count properly.
+	 *
+	 * Flow Cookie Data Base Deallocation is being done here.
+	 *
+	 */
+	if (netfn_flow_cookie_db_instance_deref(mgr->d)) {
+
+		/*
+		 * Clear the DB handle as passed to
+		 * the Capwap offload module here.
+		 */
+		netfn_capwap_clear_db_handle();
+	}
+
 	/*
 	 * Ref: netfn_capwapmgr_init_module().
 	 */

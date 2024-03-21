@@ -20,6 +20,7 @@
 #define __NETFN_CAPWAP_TYPES_H
 
 #include <netfn_types.h>
+#include <netfn_flow_cookie.h>
 
 #define NETFN_CAPWAP_VERSION_V1			0x1
 #define NETFN_CAPWAP_VERSION_V2			0x2
@@ -32,6 +33,7 @@
 #define NETFN_CAPWAP_FEATURES_INNER_SGT		0x00000002
 #define NETFN_CAPWAP_FEATURES_OUTER_SGT		0x00000004
 #define NETFN_CAPWAP_FEATURES_WLAN_QOS		0x00000008
+#define NETFN_CAPWAP_FEATURES_FLOW_COOKIE	0x00000010
 
 #define NETFN_CAPWAP_PKT_TYPE_INVALID		0x1000
 #define NETFN_CAPWAP_PKT_TYPE_CTRL		0x0001
@@ -98,6 +100,7 @@ struct netfn_capwap_dec_stats {
 	uint64_t keepalive_pkts;		/**< Keep alive packets recieved. */
 	uint64_t fast_reasm;			/**< Fast reassembly hits. */
 	uint64_t slow_reasm;			/**< Slow reassembly hits. */
+	uint64_t flow_cookie_db_fetch_failures;	/**< Flow Cookie DB Fetch Failures */
 	/*
 	 * Drop stats.
 	 */
@@ -171,6 +174,7 @@ struct netfn_capwap_prehdr {
 	uint16_t outer_sgt;	/* Security Group Tag value in the TrustSec header */
 	uint16_t inner_sgt;	/* Security Group Tag value in the TrustSec header */
 	uint16_t vapid;		/* VAP ID info */
+	uint32_t flow_id;       /* Flow ID of the pkt fragment */
 	uint16_t reserved;	/* Reserved for backward compatibility */
 
 	/*

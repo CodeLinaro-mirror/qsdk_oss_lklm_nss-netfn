@@ -42,6 +42,63 @@ ulong fwd_cores_mask = NETFN_CAPWAP_FWD_CORES_MASK;	/* 0100 represents core 2 */
 ulong capwap_core = NETFN_CAPWAP_CORE;			/* 3 represents core 3 */
 
 /*
+ * netfn_capwap_get_db_handle()
+ * 	We use the following API to retrieve the DB handle
+ * 	from the CAPWAP Offload Module
+ * 	as given by the CAPWAP Manager Module.
+ */
+struct netfn_flow_cookie_db *netfn_capwap_get_db_handle(void)
+{
+
+	/*
+	 * We retrieve the Netfn Flow Cookie DB handle
+	 * here and return the same.
+	 */
+	return global_nc.d;
+}
+
+/*
+ * netfn_capwap_set_db_handle()
+ * 	We use the following API to set the DB handle
+ * 	in the CAPWAP Offload Module
+ * 	as given by the CAPWAP Manager Module.
+ */
+void netfn_capwap_set_db_handle(struct netfn_flow_cookie_db *d)
+{
+	struct netfn_capwap *nc = &global_nc;
+
+	/*
+	 * We assign the Netfn Flow Cookie DB handle
+	 * to the CAPWAP Offload Module here.
+	 */
+	spin_lock_bh(&nc->lock);
+	nc->d = d;
+	spin_unlock_bh(&nc->lock);
+	return;
+}
+EXPORT_SYMBOL(netfn_capwap_set_db_handle);
+
+/*
+ * netfn_capwap_clear_db_handle()
+ * 	We use the following API to clear the DB handle
+ * 	in the CAPWAP Offload Module.
+ */
+void netfn_capwap_clear_db_handle(void)
+{
+	struct netfn_capwap *nc = &global_nc;
+
+	/*
+	 * We assign the Netfn Flow Cookie DB handle
+	 * to NULL for the CAPWAP Offload Module here.
+	 */
+	spin_lock_bh(&nc->lock);
+	nc->d = NULL;
+	spin_unlock_bh(&nc->lock);
+	return;
+}
+EXPORT_SYMBOL(netfn_capwap_clear_db_handle);
+
+/*
  * netfn_capwap_frags_add()
  *	Try to add frag to frags list
  *
@@ -81,6 +138,8 @@ int __init netfn_capwap_init(void)
 		pr_warn("Overlapping cores found.\n");
 		return -EINVAL;
 	}
+
+	spin_lock_init(&nc->lock);
 
 	/*
 	 * Create a debugfs entry for capwap netfn engine.

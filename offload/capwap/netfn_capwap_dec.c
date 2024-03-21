@@ -46,6 +46,7 @@ static int8_t *g_dec_stats_str[] = {
 	"keepalive_pkts",
 	"fast_reasm",
 	"slow_reasm",
+	"flow_cookie_db_fetch_failures",
 	"drop_dup_frags",
 	"drop_dec_failure",
 	"drop_max_frags",
@@ -65,12 +66,16 @@ static int8_t *g_dec_stats_str[] = {
  */
 static bool netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buff *skb)
 {
+	bool flow_id_lookup_needed = dec->features & NETFN_CAPWAP_FEATURES_FLOW_COOKIE;
+	struct netfn_capwap_dec_stats *stats = &dec->stats;
 	struct ieee80211_hdr_3addr *wlan_hdr;
 	struct netfn_capwap_hdr_mdata *mdata;
 	struct netfn_capwap_prehdr *phdr;
+	struct netfn_flow_cookie_db *d;
 	uint8_t *start, *next_hdr;
 	uint8_t smac[ETH_ALEN];
 	uint8_t dmac[ETH_ALEN];
+	uint32_t offset = 0;
 	struct ethhdr *eth;
 	__le16 frame_ctrl;
 	uint16_t protocol;
@@ -83,6 +88,8 @@ static bool netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buf
 	 * Check if it needs conversion, else add meta header and exit.
 	 */
 	if (!mdata->type_80211) {
+		eth = (struct ethhdr *)next_hdr;
+		skb->protocol = eth->h_proto;
 		goto add_prehdr;
 	}
 
@@ -92,7 +99,9 @@ static bool netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buf
 	 */
 	wlan_hdr = (struct ieee80211_hdr_3addr *)next_hdr;
 	frame_ctrl = ntohs(wlan_hdr->frame_control);
+
 	if (!unlikely(ieee80211_is_data(frame_ctrl))) {
+		flow_id_lookup_needed = false;
 		goto add_prehdr;
 	}
 
@@ -133,10 +142,33 @@ add_prehdr:
 	 * Add preheader.
 	 */
 	next_hdr -= sizeof(*phdr);
+
 	phdr = (struct netfn_capwap_prehdr *)next_hdr;
 	*phdr = mdata->phdr;
 
 	__skb_push(skb, start - next_hdr);
+
+	if (!flow_id_lookup_needed) {
+		return true;
+	}
+
+	d = netfn_capwap_get_db_handle();
+	if (!d) {
+		NETFN_CAPWAP_TUN_STATS_INC(&stats->flow_cookie_db_fetch_failures);
+		return true;
+	}
+
+	/*
+	 * Fill the right offset here.
+	 */
+	offset = sizeof(*eth) + sizeof(*phdr);
+
+	/*
+	 * We append the valid Flow ID as retrieved
+	 * from the Netfn Flow Cookie DB
+	 * to the Meta Data Header here.
+	 */
+	phdr->flow_id = netfn_flow_cookie_db_entry_get_flow_id_using_skb(d, skb, offset);
 	return true;
 }
 
