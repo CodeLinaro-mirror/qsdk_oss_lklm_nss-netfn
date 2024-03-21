@@ -40,6 +40,7 @@ struct netfn_capwap_tun {
 	struct net_device *dev;			/* Pointer to tunnel dev. */
 	struct net_device *next_dev;		/* Pointer to nexthop dev. */
 	struct net_device *vp_dev;		/* Pointer to VP dev. */
+	uint32_t features;			/* Features enabled for tunnel. */
 
 	struct netfn_capwap_pkt_stats stats;	/* Tunnel stats. */
 	struct netfn_capwap_enc enc;	/* Tunnel encap object. */

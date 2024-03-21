@@ -732,7 +732,7 @@ bool netfn_capwap_dec_init(struct netfn_capwap_dec *dec, struct netfn_capwap_dec
 {
 	dec->max_frags = cfg->max_frags;
 	dec->max_payload_sz = cfg->max_payload_sz;
-	dec->features = cfg->features;
+	dec->features = nct->features;
 	dec->id = nct->id;
 
 	/*

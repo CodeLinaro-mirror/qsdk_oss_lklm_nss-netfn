@@ -374,7 +374,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 			return status;
 		}
 
-		netfn_dtls_cfg->flags = dtls_data->flags << NETFN_CAPWAPMGR_DTLS_FLAG_SHIFT_TO_NETFN;
+		netfn_dtls_cfg->flags = dtls_data->flags | NETFN_DTLS_FLAG_CAPWAP;
 		netfn_dtls_cfg->version = netfn_capwapmgr_dtls_version_enum_to_netfn[dtls_data->encap.ver];
 		netfn_dtls_cfg->epoch = dtls_data->encap.epoch;
 
@@ -383,7 +383,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		 * in the netfn configuration. Else update the default dscp value.
 		 */
 		if (dtls_data->encap.dscp_copy) {
-			netfn_dtls_cfg->flags |= 1 << NETFN_DTLS_FLAG_CP_TOS;
+			netfn_dtls_cfg->flags |= NETFN_DTLS_FLAG_CP_TOS;
 		} else {
 			netfn_dtls_cfg->dscp = dtls_data->encap.dscp;
 		}
@@ -397,7 +397,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		/*
 		 * Update config specifying this is encap session configuration.
 		 */
-		netfn_dtls_cfg->flags = NETFN_DTLS_FLAG_ENC | NETFN_DTLS_FLAG_CAPWAP;
+		netfn_dtls_cfg->flags |= NETFN_DTLS_FLAG_ENC;
 
 		/*
 		 * Decap Specific configuration.
@@ -416,16 +416,15 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		 * Currently the netfn dtls config takes encap and deacp specific parameters for a
 		 * decap session as well as for an encap session.
 		 */
+		netfn_dtls_cfg->flags = dtls_data->flags | NETFN_DTLS_FLAG_CAPWAP;
 		netfn_dtls_cfg->version = netfn_capwapmgr_dtls_version_enum_to_netfn[dtls_data->encap.ver];
-
 		netfn_dtls_cfg->epoch = dtls_data->encap.epoch;
-
 		netfn_dtls_cfg->replay_win = dtls_data->decap.window_size;
 
 		/*
 		 * Update config specifying this is decap session configuration.
 		 */
-		netfn_dtls_cfg->flags = NETFN_DTLS_FLAG_CAPWAP;
+		netfn_dtls_cfg->flags &= ~NETFN_DTLS_FLAG_ENC;
 	}
 
 	return status;

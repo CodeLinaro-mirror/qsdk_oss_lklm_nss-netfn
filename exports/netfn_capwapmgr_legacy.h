@@ -527,9 +527,9 @@ struct nss_capwap_tunnel_stats {
 /**
  * NSS DTLS manager flags
  */
-#define NSS_DTLSMGR_HDR_IPV6		0x00000001	/**< L3 header is v6 or v4 */
-#define NSS_DTLSMGR_HDR_UDPLITE		0x00000002	/**< L4 header is UDP-Lite or UDP */
-#define NSS_DTLSMGR_HDR_CAPWAP		0x00000004	/**< CAPWAP-DTLS or DTLS header */
+#define NSS_DTLSMGR_HDR_IPV6		NETFN_DTLS_FLAG_IPV6	/**< L3 header is v6 or v4 */
+#define NSS_DTLSMGR_HDR_UDPLITE		NETFN_DTLS_FLAG_UDPLITE	/**< L4 header is UDP-Lite or UDP */
+#define NSS_DTLSMGR_HDR_CAPWAP		NETFN_DTLS_FLAG_CAPWAP	/**< CAPWAP-DTLS or DTLS header */
 
 /**
  * DTLS protocol version
