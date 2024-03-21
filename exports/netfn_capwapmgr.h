@@ -22,7 +22,7 @@
 
 #include <netfn_flowmgr.h>
 #include <netfn_capwap.h>
-#include <netfn_dtls.h>
+#include <netfn_dtls_types.h>
 
 #define NETFN_CAPWAPMGR_EXT_VALID_VLAN 0x0001		/**< VLAN rule valid */
 #define NETFN_CAPWAPMGR_EXT_VALID_PPPOE 0x0002		/**< PPPoE rule valid */

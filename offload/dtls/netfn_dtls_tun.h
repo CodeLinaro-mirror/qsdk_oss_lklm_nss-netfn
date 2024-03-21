@@ -27,6 +27,7 @@ struct netfn_dtls_tun_stats {
 	uint64_t session_alloc;		/* Number of session allcated */
 	uint64_t session_free;		/* Number of session freed */
 	uint64_t encap_switch;		/* Number of Session switch in encap side */
+	uint64_t decap_switch;		/* Number of Session switch in Decap side */
 
 	/*
 	 * Tx is for encapsulation packets.
