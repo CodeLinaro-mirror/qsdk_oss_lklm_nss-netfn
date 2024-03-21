@@ -220,17 +220,21 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		return NETFN_CAPWAPMGR_ERROR_MAX;
 	}
 
+	/*
+	 * netfn tuple is for UL direction whereas the legacy tuple is passed for the DL direction.
+	 */
 	tuple = &cfg->tuple;
 	if (v4) {
 
 		/*
 		 * Convert flow rule.
+		 * Flow rule will be for UL direction similer to the tuple direction.
 		 */
-		cfg->flow.in_dev = ppe_drv_dev_get_by_iface_idx(v4->src_interface_num);
+		cfg->flow.out_dev = ppe_drv_dev_get_by_iface_idx(v4->src_interface_num);
 		cfg->flow.flow_mtu = v4->from_mtu;
-		memcpy(cfg->flow.flow_src_mac, v4->src_mac, ETH_ALEN);
-		memcpy(cfg->flow.flow_dest_mac, v4->dest_mac, ETH_ALEN);
-		cfg->flow.top_indev = v4->top_ndev;
+		memcpy(cfg->flow.flow_dest_mac, v4->src_mac, ETH_ALEN);
+		memcpy(cfg->flow.flow_src_mac, v4->dest_mac, ETH_ALEN);
+		cfg->flow.top_outdev = v4->top_ndev;
 
 		/*
 		 * Convert vlan rule.
@@ -276,11 +280,11 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		/*
 		 * Convert flow rule.
 		 */
-		cfg->flow.in_dev = ppe_drv_dev_get_by_iface_idx(v6->src_interface_num);
+		cfg->flow.out_dev = ppe_drv_dev_get_by_iface_idx(v6->src_interface_num);
 		cfg->flow.flow_mtu = v6->from_mtu;
-		memcpy(cfg->flow.flow_src_mac, v6->src_mac, ETH_ALEN);
-		memcpy(cfg->flow.flow_dest_mac, v6->dest_mac, ETH_ALEN);
-		cfg->flow.top_indev = v6->top_ndev;
+		memcpy(cfg->flow.flow_dest_mac, v6->src_mac, ETH_ALEN);
+		memcpy(cfg->flow.flow_src_mac, v6->dest_mac, ETH_ALEN);
+		cfg->flow.top_outdev = v6->top_ndev;
 
 		if ((v6->in_vlan_tag[0] & 0xFFF) != 0xFFF) {
 			cfg->ext_cfg.ext_valid_flags |= NETFN_CAPWAPMGR_EXT_VALID_VLAN;
