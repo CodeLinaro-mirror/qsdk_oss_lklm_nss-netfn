@@ -78,7 +78,7 @@ uint8_t netfn_capwapmgr_snap[NETFN_CAPWAP_SNAP_HDR_LEN];
  * netfn_capwapmgr_dtls_version_enum_to_netfn.
  *	Legacy Enum to netfn config.
  */
-static const uint16_t netfn_capwapmgr_dtls_version_enum_to_netfn[2] = {0xFEFF, 0xFEFD};
+static const uint16_t netfn_capwapmgr_dtls_version_enum_to_netfn[2] = {0xFFFE, 0xFDFE};
 
 #if defined(NETFN_CAPWAPMGR_ONE_NETDEV)
 struct net_device *netfn_capwapmgr_dev;
@@ -376,7 +376,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 
 		netfn_dtls_cfg->flags = dtls_data->flags | NETFN_DTLS_FLAG_CAPWAP;
 		netfn_dtls_cfg->version = netfn_capwapmgr_dtls_version_enum_to_netfn[dtls_data->encap.ver];
-		netfn_dtls_cfg->epoch = dtls_data->encap.epoch;
+		netfn_dtls_cfg->epoch = htons(dtls_data->encap.epoch);
 
 		/*
 		 * If DSCP copy from skb is enabled, update the corresponding field
@@ -418,7 +418,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		 */
 		netfn_dtls_cfg->flags = dtls_data->flags | NETFN_DTLS_FLAG_CAPWAP;
 		netfn_dtls_cfg->version = netfn_capwapmgr_dtls_version_enum_to_netfn[dtls_data->encap.ver];
-		netfn_dtls_cfg->epoch = dtls_data->encap.epoch;
+		netfn_dtls_cfg->epoch = htons(dtls_data->encap.epoch);
 		netfn_dtls_cfg->replay_win = dtls_data->decap.window_size;
 
 		/*

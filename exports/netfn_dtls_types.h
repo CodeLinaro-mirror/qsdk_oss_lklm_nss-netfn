@@ -49,8 +49,8 @@ struct netfn_dtls_cfg {
 #define NETFN_DTLS_FLAG_CP_TOS  BIT(4)	/* set = copy IP TOS value from SKB, clear = use default TOS */
 #define NETFN_DTLS_FLAG_CP_DF   BIT(5)	/* set = copy IP DF value from SKB, clear = use default DF */
 
-	uint16_t version;			/* DTLS version (0xFEFF/v1.0 or 0xFEFD/v1.2) */
-	uint16_t epoch;				/* Unique epoch value */
+	__be16 version;				/* DTLS version (0xFFFE/v1.0 or 0xFDFE/v1.2) */
+	__be16 epoch;				/* Unique epoch value */
 	uint8_t df;				/* Default DF value for outer IP */
 	uint8_t dscp;				/* Default dscp value for outer IP */
 	uint8_t hop_limit;			/* Default TTL limit for outer IP */

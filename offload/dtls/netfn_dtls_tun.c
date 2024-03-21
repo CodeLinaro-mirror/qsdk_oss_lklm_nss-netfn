@@ -563,7 +563,7 @@ int netfn_dtls_tun_session_add(struct net_device *dev, struct netfn_dtls_cfg *cf
 	struct netfn_dtls_session *pending;
 	struct netfn_dtls_session *active;
 	struct netfn_dtls_tun_state *state;
-	__be16 epoch = htons(cfg->epoch);
+	__be16 epoch = cfg->epoch;
 	struct netfn_dtls_session *ses;
 	bool encap;
 
