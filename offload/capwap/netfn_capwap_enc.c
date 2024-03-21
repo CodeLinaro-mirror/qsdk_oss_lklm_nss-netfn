@@ -161,8 +161,8 @@ static void netfn_capwap_enc_l3(struct netfn_capwap_enc *enc, struct sk_buff *sk
 		iph->ttl = hdr->ttl;
 		iph->frag_off = htons(IP_DF);
 		iph->protocol = hdr->proto_next_hdr;
-		iph->saddr = hdr->src_ip[0];
-		iph->daddr = hdr->dest_ip[0];
+		memcpy(&iph->saddr, &hdr->src_ip.ip4, sizeof(iph->saddr));
+		memcpy(&iph->daddr, &hdr->dest_ip.ip4, sizeof(iph->daddr));
 		return;
 	}
 
@@ -177,11 +177,8 @@ static void netfn_capwap_enc_l3(struct netfn_capwap_enc *enc, struct sk_buff *sk
 	ip6h->nexthdr = hdr->proto_next_hdr;
 	ip6h->payload_len = htons(skb->len - sizeof(*ip6h));
 	ip6h->hop_limit = hdr->ttl;
-	/*
-	 * TODO: Convert to in6_addr
-	 */
-	memcpy(ip6h->saddr.s6_addr32, hdr->src_ip, sizeof(ip6h->saddr.s6_addr32));
-	memcpy(ip6h->daddr.s6_addr32, hdr->dest_ip, sizeof(ip6h->daddr.s6_addr32));
+	memcpy(ip6h->saddr.s6_addr32, &hdr->src_ip.ip6, sizeof(ip6h->saddr.s6_addr32));
+	memcpy(ip6h->daddr.s6_addr32, &hdr->dest_ip.ip6, sizeof(ip6h->daddr.s6_addr32));
 }
 
 /*
@@ -507,18 +504,15 @@ bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc
 
 	if (ntuple->ip_version == IPVERSION) {
 		hdr->ip_version = ntuple->ip_version;
-		hdr->src_ip[0] = tuple->src_ip[0];
-		hdr->dest_ip[0] = tuple->dest_ip[0];
+		hdr->src_ip.ip4 = tuple->src_ip.ip4;
+		hdr->dest_ip.ip4 = tuple->dest_ip.ip4;
 
 		enc->outer_hdr_len += sizeof(struct iphdr);
 	} else {
 		hdr->ip_version = ntuple->ip_version;
 
-		/*
-		 * TODO: Change to direct assignment once switched to in6_addr
-		 */
-		memcpy(hdr->src_ip, tuple->src_ip, sizeof(uint32_t) * 4);
-		memcpy(hdr->dest_ip, tuple->dest_ip, sizeof(uint32_t) * 4);
+		hdr->src_ip.ip6 = tuple->src_ip.ip6;
+		hdr->dest_ip.ip6 = tuple->dest_ip.ip6;
 
 		enc->outer_hdr_len += sizeof(struct ipv6hdr);
 	}

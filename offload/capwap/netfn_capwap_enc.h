@@ -30,8 +30,14 @@ struct netfn_capwap_tun;
  *	Encapsulation header
  */
 struct netfn_capwap_enc_hdr {
-	__be32 src_ip[4];		/* Source IP for tunnel. */
-	__be32 dest_ip[4];		/* Destination IP for tunnel. */
+	union {
+		struct in_addr ip4;	/**< Source IPv4 address */
+		struct in6_addr ip6;	/**< Source IPv6 address */
+	} src_ip;
+	union {
+		struct in_addr ip4;	/**< Dest IPv4 address */
+		struct in6_addr ip6;	/**< Dest IPv6 address */
+	} dest_ip;
 	__be16 src_port;		/* Source port */
 	__be16 dest_port;		/* Destination port */
 	__u8 proto_next_hdr;		/* L4 proto. */
