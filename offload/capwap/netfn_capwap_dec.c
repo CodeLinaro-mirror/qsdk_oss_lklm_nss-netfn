@@ -105,8 +105,8 @@ static bool netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buf
 	 * Strip the Qos header (802.11e)
 	 */
 	if (likely(ieee80211_is_data_qos(frame_ctrl))) {
-		phdr->wlan_qos = *(uint16_t *)next_hdr;
-		next_hdr += sizeof(phdr->wlan_qos);
+		phdr->wireless_qos = *(uint16_t *)next_hdr;
+		next_hdr += sizeof(phdr->wireless_qos);
 	}
 
 	next_hdr += NETFN_CAPWAP_SNAP_HDR_LEN;
@@ -391,7 +391,7 @@ static uint8_t *netfn_capwap_dec_capwap(struct netfn_capwap_dec *dec, struct sk_
 	 */
 	next_hdr += sizeof(*nch);
 
-	preh->vers = NETFN_CAPWAP_VERSION;
+	preh->version = NETFN_CAPWAP_VERSION;
 	preh->rid = netfn_capwap_hdr_get_rid(info);
 	cw_hlen = netfn_capwap_hdr_get_hlen(info);
 
@@ -428,7 +428,7 @@ static uint8_t *netfn_capwap_dec_capwap(struct netfn_capwap_dec *dec, struct sk_
 
 		BUILD_BUG_ON(NETFN_CAPWAP_MAX_NWIRELESS > sizeof(*winfo));
 		preh->nwireless = nwireless;
-		*((struct netfn_capwap_winfo *)preh->winfo) = *winfo;
+		*((struct netfn_capwap_winfo *)preh->wl_info) = *winfo;
 
 		/*
 		 * Pull the wirelesss information header
@@ -502,7 +502,7 @@ static bool netfn_capwap_dec(struct netfn_capwap_dec *dec, struct sk_buff *skb, 
 	uint8_t *start, *next_hdr;
 	uint8_t exception = 0;
 
-	preh.tun_id = dec->id;
+	preh.tunnel_id = dec->id;
 	start = next_hdr = skb->data;
 
 	/*

@@ -70,37 +70,12 @@
 #define NETFN_CAPWAP_HEADROOM_RESERVE	128 /* Bytes */
 #define NETFN_CAPWAP_TAILROOM_RESERVE	128 /* Bytes */
 #define NETFN_CAPWAP_MAX_NWIRELESS	1
-#define NETFN_CAPWAP_WIRELESS_INFO_LEN	8
 #define NETFN_CAPWAP_WLAN_QOS		2
 
-#define NETFN_CAPWAP_ENC_FLAG_IPV6		0x00000001
-#define NETFN_CAPWAP_ENC_FLAG_UDPLITE		0x00000002
-#define NETFN_CAPWAP_ENC_FLAG_80211_TO_8023	0x00000004
-
-#define NETFN_CAPWAP_FEATURES_DTLS		0x00000001
-#define NETFN_CAPWAP_FEATURES_INNER_SGT		0x00000002
-#define NETFN_CAPWAP_FEATURES_OUTER_SGT		0x00000004
-#define NETFN_CAPWAP_FEATURES_WLAN_QOS		0x00000008
-
-/*
- * TODO: This needs to move to common file once capwapmgr is up.
- */
-#define NETFN_CAPWAP_PKT_TYPE_INVALID		0x1000
-#define NETFN_CAPWAP_PKT_TYPE_CTRL		0x0001
-#define NETFN_CAPWAP_PKT_TYPE_DATA		0x0002
-#define NETFN_CAPWAP_PKT_TYPE_DTLS		0x0004
-#define NETFN_CAPWAP_PKT_TYPE_WINFO		0x0008
-#define NETFN_CAPWAP_PKT_TYPE_80211		0x0010
-#define NETFN_CAPWAP_PKT_TYPE_8023		0x0020
 #define NETFN_CAPWAP_PKT_ENC_MASK (NETFN_CAPWAP_PKT_TYPE_WINFO \
 		| NETFN_CAPWAP_PKT_TYPE_80211 | NETFN_CAPWAP_PKT_TYPE_8023)
 
-#define NETFN_CAPWAP_DATA_PORT			5257
-#define NETFN_CAPWAP_CTRL_PORT			5256
-
 #define NETFN_CAPWAP_HDR_IPV4_SZ (sizeof(struct iphdr) + sizeof(struct udphdr))
-#define NETFN_CAPWAP_MAX_BUF_SZ		9000
-#define NETFN_CAPWAP_MAX_FRAGS 		10
 #define NETFN_CAPWAP_L2_HDR_SZ		(sizeof(struct ethhdr) + sizeof(struct vlan_hdr))
 #define NETFN_CAPWAP_MIN_HDR_SZ (NETFN_CAPWAP_L2_HDR_SZ + sizeof(struct ipv6hdr) \
 		  + sizeof(struct udphdr) + sizeof(struct netfn_capwap_hdr))
@@ -108,32 +83,6 @@
 		+ NETFN_CAPWAP_SNAP_HDR_LEN + NETFN_CAPWAP_WLAN_QOS - sizeof(struct ethhdr))
 								/* wlan header + winfo + snap + wlan_qos - ethernet */
 #define NETFN_CAPWAP_MAX_HDR_SZ (NETFN_CAPWAP_MIN_HDR_SZ + NETFN_CAPWAP_8023_TO_80211_SZ)
-
-/*
- * TODO: This needs to move to common file once capwapmgr is up.
- */
-/*
- * netfn_capwap_prehdr.
- */
-struct netfn_capwap_prehdr {
-	uint8_t vers;		/* CAPWAP version */
-	uint8_t rid;		/* Radio ID */
-	uint8_t dscp;		/* DSCP value */
-	uint8_t vlan_pcp;	/* VLAN priority .P marking */
-	uint16_t type;		/* Type of CAPWAP packet & What was there in CAPWAP header */
-	uint16_t nwireless;	/* Number of wireless info sections in CAPWAP header */
-	uint16_t wlan_qos;	/* 802.11e qos info */
-	uint16_t outer_sgt;	/* Security Group Tag value in the TrustSec header */
-	uint16_t inner_sgt;	/* Security Group Tag value in the TrustSec header */
-	uint16_t vapid;		/* VAP ID info */
-	uint32_t tun_id;	/* Tunnel ID */
-
-	/*
-	 * Put the wl_info at last so we don't have copy if 802.11 to 802.3 conversion did not happen
-	 */
-	uint8_t winfo[NETFN_CAPWAP_WIRELESS_INFO_LEN];
-				/* Wireless info preserved from the original packet */
-} __attribute((packed, aligned(4)));
 
 /*
  * netfn_capwap_winfo

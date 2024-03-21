@@ -103,7 +103,7 @@ static netdev_tx_t netfn_capwap_tunid_tx(struct sk_buff *skb, struct net_device 
 	struct netfn_capwap_prehdr *pre = (struct netfn_capwap_prehdr *)skb->data;
 	struct netfn_capwap_tunid *ncti = netdev_priv(dev);
 	struct netfn_capwap_pkt_stats *stats = &ncti->stats;
-	uint32_t tunid = pre->tun_id;
+	uint32_t tunid = pre->tunnel_id;
 	struct net_device *tun_dev;
 
 	/*
@@ -116,7 +116,7 @@ static netdev_tx_t netfn_capwap_tunid_tx(struct sk_buff *skb, struct net_device 
 	}
 
 	rcu_read_lock_bh();
-	tun_dev = rcu_dereference(ncti->tunnels[pre->tun_id]);
+	tun_dev = rcu_dereference(ncti->tunnels[pre->tunnel_id]);
 	if (!tun_dev) {
 		NETFN_CAPWAP_TUN_STATS_INC(stats->tx_failures);
 		rcu_read_unlock_bh();

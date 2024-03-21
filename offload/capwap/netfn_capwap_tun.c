@@ -130,9 +130,9 @@ static netdev_tx_t netfn_capwap_tun_tx(struct sk_buff *skb, struct net_device *d
 	/*
 	 * Check for capwap version.
 	 */
-	if (unlikely(phdr->vers != NETFN_CAPWAP_VERSION)) {
+	if (unlikely(phdr->version != NETFN_CAPWAP_VERSION)) {
 		pr_warn_ratelimited("%px: Version mismatch actual:%d, expected: %d.\n", skb,
-				phdr->vers, NETFN_CAPWAP_VERSION);
+				phdr->version, NETFN_CAPWAP_VERSION);
 		goto fail;
 	}
 
