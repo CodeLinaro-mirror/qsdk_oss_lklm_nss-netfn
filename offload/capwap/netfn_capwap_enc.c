@@ -20,6 +20,7 @@
 #include <linux/skbuff.h>
 #include <linux/debugfs.h>
 #include <linux/ipv6.h>
+#include <linux/if_pppox.h>
 
 #include <net/udp.h>
 
@@ -472,9 +473,10 @@ bool netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, st
 		/*
 		 * We don't encapsulate with UDP and IP if dtls is enabled.
 		 * DTLS adds these for us.
+		 * SKB Priority used to store TOS.
 		 */
 		if (enc->features & NETFN_CAPWAP_FEATURES_DTLS) {
-			skb->priority = enc->hdr.tos;
+			skb->priority = mdata.phdr.dscp << 2;
 			continue;
 		}
 
@@ -499,8 +501,15 @@ bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc
 	enc->features = nct->features;
 
 	/*
-	 * TODO: Add vlan and pppoe.
+	 * Add vlan and pppoe overhead.
 	 */
+	if (enc->flags & NETFN_CAPWAP_ENC_FLAG_VLAN) {
+		enc->outer_hdr_len += sizeof(struct vlan_hdr);
+	}
+
+	if (enc->flags & NETFN_CAPWAP_ENC_FLAG_PPPOE) {
+		enc->outer_hdr_len += sizeof(struct pppoe_hdr);
+	}
 
 	if (ntuple->ip_version == IPVERSION) {
 		hdr->ip_version = ntuple->ip_version;

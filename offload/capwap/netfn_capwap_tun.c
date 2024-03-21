@@ -283,9 +283,25 @@ static int netfn_capwap_tun_mtu(struct net_device *dev, int mtu)
 {
 	struct netfn_capwap_tun *nct = netdev_priv(dev);
 	struct net_device *next_dev = nct->next_dev;
+	int next_mtu;
 
+	/*
+	 * Set nexthop MTU.
+	 */
 	__dev_set_mtu(next_dev, mtu);
-	dev->mtu = next_dev->mtu - nct->enc.outer_hdr_len;
+	next_mtu = READ_ONCE(next_dev->mtu);
+
+	/*
+	 * Set maximum fragmenatation length for Encapsulation.
+	 */
+	netfn_capwap_enc_mtu_update(&nct->enc, next_mtu);
+
+	/*
+	 * Set our device MTU.
+	 */
+	WRITE_ONCE(dev->mtu, mtu);
+
+	pr_info("MTU updated with flow mtu(%u)\n", mtu);
 	return 0;
 }
 

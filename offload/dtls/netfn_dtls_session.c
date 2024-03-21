@@ -93,7 +93,7 @@ static ssize_t netfn_dtls_session_read(struct file *fp, char __user *ubuf, size_
 		format = "%s Session%u (src:%pI6 dst:%pI6 epoch:0x%X sport:%u dport:%u proto:%u version:0x%X flags:0x%X):\n";
 
 	len += snprintf(buf + len, max_len - len, format,
-				hdr, ++i, t->src_ip, t->dest_ip, ntohs(ses->epoch), ntohs(t->l4_src_ident),
+				hdr, ++i, &t->src_ip, &t->dest_ip, ntohs(ses->epoch), ntohs(t->l4_src_ident),
 				ntohs(t->l4_dest_ident), t->protocol, ip_version, ses->flags);
 
 	len += snprintf(buf + len, max_len - len, "\tTx packets: %llu\n", stats.tx_pkts);
@@ -145,7 +145,7 @@ static void netfn_dtls_session_fill_tr(struct netfn_dtls_cfg *cfg, netfn_tuple_t
 	dtls->flags |= (flags & NETFN_DTLS_FLAG_CP_DF) ? EIP_TR_DTLS_FLAG_CP_DF : 0;
 	dtls->ip_ttl = cfg->hop_limit;
 	dtls->ip_df = (flags & NETFN_DTLS_FLAG_CP_DF) ? 0 : cfg->df;
-	dtls->ip_dscp = (flags & NETFN_DTLS_FLAG_CP_TOS) ? 0 : cfg->dscp;
+	dtls->ip_dscp = (flags & NETFN_DTLS_FLAG_CP_TOS) ? 0 : cfg->tos;
 
 	switch (cfg->replay_win) {
 	case 0:
@@ -237,9 +237,9 @@ struct netfn_dtls_session *netfn_dtls_session_alloc(struct netfn_dtls_cfg *cfg, 
 	capwap = (cfg->flags & NETFN_DTLS_FLAG_CAPWAP);
 	udplite = (cfg->flags & NETFN_DTLS_FLAG_UDPLITE);
 
-	pr_debug("%p: algo_name %s, flags %u replay_win %u df %u dscp %u hop_limit %u\n",
+	pr_debug("%p: algo_name %s, flags %u replay_win %u df %u tos %u hop_limit %u\n",
 		dev, cfg->base.algo_name, cfg->flags, cfg->replay_win, cfg->df,
-		cfg->dscp, cfg->hop_limit);
+		cfg->tos, cfg->hop_limit);
 
 	if (t->ip_version == IPVERSION) {
 		pr_debug("%p: src:%pI4n dst:%pI4n epoch:0x%X sport:%u dport:%u proto:%u\n",
@@ -283,6 +283,7 @@ struct netfn_dtls_session *netfn_dtls_session_alloc(struct netfn_dtls_cfg *cfg, 
 	dev_hold(dev);
 	ses->tun = tun;
 	ses->tuple = *t;
+	ses->flags = cfg->flags;
 
 	/*
 	 * Cache part of tuple used in datapath in network order.

@@ -206,6 +206,7 @@ static bool netfn_dtls_tun_vp_err(struct ppe_vp_cb_info *info, void *cb_data)
 
 	tun_stats = this_cpu_ptr(tun->stats_pcpu);
 	tun_stats->tx_fail++;
+	tun_stats->tx_vp_exp++;
 	consume_skb(info->skb);
 	return true;
 }
@@ -469,7 +470,7 @@ static void netfn_dtls_tun_setup(struct net_device *dev)
 	 */
 	dev->needed_headroom = NETFN_DTLS_TUN_MAX_HEADROOM;
 	dev->needed_tailroom = NETFN_DTLS_TUN_MAX_TAILROOM;
-	dev->type = ARPHRD_TUNNEL;
+	dev->type = ARPHRD_VOID;
 	dev->ethtool_ops = NULL; /* TODO:  Can we use ethtool interface for device statistics */
 	dev->header_ops = NULL;
 	dev->netdev_ops = &dtls_tun_ops;
