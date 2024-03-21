@@ -11,6 +11,8 @@
  */
 
 #include <linux/types.h>
+#include<linux/in.h>
+#include<linux/in6.h>
 
 #ifndef __NETFN_TYPES_H
 #define __NETFN_TYPES_H
@@ -48,8 +50,14 @@ typedef enum netfn_l4_ident_type {
  *	three tuples structure
  */
 typedef struct netfn_tuple_3tuple {
-	uint32_t src_ip[4];		/**< Source IP address */
-	uint32_t dest_ip[4];		/**< Destination IP address */
+	union {
+		struct in_addr ip4;	/**< Source IPv4 address */
+		struct in6_addr ip6;	/**< Source IPv6 address */
+	} src_ip;
+	union {
+		struct in_addr ip4;	/**< Dest IPv4 address */
+		struct in6_addr ip6;	/**< Dest IPv6 address */
+	} dest_ip;
 	uint8_t protocol;		/**< Protocol*/
 } netfn_tuple_type_3tuple_t;
 
@@ -59,10 +67,16 @@ typedef struct netfn_tuple_3tuple {
  */
 typedef struct netfn_tuple_4tuple {
 	netfn_l4_ident_type_t ident_type;	/**< valid ident in 4 tuple */
-	uint32_t src_ip[4];			/**< Source IP address */
-	uint32_t dest_ip[4];			/**< Destination IP address */
-	uint16_t l4_ident;			/**< Valid port - src port or dest port */
-	uint8_t protocol;			/**< Protocol */
+	union {
+		struct in_addr ip4;	/**< Source IPv4 address */
+		struct in6_addr ip6;	/**< Source IPv6 address */
+	} src_ip;
+	union {
+		struct in_addr ip4;	/**< Dest IPv4 address */
+		struct in6_addr ip6;	/**< Dest IPv6 address */
+	} dest_ip;
+	__be16 l4_ident;		/**< Valid port - src port or dest port */
+	uint8_t protocol;		/**< Protocol */
 } netfn_tuple_type_4tuple_t;
 
 /**
@@ -70,10 +84,16 @@ typedef struct netfn_tuple_4tuple {
  *	five tuples structure
  */
 typedef struct netfn_tuple_5tuple {
-	uint32_t src_ip[4];		/**< Source IP address */
-	uint32_t dest_ip[4];		/**< Destination IP address */
-	uint16_t l4_src_ident;		/**< Source L4 port, e.g., TCP or UDP port */
-	uint16_t l4_dest_ident;		/**< Destination L4 port, e.g., TCP or UDP port */
+	union {
+		struct in_addr ip4;	/**< Source IPv4 address */
+		struct in6_addr ip6;	/**< Source IPv6 address */
+	} src_ip;
+	union {
+		struct in_addr ip4;	/**< Destination IPv4 address */
+		struct in6_addr ip6;	/**< Destination IPv6 address */
+	} dest_ip;
+	__be16 l4_src_ident;		/**< Source L4 port, e.g., TCP or UDP port */
+	__be16 l4_dest_ident;		/**< Destination L4 port, e.g., TCP or UDP port */
 	uint8_t protocol;		/**< Protocol */
 } netfn_tuple_type_5tuple_t;
 
