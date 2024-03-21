@@ -66,10 +66,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v6_destroy_tuple_info(stru
 		/*
 		 * IPs
 		 */
-		memcpy(org_src_ip, original->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
-		memcpy(org_dst_ip, original->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_src_ip, reply->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(org_src_ip, original->tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(org_dst_ip, original->tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_src_ip, reply->tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 
 		if ((memcmp(org_src_ip, reply_dst_ip, sizeof(uint32_t) * 4)) || (memcmp(org_dst_ip, reply_src_ip, sizeof(uint32_t) * 4))) {
 			netfn_flowmgr_warn("Non-matching IP addresses in flow and return direction\n");
@@ -93,10 +93,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v6_destroy_tuple_info(stru
 		/*
 		 * IPs
 		 */
-		memcpy(org_src_ip, original->tuple.tuples.tuple_4.src_ip, sizeof(uint32_t) * 4);
-		memcpy(org_dst_ip, original->tuple.tuples.tuple_4.dest_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_src_ip, reply->tuple.tuples.tuple_4.src_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_4.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(org_src_ip, original->tuple.tuples.tuple_4.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(org_dst_ip, original->tuple.tuples.tuple_4.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_src_ip, reply->tuple.tuples.tuple_4.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_4.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 
 		/*
 		 * Ports
@@ -140,10 +140,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v6_destroy_tuple_info(stru
 		/*
 		 * IPs
 		 */
-		memcpy(org_src_ip, original->tuple.tuples.tuple_5.src_ip, sizeof(uint32_t) * 4);
-		memcpy(org_dst_ip, original->tuple.tuples.tuple_5.dest_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_src_ip, reply->tuple.tuples.tuple_5.src_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_5.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(org_src_ip, original->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(org_dst_ip, original->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_src_ip, reply->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 
 		/*
 		 * Ports
@@ -245,12 +245,12 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_destroy_v6_rule(struct netfn_flowmgr_destr
 
 	if (tuple_type == NETFN_TUPLE_3TUPLE) {
 		nirdm->tuple.protocol = original->tuple.tuples.tuple_3.protocol;
-		memcpy(nirdm->tuple.flow_ip, original->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
-		memcpy(nirdm->tuple.return_ip, original->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(nirdm->tuple.flow_ip, original->tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(nirdm->tuple.return_ip, original->tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 	} else if (tuple_type == NETFN_TUPLE_4TUPLE) {
 		nirdm->tuple.protocol = original->tuple.tuples.tuple_4.protocol;
-		memcpy(nirdm->tuple.flow_ip, original->tuple.tuples.tuple_4.src_ip, sizeof(uint32_t) * 4);
-		memcpy(nirdm->tuple.return_ip, original->tuple.tuples.tuple_4.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(nirdm->tuple.flow_ip, original->tuple.tuples.tuple_4.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(nirdm->tuple.return_ip, original->tuple.tuples.tuple_4.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 		if (original->tuple.tuples.tuple_4.ident_type == NETFN_4TUPLE_VALID_SRC_PORT) {
 			nirdm->tuple.flow_ident = original->tuple.tuples.tuple_4.l4_ident;
 		} else {
@@ -258,8 +258,8 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_destroy_v6_rule(struct netfn_flowmgr_destr
 		}
 	} else {
 		nirdm->tuple.protocol = original->tuple.tuples.tuple_5.protocol;
-		memcpy(nirdm->tuple.flow_ip, original->tuple.tuples.tuple_5.src_ip, sizeof(uint32_t) * 4);
-		memcpy(nirdm->tuple.return_ip, original->tuple.tuples.tuple_5.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(nirdm->tuple.flow_ip, original->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(nirdm->tuple.return_ip, original->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 		nirdm->tuple.flow_ident = ntohs(original->tuple.tuples.tuple_5.l4_src_ident);
 		nirdm->tuple.return_ident = ntohs(original->tuple.tuples.tuple_5.l4_dest_ident);
 	}
@@ -464,10 +464,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v6_create_tuple_info(struc
 		/*
 		 * Non-xlate IPs
 		 */
-		memcpy(org_src_ip, original->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
-		memcpy(org_dst_ip, original->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_src_ip, reply->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(org_src_ip, original->tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(org_dst_ip, original->tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_src_ip, reply->tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 
 		/*
 		 * There are two cases
@@ -520,10 +520,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v6_create_tuple_info(struc
 		/*
 		 * Non-xlate IPs
 		 */
-		memcpy(org_src_ip, original->tuple.tuples.tuple_4.src_ip, sizeof(uint32_t) * 4);
-		memcpy(org_dst_ip, original->tuple.tuples.tuple_4.dest_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_src_ip, reply->tuple.tuples.tuple_4.src_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_4.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(org_src_ip, original->tuple.tuples.tuple_4.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(org_dst_ip, original->tuple.tuples.tuple_4.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_src_ip, reply->tuple.tuples.tuple_4.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_4.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 
 		/*
 		 * Ports
@@ -617,10 +617,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v6_create_tuple_info(struc
 		/*
 		 * Non-xlate IPs
 		 */
-		memcpy(org_src_ip, original->tuple.tuples.tuple_5.src_ip, sizeof(uint32_t) * 4);
-		memcpy(org_dst_ip, original->tuple.tuples.tuple_5.dest_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_src_ip, reply->tuple.tuples.tuple_5.src_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_5.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(org_src_ip, original->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(org_dst_ip, original->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_src_ip, reply->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 
 		/*
 		 * Ports
@@ -785,12 +785,12 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_create_v6_rule(struct netfn_flowmgr_create
 
 	if (tuple_type == NETFN_TUPLE_3TUPLE) {
 		nircm->tuple.protocol = original->tuple.tuples.tuple_3.protocol;
-		memcpy(nircm->tuple.flow_ip, original->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
-		memcpy(nircm->tuple.return_ip,original->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(nircm->tuple.flow_ip, original->tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(nircm->tuple.return_ip,original->tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 	} else if (tuple_type == NETFN_TUPLE_4TUPLE) {
 		nircm->tuple.protocol = original->tuple.tuples.tuple_4.protocol;
-		memcpy(nircm->tuple.flow_ip, original->tuple.tuples.tuple_4.src_ip, sizeof(uint32_t) * 4);
-		memcpy(nircm->tuple.return_ip, original->tuple.tuples.tuple_4.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(nircm->tuple.flow_ip, original->tuple.tuples.tuple_4.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(nircm->tuple.return_ip, original->tuple.tuples.tuple_4.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 		if (original->tuple.tuples.tuple_4.ident_type == NETFN_4TUPLE_VALID_SRC_PORT) {
 			nircm->tuple.flow_ident = original->tuple.tuples.tuple_4.l4_ident;
 		} else {
@@ -799,8 +799,8 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_create_v6_rule(struct netfn_flowmgr_create
 		}
 	} else {
 		nircm->tuple.protocol = original->tuple.tuples.tuple_5.protocol;
-		memcpy(nircm->tuple.flow_ip, original->tuple.tuples.tuple_5.src_ip, sizeof(uint32_t) * 4);
-		memcpy(nircm->tuple.return_ip, original->tuple.tuples.tuple_5.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(nircm->tuple.flow_ip, original->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(nircm->tuple.return_ip, original->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 		nircm->tuple.flow_ident = original->tuple.tuples.tuple_5.l4_src_ident;
 		nircm->tuple.return_ident = original->tuple.tuples.tuple_5.l4_dest_ident;
 	}
