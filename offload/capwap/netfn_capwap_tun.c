@@ -574,7 +574,7 @@ static void netfn_capwap_tun_rx_cb(struct netfn_pkt_steer *rx_steer, struct sk_b
  * netfn_capwap_tun_alloc()
  *	Allocates a new tunnel.
  */
-struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, ssize_t pvt_sz)
+struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, struct netfn_tuple *tuple, ssize_t pvt_sz)
 {
 	struct netfn_pkt_steer_info info = {0};
 	struct netfn_capwap *nc = &global_nc;
@@ -642,7 +642,7 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, ssiz
 	/*
 	 * Encap init.
 	 */
-	if (!netfn_capwap_enc_init(&nct->enc, &cfg->enc, nct)) {
+	if (!netfn_capwap_enc_init(&nct->enc, &cfg->enc, tuple, nct)) {
 		pr_warn("%px: Encapsulation init failed.\n", dev);
 		goto fail;
 	}

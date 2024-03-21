@@ -71,7 +71,7 @@ void netfn_capwap_enc_stats_read(struct netfn_capwap_enc *enc, struct netfn_capw
  * netfn_capwap_enc_init()
  *	Encapsulation initialization.
  */
-bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc_cfg *cfg, struct netfn_capwap_tun *nct);
+bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc_cfg *cfg, struct netfn_tuple *tuple, struct netfn_capwap_tun *nct);
 
 /*
  * netfn_capwap_enc()

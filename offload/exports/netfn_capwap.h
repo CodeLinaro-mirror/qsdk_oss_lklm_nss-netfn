@@ -27,7 +27,7 @@
  * @cfg: Tunnel configuration.
  * @return: Net device associated with tunnel.
  */
-struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, ssize_t pvt_sz);
+struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, struct netfn_tuple *tuple, ssize_t pvt_sz);
 
 /*
  * netfn_capwap_tun_free()
@@ -95,7 +95,7 @@ bool netfn_capwap_tunid_free(struct net_device *dev);
  * @cfg: Tunnel configuration.
  * @return: bool.
  */
-struct net_device *netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, struct netfn_capwap_tun_cfg *cfg, ssize_t pvt_sz);
+struct net_device *netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, struct netfn_capwap_tun_cfg *cfg, struct netfn_tuple *tuple, ssize_t pvt_sz);
 
 /*
  * netfn_capwap_tunid_del()

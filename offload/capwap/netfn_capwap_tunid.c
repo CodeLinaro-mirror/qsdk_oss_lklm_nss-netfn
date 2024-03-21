@@ -224,7 +224,7 @@ EXPORT_SYMBOL(netfn_capwap_tunid_alloc);
  * netfn_capwap_tunid_add()
  *	Adds tunnel with specific tun id.
  */
-struct net_device *netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, struct netfn_capwap_tun_cfg *cfg, ssize_t pvt_sz)
+struct net_device *netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, struct netfn_capwap_tun_cfg *cfg, struct netfn_tuple *tuple, ssize_t pvt_sz)
 {
 	struct netfn_capwap_tunid *ncti;
 	struct net_device *tun_dev;
@@ -250,7 +250,7 @@ struct net_device *netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, st
 		return NULL;
 	}
 
-	tun_dev = netfn_capwap_tun_alloc(cfg, pvt_sz);
+	tun_dev = netfn_capwap_tun_alloc(cfg, tuple, pvt_sz);
 	if (!tun_dev) {
 		clear_bit(id, ncti->map);
 		pr_warn("%px: Unable to allocate tunnel for id(%d)\n", ncti, id);

@@ -51,7 +51,6 @@
  *	Encapsulation configuration
  */
 struct netfn_capwap_enc_cfg {
-	netfn_tuple_t tuple;		/**< Tuples associated with tunnel. */
 	uint32_t features;		/**< Features enabled for tunnel. */
 	uint32_t flags;			/**< Vlan/pppoe/udplite_checksum configured. */
 	uint16_t csum_cov;		/**< UDP Checksum coverage. */
