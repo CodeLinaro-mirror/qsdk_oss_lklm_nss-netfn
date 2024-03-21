@@ -227,11 +227,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_add(struct net_device *dev, uint8_t 
 		goto fail;
 	}
 
-	/*
-	 * TODO: Update this once CAPWAP rule structure is fixed.
-	 */
-	memcpy(&cfg->capwap.enc.tuple, &cfg->tuple, sizeof(netfn_tuple_t));
-	tunid_dev = netfn_capwap_tunid_add(dev, tun_id, &cfg->capwap, sizeof(struct netfn_capwapmgr_tun_ctx));
+	tunid_dev = netfn_capwap_tunid_add(dev, tun_id, &cfg->capwap, &cfg->tuple, sizeof(struct netfn_capwapmgr_tun_ctx));
 	if (!tunid_dev) {
 		netfn_capwapmgr_warn("%px: Tunnel Id %d add failed\n", dev, tun_id);
 		goto fail;

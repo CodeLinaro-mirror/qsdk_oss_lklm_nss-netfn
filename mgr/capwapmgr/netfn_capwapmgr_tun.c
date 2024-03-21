@@ -669,7 +669,7 @@ struct net_device *netfn_capwapmgr_tun_alloc(struct netfn_capwapmgr_tun_cfg *cfg
 	/*
 	 * Create dev tunnel.
 	 */
-	capwap_dev = netfn_capwap_tun_alloc(&cfg->capwap, sizeof(struct netfn_capwapmgr_tun_ctx));
+	capwap_dev = netfn_capwap_tun_alloc(&cfg->capwap, &cfg->tuple, sizeof(struct netfn_capwapmgr_tun_ctx));
 	if (!capwap_dev) {
 		netfn_capwapmgr_warn("%px:Failed to create capwap tunnel\n", cfg);
 		return NULL;

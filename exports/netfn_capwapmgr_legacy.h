@@ -25,8 +25,10 @@
 #define __NSS_CAPWAPMGR_LEGACY_H
 
 #include <linux/rtnetlink.h>
+#include <linux/types.h>
 
 #include <netfn_capwapmgr.h>
+#include <netfn_capwap_types.h>
 
 #define NSS_CAPWAPMGR_MAX_TUNNELS		32
 					/** Maximum number of tunnels currently supported. */
@@ -35,11 +37,11 @@
 /*
  * Maxmimum values for rule configuration parameters.
  */
-#define NSS_CAPWAP_MAX_MTU			9000
+#define NSS_CAPWAP_MAX_MTU		NETFN_CAPWAP_MAX_BUF_SZ
 				/**< Maximum MTU supported by NSS FW. */
-#define NSS_CAPWAP_MAX_BUFFER_SIZE		9000
+#define NSS_CAPWAP_MAX_BUFFER_SIZE	NETFN_CAPWAP_MAX_BUF_SZ
 				/**< Maximum buffer-size supported by NSS FW. */
-#define NSS_CAPWAP_MAX_FRAGMENTS		10
+#define NSS_CAPWAP_MAX_FRAGMENTS	NETFN_CAPWAP_MAX_FRAGS
 				/**< Maximum fragments for reassembly. */
 
 /*
@@ -65,10 +67,76 @@
 #define NSS_CAPWAP_ENCAP_UDPLITE_HDR_CSUM	0x4
 				/**< Generate only UDP-Lite header checksum. Otherwise whole UDP-Lite payload. */
 
-#define NSS_CAPWAPMGR_FEATURE_DTLS_ENABLED              0x00000001      /* Tunnel enabled DTLS. */
-#define NSS_CAPWAPMGR_FEATURE_INNER_TRUSTSEC_ENABLED    0x00000002      /* Tunnel enabled inner trustsec. */
-#define NSS_CAPWAPMGR_FEATURE_OUTER_TRUSTSEC_ENABLED    0x00000004      /* Tunnel enabled outer trustsec. */
-#define NSS_CAPWAPMGR_FEATURE_WIRELESS_QOS_ENABLED      0x00000008      /* Tunnel enabled wireless QoS. */
+#define NSS_CAPWAPMGR_FEATURE_DTLS_ENABLED              NETFN_CAPWAP_FEATURES_DTLS      /* Tunnel enabled DTLS. */
+#define NSS_CAPWAPMGR_FEATURE_INNER_TRUSTSEC_ENABLED    NETFN_CAPWAP_FEATURES_INNER_SGT      /* Tunnel enabled inner trustsec. */
+#define NSS_CAPWAPMGR_FEATURE_OUTER_TRUSTSEC_ENABLED    NETFN_CAPWAP_FEATURES_OUTER_SGT      /* Tunnel enabled outer trustsec. */
+#define NSS_CAPWAPMGR_FEATURE_WIRELESS_QOS_ENABLED      NETFN_CAPWAP_FEATURES_WLAN_QOS      /* Tunnel enabled wireless QoS. */
+
+
+/*
+ * CAPWAP version
+ */
+#define NSS_CAPWAP_VERSION_V1		NETFN_CAPWAP_VERSION_V1
+				/**< RFC CAPWAP version. */
+#define NSS_CAPWAP_VERSION_V2		NETFN_CAPWAP_VERSION_V2
+				/**< Initial CAPWAP version for a customer. */
+
+/*
+ * Type of packet. These are mutually exclusive fields.
+ */
+#define NSS_CAPWAP_PKT_TYPE_UNKNOWN	0x0000
+				/**< Don't know the type of CAPWAP packet. */
+#define NSS_CAPWAP_PKT_TYPE_CONTROL	NETFN_CAPWAP_PKT_TYPE_CTRL
+				/** It's a control CAPWAP packet src_port=5247. */
+#define NSS_CAPWAP_PKT_TYPE_DATA	NETFN_CAPWAP_PKT_TYPE_DATA
+				/**< It's a data CAPWAP packet src_port=5246. */
+
+/*
+ * Addtional fields for identifying what's there in the packet.
+ */
+#define NSS_CAPWAP_PKT_TYPE_WIRELESS_INFO	NETFN_CAPWAP_PKT_TYPE_WINFO
+				/**< W=1, wireless info present. */
+#define NSS_CAPWAP_PKT_TYPE_802_11		NETFN_CAPWAP_PKT_TYPE_80211
+				/**< T=1, then set wbid=1. */
+#define NSS_CAPWAP_PKT_TYPE_802_3		NETFN_CAPWAP_PKT_TYPE_8023
+				/**< Data is in 802.3 format. */
+
+
+#define NSS_CAPWAP_WINFO_SZ NETFN_CAPWAP_WIRELESS_INFO_LEN
+				/**< Size of Wireless Info. */
+
+/**
+ *
+ * NOTE: The following structure is a shallow copy of the netfn_capwap_prehdr
+ * structure in netfn_capwap_types.h file.
+ * When making changes to this structure, we need to make sure that the
+ * netfn_capwap_prehdr is also updated.
+ *
+ * nss_capwap_metaheader
+ *	CAPWAP metaheader per-packet for both encap (TX) and decap (RX).
+ */
+struct nss_capwap_metaheader {
+	uint8_t version;	/**< CAPWAP version. */
+	uint8_t rid;		/**< Radio ID. */
+	uint16_t tunnel_id;	/**< Tunnel-ID. */
+	uint8_t dscp;		/**< DSCP value. */
+	uint8_t vlan_pcp;	/**< VLAN priority .P marking. */
+	uint16_t type;		/**< Type of CAPWAP packet & What was there in CAPWAP header. */
+	uint16_t nwireless;	/**< Number of wireless info sections in CAPWAP header. */
+	uint16_t wireless_qos;	/**< 802.11e qos info. */
+	uint16_t outer_sgt;	/**< Security Group Tag value in the TrustSec header. */
+	uint16_t inner_sgt;	/**< Security Group Tag value in the TrustSec header. */
+	uint32_t flow_id;	/**< Flow identification. */
+	uint16_t vapid;		/**< VAP ID info. */
+
+	uint16_t reserved;	/**< Reserved for backwards comparibility. */
+
+	/*
+	 * Put the wl_info at last so we don't have to do copy if 802.11 to 802.3 conversion did not happen.
+	 */
+	uint8_t wl_info[NSS_CAPWAP_WINFO_SZ];	/**< Wireless info preserved from the original packet. */
+} __packed __aligned(4);
+
 
 /**
  * nss_ipv4_create
