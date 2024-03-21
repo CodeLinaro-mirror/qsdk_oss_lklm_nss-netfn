@@ -79,9 +79,10 @@ static void netfn_capwap_enc_capwap(struct netfn_capwap_enc *enc, struct sk_buff
 	/*
 	 * Check if this packet has wireless info.
 	 */
-	if (mdata->first_frag && (phdr->type & NETFN_CAPWAP_PKT_TYPE_WINFO)) {
-		hlen += (phdr->nwireless * NETFN_CAPWAP_WIRELESS_INFO_LEN);
-		info.fields.wbit = 1;
+	if (phdr->type & NETFN_CAPWAP_PKT_TYPE_WINFO) {
+		bool is_winfo = !!(mdata->first_frag || !mdata->frag);
+		hlen += (is_winfo * phdr->nwireless * NETFN_CAPWAP_WIRELESS_INFO_LEN);
+		info.fields.wbit = is_winfo;
 	}
 
 	/*
