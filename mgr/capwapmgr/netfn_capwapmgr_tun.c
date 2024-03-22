@@ -819,6 +819,28 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tun_init_cfg(struct netfn_capwapmgr_tun_cf
 		}
 	}
 
+	if (cfg->capwap.dec.max_frags > NETFN_CAPWAP_MAX_FRAGS) {
+		netfn_capwapmgr_warn("%px: Invalid max fragments: %d, max: %d\n",
+					cfg, cfg->capwap.dec.max_frags, NETFN_CAPWAP_MAX_FRAGS);
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_CAPWAP_CFG]);
+		return NETFN_CAPWAPMGR_ERROR_CAPWAP_CFG;
+	}
+
+	if (cfg->capwap.dec.max_frags == 0) {
+		cfg->capwap.dec.max_frags = NETFN_CAPWAP_MAX_FRAGS;
+	}
+
+	if (cfg->capwap.dec.max_payload_sz > NETFN_CAPWAP_MAX_BUF_SZ) {
+		netfn_capwapmgr_warn("%px: Invalid max payload size: %d, max: %d\n", cfg,
+					cfg->capwap.dec.max_payload_sz, NETFN_CAPWAP_MAX_BUF_SZ);
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_CAPWAP_CFG]);
+		return NETFN_CAPWAPMGR_ERROR_CAPWAP_CFG;
+	}
+
+	if (cfg->capwap.dec.max_payload_sz == 0) {
+		cfg->capwap.dec.max_payload_sz = NETFN_CAPWAP_MAX_BUF_SZ;
+	}
+
 	/*
 	 * Update CAPWAP rule to specify any optional l2 rules enabled that might
 	 * affect the MTU.
@@ -1236,10 +1258,10 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update(struct net_device *dev, struct 
 		return netfn_capwapmgr_tun_update_dtls_session(ctx, &cfg->update_cfg.dtls.dec, false);
 
 	case NETFN_CAPWAPMGR_ADD_NETFN_FLOW_COOKIE:
-		return netfn_capwapmgr_flow_cookie_add(ctx, &cfg->update_cfg.fcinfo);
+		return netfn_capwapmgr_flow_cookie_add(ctx, &cfg->update_cfg.fci);
 
 	case NETFN_CAPWAPMGR_DEL_NETFN_FLOW_COOKIE:
-		return netfn_capwapmgr_flow_cookie_del(ctx, &cfg->update_cfg.fcinfo);
+		return netfn_capwapmgr_flow_cookie_del(ctx, &cfg->update_cfg.fci);
 
 	case NETFN_CAPWAPMGR_DTLS_ENCAP_SESSION_SWITCH:
 		return netfn_capwapmgr_tun_dtls_session_switch(ctx, true);

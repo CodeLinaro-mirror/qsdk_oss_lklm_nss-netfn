@@ -66,6 +66,7 @@ static const char *netfn_capwapmgr_stats_str[] = {
 	"Flow cookie DB alloc failed",
 	"Flow cookie add failed",
 	"Flow cookie delete failed",
+	"Invalid CAPWAP config",
 };
 
 /*

@@ -186,6 +186,7 @@ typedef enum {
        NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_DB_ALLOC = 29,		/**< Failed to instantiate the Flow Cookie DataBase */
        NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_ADD = 30,		/**< Failed to add the Flow Cookie in Flow Cookie DataBase */
        NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_DEL = 31,		/**< Failed to delete the Flow Cookie from Flow Cookie DataBase */
+       NETFN_CAPWAPMGR_ERROR_CAPWAP_CFG = 32,			/**< Invalid CAPWAP config */
        NETFN_CAPWAPMGR_ERROR_MAX
 
 } netfn_capwapmgr_ret_t;

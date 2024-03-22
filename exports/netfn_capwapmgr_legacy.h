@@ -453,6 +453,7 @@ typedef enum {
 	NSS_CAPWAPMGR_ERROR_FLOW_COOKIE_DB_ALLOC,	/**< Failed to instantiate the Flow Cookie DataBase */
 	NSS_CAPWAPMGR_ERROR_FLOW_COOKIE_ADD, 		/**< Failed to add the Flow Cookie in Flow Cookie DataBase */
 	NSS_CAPWAPMGR_ERROR_FLOW_COOKIE_DEL,		/**< Failed to delete the Flow Cookie from Flow Cookie DataBase */
+	NSS_CAPWAPMGR_ERROR_CAPWAP_CFG,			/**< Invalid CAPWAP config. */
 	NSS_CAPWAPMGR_ERROR_MAX,
 } nss_capwapmgr_status_t;
 
