@@ -65,6 +65,8 @@ struct netfn_dtls_tun_state {
 struct netfn_dtls_tun {
 	struct net_device *dev;	/* Linux netdevice representation for this device */
 	struct net_device *vp_dev;	/* VP netdevice associated with tunnel. */
+	netfn_dtls_rx_handler_t __rcu cb;	/* Data Callback */
+	void __rcu *cb_data;			/* Appdata for callback */
 
 	struct netfn_dtls_tun_state enc;	/* Encap State */
 	struct netfn_dtls_tun_state dec;	/* Decap state */

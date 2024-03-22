@@ -814,3 +814,43 @@ struct net_device *netfn_dtls_tun_alloc(ssize_t pvt_sz)
 	return dev;
 }
 EXPORT_SYMBOL(netfn_dtls_tun_alloc);
+
+/*
+ * netfn_dtls_unregister_data_cb()
+ */
+void netfn_dtls_unregister_data_cb(struct net_device *dev)
+{
+	struct netfn_dtls_tun *tun = netdev_priv(dev);
+
+	mutex_lock(&tun->lock);
+	RCU_INIT_POINTER(tun->cb, NULL);
+
+	/*
+	 * Wait for reader already fetched CB.
+	 */
+	synchronize_rcu();
+	RCU_INIT_POINTER(tun->cb_data, NULL);
+	mutex_unlock(&tun->lock);
+}
+EXPORT_SYMBOL(netfn_dtls_unregister_data_cb);
+
+/*
+ * netfn_dtls_register_data_cb()
+ */
+bool netfn_dtls_register_data_cb(struct net_device *dev, netfn_dtls_rx_handler_t cb, void *cb_data)
+{
+	struct netfn_dtls_tun *tun = netdev_priv(dev);
+	bool status = false;
+
+	mutex_lock(&tun->lock);
+
+	if (!rcu_dereference_protected(tun->cb, 1)) {
+		rcu_assign_pointer(tun->cb_data, cb_data);
+		rcu_assign_pointer(tun->cb, cb);
+		status = true;
+	}
+
+	mutex_unlock(&tun->lock);
+	return status;
+}
+EXPORT_SYMBOL(netfn_dtls_register_data_cb);

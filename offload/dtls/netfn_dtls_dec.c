@@ -59,7 +59,7 @@ void netfn_dtls_dec_done(void *app_data, eip_req_t req)
 	struct netfn_dtls_session *ses = app_data;
 	struct sk_buff *skb = eip_req2skb(req);
 	struct netfn_dtls_tun_stats *tun_stats;
-	rx_handler_func_t *rx_handler;
+	netfn_dtls_rx_handler_t cb;
 	struct netfn_dtls_tun *tun;
 
 	tun = ses->tun;
@@ -84,10 +84,21 @@ void netfn_dtls_dec_done(void *app_data, eip_req_t req)
 	skb->skb_iif = tun->dev->ifindex;
 	skb->ip_summed = CHECKSUM_NONE;
 
-	rx_handler = rcu_dereference(skb->dev->rx_handler);
-	if (likely(rx_handler) && likely(rx_handler(&skb) == RX_HANDLER_CONSUMED))
-		return;
+	rcu_read_lock_bh();
 
+	cb = rcu_dereference_bh(tun->cb);
+	if (likely(cb)) {
+		cb(skb, rcu_dereference_bh(tun->cb_data));
+
+		rcu_read_unlock_bh();
+		return;
+	}
+
+	rcu_read_unlock_bh();
+
+	/*
+	 * Exception it to Linux/rx_handler.
+	 */
 	netif_receive_skb(skb);
 }
 

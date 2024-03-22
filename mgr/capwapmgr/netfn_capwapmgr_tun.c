@@ -712,7 +712,7 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update_dtls_session(struct netf
 		dtls_cfg->flags = ctx->cfg.ext_cfg.enc.flags;
 		dtls_cfg->version = ctx->cfg.ext_cfg.enc.version;
 		dtls_cfg->df = ctx->cfg.ext_cfg.enc.df;
-		dtls_cfg->dscp = ctx->cfg.ext_cfg.enc.dscp;
+		dtls_cfg->tos = ctx->cfg.ext_cfg.enc.tos;
 		dtls_cfg->hop_limit = ctx->cfg.ext_cfg.enc.hop_limit;
 
 		ret = netfn_dtls_tun_session_add(ctx->dtls_dev, dtls_cfg, &ctx->cfg.tuple);
