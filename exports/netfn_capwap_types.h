@@ -95,25 +95,23 @@ struct netfn_capwap_tun_cfg {
  *	Capwap decap stats.
  */
 struct netfn_capwap_dec_stats {
-	uint64_t num_frags;			/**< Number of fragments received. */
+	uint64_t pkts_rcvd;			/**< Number of packets received. */
 	uint64_t dtls_pkts;			/**< DTLS pkts received directly. */
 	uint64_t control_pkts;			/**< Control packets. */
 	uint64_t keepalive_pkts;		/**< Keep alive packets recieved. */
 	uint64_t fast_reasm;			/**< Fast reassembly hits. */
 	uint64_t slow_reasm;			/**< Slow reassembly hits. */
-	uint64_t flow_cookie_db_fetch_failures;	/**< Flow Cookie DB Fetch Failures */
+	uint64_t flow_cookie_no_db;		/**< Flow Cookie DB Fetch Failures */
 	/*
-	 * Drop stats.
+	 * Drop and error stats.
 	 */
-	uint64_t drop_dup_frags;		/**< Dropped duplicate fragments. */
-	uint64_t drop_dec_failure;		/**< Failed during decapsulation. */
-	uint64_t drop_max_frags;		/**< Exceeds max fragments allowed(10). */
 	uint64_t drop_missing_frags;		/**< Drop in reassembly window because of missing fragments. */
-	uint64_t drop_large_frags;		/**< Drop because of oversize. */
-	uint64_t drop_csum_fail;		/**< Drop because of wrong checksum. */
-	uint64_t drop_malformed;		/**< Drop because of malformed packet. */
-	uint64_t drop_linearize_fail;		/**< Drop because of linearize failure. */
-	uint64_t drop_reasm_window;		/**< Drop because of a non-sequential fragment offset. */
+	uint64_t drop_queue_full;		/**< Drop in during IPI to other core bcz of queue full. */
+	uint64_t err_dec_failure;		/**< Failed during decapsulation. */
+	uint64_t err_max_frags;			/**< Exceeds max fragments allowed(10). */
+	uint64_t err_large_frags;		/**< Error packet of oversize. */
+	uint64_t err_csum_fail;			/**< Error packet because of wrong checksum. */
+	uint64_t err_malformed;			/**< Error packet because of malformed packet. */
 	uint64_t reserve[2];			/**< Reserve for future use. */
 };
 
@@ -122,18 +120,19 @@ struct netfn_capwap_dec_stats {
  *	Capwap encap stats.
  */
 struct netfn_capwap_enc_stats {
-	uint64_t num_pkts;			/**< Number of packets received. */
+	uint64_t pkts_rcvd;			/**< Number of packets received. */
 	uint64_t num_frags;			/**< Number of segments or fragments generated. */
 	uint64_t keepalive_pkts;		/**< Keep alive packets recieved. */
 	/*
-	 * Drop stats.
+	 * Drop and error stats.
 	 */
-	uint64_t drop_queue_full;		/**< Packets dropped because the queue is full. */
 	uint64_t drop_mem_alloc;		/**< Packets dropped because of a memory failure. */
-	uint64_t drop_ver_mis;			/**< Packets dropped because of a version mismatch. */
-	uint64_t drop_insufficient_hroom;	/**< Packets dropped because of insufficent headroom. */
-	uint64_t drop_direct_dtls;		/**< Packets dropped because of a DTLS packet. */
-	uint64_t drop_nwireless_len;		/**< Packets dropped because invalid nwireless len. */
+	uint64_t drop_queue_full;		/**< Packets dropped because the queue is full. */
+	uint64_t err_dev_tx;			/**< Error packets because of dev xmit failed. */
+	uint64_t err_ver_mis;			/**< Error packets because of of a version mismatch. */
+	uint64_t err_direct_dtls;		/**< Error packets because of DTLS packet. */
+	uint64_t err_nwireless_len;		/**< Error packets because of invalid nwireless len. */
+	uint64_t err_insufficient_hroom;	/**< Error packets because of insufficent headroom. */
 	uint64_t reserve[2];			/**< Reserve for future use. */
 };
 
@@ -144,10 +143,13 @@ struct netfn_capwap_enc_stats {
 struct netfn_capwap_pkt_stats {
 	uint64_t tx_pkts;		/**< Total tx packets. */
 	uint64_t tx_bytes;		/**< Total tx bytes. */
-	uint64_t tx_failures;		/**< Total tx failures. */
+	uint64_t tx_errors;		/**< Total tx error. */
+	uint64_t tx_dropped;		/**< Total tx dropped. */
 	uint64_t rx_pkts;		/**< Total rx packets. */
 	uint64_t rx_bytes;		/**< Total rx bytes. */
-	uint64_t rx_failures;		/**< Total rx failures. */
+	uint64_t rx_errors;		/**< Total rx error. */
+	uint64_t rx_dropped;		/**< Total rx dropped. */
+	uint64_t reserve[2];		/**< Reserved for future use. */
 };
 
 /*

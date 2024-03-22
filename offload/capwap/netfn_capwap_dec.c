@@ -41,22 +41,20 @@
  * Decap statistics strings
  */
 static int8_t *g_dec_stats_str[] = {
-	"num_frags",
+	"pkts_rcvd",
 	"dtls_pkts",
 	"control_pkts",
 	"keepalive_pkts",
 	"fast_reasm",
 	"slow_reasm",
-	"flow_cookie_db_fetch_failures",
-	"drop_dup_frags",
-	"drop_dec_failure",
-	"drop_max_frags",
+	"flow_cookie_no_db",
 	"drop_missing_frags",
-	"drop_large_frags",
-	"drop_csum_fail",
-	"drop_malformed",
-	"drop_linearize_fail",
-	"drop_reasm_window",
+	"drop_queue_full",
+	"err_dec_failure",
+	"err_max_frags",
+	"err_large_frags",
+	"err_csum_fail",
+	"err_malformed",
 	"res1",
 	"res2",
 };
@@ -162,7 +160,7 @@ add_prehdr:
 
 	d = netfn_capwap_get_db_handle();
 	if (!d) {
-		NETFN_CAPWAP_TUN_STATS_INC(&stats->flow_cookie_db_fetch_failures);
+		NETFN_CAPWAP_TUN_STATS_INC(&stats->flow_cookie_no_db);
 		return true;
 	}
 
@@ -301,7 +299,7 @@ restart:
 	 * If we have fragments left then fragments were corrupted.
 	 */
 	if (!skb_queue_empty(&frags->list)) {
-		NETFN_CAPWAP_TUN_STATS_INC(&stats->drop_malformed);
+		NETFN_CAPWAP_TUN_STATS_INC(&stats->err_malformed);
 		dev_kfree_skb(skb);
 		skb = NULL;
 	}
@@ -356,8 +354,9 @@ static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec *dec,
 	 * Check if total payload size exceeds max payload size
 	 */
 	if (unlikely(frags->tot_sz > dec->max_payload_sz)) {
-		NETFN_CAPWAP_TUN_STATS_INC(&stats->drop_large_frags);
+		NETFN_CAPWAP_TUN_STATS_INC(&stats->err_large_frags);
 		dev_kfree_skb_list_fast(frag_list);
+		netfn_capwap_frags_init(frags);
 		return NULL;
 	}
 
@@ -365,7 +364,7 @@ static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec *dec,
 	 * Check if the number of frags exceeds max limit.
 	 */
 	if (unlikely(skb_queue_len(frag_list) > dec->max_frags)) {
-		NETFN_CAPWAP_TUN_STATS_ADD(&stats->drop_max_frags, skb_queue_len(frag_list));
+		NETFN_CAPWAP_TUN_STATS_ADD(&stats->err_max_frags, skb_queue_len(frag_list));
 		dev_kfree_skb_list_fast(frag_list);
 		goto done;
 	}
@@ -378,9 +377,6 @@ static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec *dec,
 	}
 
 	reasm_skb = netfn_capwap_dec_linearize(frags, stats);
-	if (!reasm_skb) {
-		NETFN_CAPWAP_TUN_STATS_INC(&stats->drop_linearize_fail);
-	}
 
 	/*
 	 * Convert to 802.11 if needed and attach meta header.
@@ -718,13 +714,13 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 	while (likely(skb_queue_len(q_head))) {
 		skb = __skb_dequeue(q_head);
 
-		NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.num_frags);
+		NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.pkts_rcvd);
 
 		/*
 		 * Decapsulate the skb.
 		 */
 		if (!netfn_capwap_dec(dec, skb, &is_frag)) {
-			NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.drop_dec_failure);
+			NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.err_dec_failure);
 			__skb_queue_head(&q_free, skb);
 			continue;
 		}
@@ -824,4 +820,36 @@ bool netfn_capwap_dec_init(struct netfn_capwap_dec *dec, struct netfn_capwap_dec
 	}
 
 	return true;
+}
+
+/*
+ * netfn_capwap_dec_get_err_stats()
+ *	Accumulates decapsulation error stats and return sum
+ */
+uint64_t netfn_capwap_dec_get_err_stats(struct netfn_capwap_dec *dec)
+{
+	struct netfn_capwap_dec_stats *stats = &dec->stats;
+	uint64_t err_stats = 0;
+
+	err_stats += stats->err_dec_failure;
+	err_stats += stats->err_max_frags;
+	err_stats += stats->err_large_frags;
+	err_stats += stats->err_csum_fail;
+	err_stats += stats->err_malformed;
+
+	return err_stats;
+}
+
+/*
+ * netfn_capwap_dec_get_drop_stats()
+ *	Accumulates decapsulation drop stats and return sum
+ */
+uint64_t netfn_capwap_dec_get_drop_stats(struct netfn_capwap_dec *dec)
+{
+	struct netfn_capwap_dec_stats *stats = &dec->stats;
+	uint64_t drop_stats = 0;
+
+	drop_stats += stats->drop_missing_frags;
+
+	return drop_stats;
 }

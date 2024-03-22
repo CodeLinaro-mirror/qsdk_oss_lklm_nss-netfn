@@ -442,32 +442,29 @@ void netfn_capwapmgr_stats2legacy_stats(struct netfn_capwap_tun_stats *netfn_sta
       /*
        * Convert decap stats.
        */
-	legacy_stats->rx_segments = netfn_stats->dec.num_frags;
+	legacy_stats->rx_segments = netfn_stats->dec.pkts_rcvd;
 	legacy_stats->rx_control_pkts = netfn_stats->dec.control_pkts;
 	legacy_stats->rx_keepalive_pkts = netfn_stats->dec.keepalive_pkts;
 	legacy_stats->rx_fast_reasm = netfn_stats->dec.fast_reasm;
 	legacy_stats->rx_slow_reasm = netfn_stats->dec.slow_reasm;
-	legacy_stats->rx_dup_frag = netfn_stats->dec.drop_dup_frags;
-	legacy_stats->rx_drop_dec_failure = netfn_stats->dec.drop_dec_failure;
-	legacy_stats->rx_drop_max_frags = netfn_stats->dec.drop_max_frags;
+	legacy_stats->rx_drop_dec_failure = netfn_stats->dec.err_dec_failure;
+	legacy_stats->rx_drop_max_frags = netfn_stats->dec.err_max_frags;
 	legacy_stats->rx_drop_missing_frags = netfn_stats->dec.drop_missing_frags;
-	legacy_stats->rx_oversize_drops = netfn_stats->dec.drop_large_frags;
-	legacy_stats->rx_csum_drops = netfn_stats->dec.drop_csum_fail;
-	legacy_stats->rx_malformed = netfn_stats->dec.drop_malformed;
-	legacy_stats->rx_drop_linearize_fail = netfn_stats->dec.drop_linearize_fail;
-	legacy_stats->rx_frag_gap_drops = netfn_stats->dec.drop_reasm_window;
+	legacy_stats->rx_oversize_drops = netfn_stats->dec.err_large_frags;
+	legacy_stats->rx_csum_drops = netfn_stats->dec.err_csum_fail;
+	legacy_stats->rx_malformed = netfn_stats->dec.err_malformed;
 
 	/*
 	 * Convert encap stats.
 	 */
-	legacy_stats->tx_segments = netfn_stats->enc.num_frags;
+	legacy_stats->tx_segments = netfn_stats->enc.pkts_rcvd;
 	legacy_stats->tx_keepalive_pkts = netfn_stats->enc.keepalive_pkts;
 	legacy_stats->tx_queue_full_drops = netfn_stats->enc.drop_queue_full;
 	legacy_stats->tx_mem_failure_drops = netfn_stats->enc.drop_mem_alloc;
-	legacy_stats->tx_dropped_ver_mis = netfn_stats->enc.drop_ver_mis;
-	legacy_stats->tx_dropped_hroom = netfn_stats->enc.drop_insufficient_hroom;
-	legacy_stats->tx_dropped_dtls = netfn_stats->enc.drop_direct_dtls;
-	legacy_stats->tx_dropped_nwireless = netfn_stats->enc.drop_nwireless_len;
+	legacy_stats->tx_dropped_ver_mis = netfn_stats->enc.err_ver_mis;
+	legacy_stats->tx_dropped_hroom = netfn_stats->enc.err_insufficient_hroom;
+	legacy_stats->tx_dropped_dtls = netfn_stats->enc.err_direct_dtls;
+	legacy_stats->tx_dropped_nwireless = netfn_stats->enc.err_nwireless_len;
 }
 EXPORT_SYMBOL(netfn_capwapmgr_stats2legacy_stats);
 

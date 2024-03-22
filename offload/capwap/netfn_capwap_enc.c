@@ -36,15 +36,16 @@
  * Encap statistics strings
  */
 static int8_t *g_enc_stats_str[] = {
-	"num_pkts",
+	"pkts_rcvd",
 	"num_frags",
 	"keepalive_pkts",
-	"drop_queue_full",
 	"drop_mem_alloc",
-	"drop_ver_mismatch",
-	"drop_insufficient_hroom",
-	"drop_direct_dtls",
-	"drop_nwireless_len",
+	"drop_queue_full",
+	"err_dev_tx",
+	"err_ver_mis",
+	"err_direct_dtls",
+	"err_nwireless_len",
+	"err_insufficient_hroom",
 	"res1",
 	"res2",
 };
@@ -411,7 +412,7 @@ bool netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, st
 	struct sk_buff *skb;
 	bool is_frag;
 
-	NETFN_CAPWAP_TUN_STATS_INC(&enc->stats.num_pkts);
+	NETFN_CAPWAP_TUN_STATS_INC(&enc->stats.pkts_rcvd);
 
 	/*
 	 * Pull the meta header.
@@ -555,4 +556,36 @@ bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc
 void netfn_capwap_enc_mtu_update(struct netfn_capwap_enc *enc, unsigned int mtu)
 {
 	enc->mtu = ((mtu - enc->outer_hdr_len) & ~(sizeof(uint64_t) - 1));
+}
+
+/*
+ * netfn_capwap_enc_get_err_stats()
+ *     Accumulates encapsulation error stats and return sum
+ */
+uint64_t netfn_capwap_enc_get_err_stats(struct netfn_capwap_enc *enc)
+{
+	struct netfn_capwap_enc_stats *stats = &enc->stats;
+	uint64_t err_stats = 0;
+
+	err_stats += stats->err_ver_mis;
+	err_stats += stats->err_direct_dtls;
+	err_stats += stats->err_nwireless_len;
+	err_stats += stats->err_insufficient_hroom;
+
+	return 0;
+}
+
+/*
+ * netfn_capwap_enc_get_drop_stats()
+ *	Accumulates encapsulation drop stats and return sum
+ */
+uint64_t netfn_capwap_enc_get_drop_stats(struct netfn_capwap_enc *enc)
+{
+	struct netfn_capwap_enc_stats *stats = &enc->stats;
+	uint64_t drop_stats = 0;
+
+	drop_stats += stats->drop_mem_alloc;
+	drop_stats += stats->drop_queue_full;
+
+	return drop_stats;
 }
