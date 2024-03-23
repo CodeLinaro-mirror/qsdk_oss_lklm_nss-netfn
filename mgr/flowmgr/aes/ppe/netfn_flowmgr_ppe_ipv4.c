@@ -543,6 +543,21 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v4_rule(struct netfn_flowmgr_create
 	}
 
 	/*
+	 * Noedit rule
+	 * This rule enables PPE to bypass packet header editing and forward
+	 * them unmodified.
+	 */
+	if (org_rules & NETFN_FLOWMGR_VALID_RULE_FLAG_NOEDIT_RULE) {
+		netfn_flowmgr_info("Noedit rule is confifured in flow direction\n");
+		pd4rc->rule_flags |= PPE_DRV_V4_RULE_NOEDIT_FLOW_RULE;
+	}
+
+	if (reply_rules & NETFN_FLOWMGR_VALID_RULE_FLAG_NOEDIT_RULE) {
+		netfn_flowmgr_info("Noedit rule is confifured in return direction\n");
+		pd4rc->rule_flags |= PPE_DRV_V4_RULE_NOEDIT_RETURN_RULE;
+	}
+
+	/*
 	 * Top if rule
 	 */
 	if (original->flow_info.top_indev && original->flow_info.top_outdev) {
