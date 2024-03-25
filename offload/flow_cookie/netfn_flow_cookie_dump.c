@@ -480,11 +480,6 @@ static int netfn_flow_cookie_dump_dev_open(struct inode *inode, struct file *fil
 	file->private_data = fdi;
 	fdi->dump_en = true;
 
-
-	if (nfc_ctx->db_array == NULL) {
-		netfn_flow_cookie_warn("Netfn Flow Dump data not filled properly");
-	}
-
 	netfn_flow_cookie_info("Done with netfn flow cookie flow dump device open, db_array:%p", nfc_ctx->db_array);
 
 	return 0;
