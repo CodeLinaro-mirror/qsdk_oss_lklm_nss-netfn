@@ -262,8 +262,8 @@ int netfn_flow_cookie_dump_info(struct netfn_flow_cookie_dump_instance *fdi)
 						* source and destination IP addresses to ensure that
 						* the data is dumped in the correct order on the console.
 						*/
-						dump_src_addr[0] = ntohl(flow->tuple.tuples.tuple_5.src_ip.ip4.s_addr);
-						dump_dst_addr[0] = ntohl(flow->tuple.tuples.tuple_5.dest_ip.ip4.s_addr);
+						dump_src_addr[0] = flow->tuple.tuples.tuple_5.src_ip.ip4.s_addr;
+						dump_dst_addr[0] = flow->tuple.tuples.tuple_5.dest_ip.ip4.s_addr;
 
 					       /*
 						* Perform the flow dump write for source ip address.
@@ -285,14 +285,14 @@ int netfn_flow_cookie_dump_info(struct netfn_flow_cookie_dump_instance *fdi)
 						* source and destination IP addresses to ensure that
 						* the data is dumped in the correct order on the console.
 						*/
-						dump_src_addr[0] = htonl(flow->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32[0]);
-						dump_src_addr[1] = htonl(flow->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32[1]);
-						dump_src_addr[2] = htonl(flow->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32[2]);
-						dump_src_addr[3] = htonl(flow->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32[3]);
-						dump_dst_addr[0] = htonl(flow->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32[0]);
-						dump_dst_addr[1] = htonl(flow->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32[1]);
-						dump_dst_addr[2] = htonl(flow->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32[2]);
-						dump_dst_addr[3] = htonl(flow->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32[3]);
+						dump_src_addr[0] = flow->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32[0];
+						dump_src_addr[1] = flow->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32[1];
+						dump_src_addr[2] = flow->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32[2];
+						dump_src_addr[3] = flow->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32[3];
+						dump_dst_addr[0] = flow->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32[0];
+						dump_dst_addr[1] = flow->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32[1];
+						dump_dst_addr[2] = flow->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32[2];
+						dump_dst_addr[3] = flow->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32[3];
 
 					       /*
 						* Perform the flow dump write for source ip address.
@@ -312,14 +312,14 @@ int netfn_flow_cookie_dump_info(struct netfn_flow_cookie_dump_instance *fdi)
 				       /*
 					* Perform the flow dump write for source port.
 					*/
-					if (netfn_flow_cookie_dump_write(fdi, "src_port", "%u", flow->tuple.tuples.tuple_5.l4_src_ident)) {
+					if (netfn_flow_cookie_dump_write(fdi, "src_port", "%u", ntohs(flow->tuple.tuples.tuple_5.l4_src_ident))) {
 						goto netfn_flow_cookie_dump_write_error;
 					}
 
 				       /*
 					* Perform the flow dump write for destination port.
 					*/
-					if (netfn_flow_cookie_dump_write(fdi, "dst_port", "%u", flow->tuple.tuples.tuple_5.l4_dest_ident)) {
+					if (netfn_flow_cookie_dump_write(fdi, "dst_port", "%u", ntohs(flow->tuple.tuples.tuple_5.l4_dest_ident))) {
 						goto netfn_flow_cookie_dump_write_error;
 					}
 
