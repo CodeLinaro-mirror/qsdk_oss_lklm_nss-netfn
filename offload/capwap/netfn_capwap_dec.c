@@ -42,6 +42,7 @@
  */
 static int8_t *g_dec_stats_str[] = {
 	"num_frags",
+	"dtls_pkts",
 	"control_pkts",
 	"keepalive_pkts",
 	"fast_reasm",
@@ -83,6 +84,13 @@ static bool netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buf
 	start = next_hdr = skb->data;
 	mdata = NETFN_CAPWAP_CB(skb);
 	phdr = &mdata->phdr;
+
+	/*
+	 * For exception packets we don't need conversion.
+	 */
+	if (unlikely(mdata->exception)) {
+		return true;
+	}
 
 	/*
 	 * Check if it needs conversion, else add meta header and exit.
@@ -409,6 +417,7 @@ static uint8_t *netfn_capwap_dec_capwap(struct netfn_capwap_dec *dec, struct sk_
 	 */
 	preamble = netfn_capwap_hdr_get_preamble(info);
 	if (unlikely(preamble)) {
+		NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.dtls_pkts);
 		preh->type |= NETFN_CAPWAP_PKT_TYPE_INVALID;
 		return start;
 	}

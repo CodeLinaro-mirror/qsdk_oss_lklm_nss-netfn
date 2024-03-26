@@ -78,6 +78,7 @@ static rx_handler_result_t netfn_capwap_tunid_rx_handler(struct sk_buff **pskb)
 {
 	struct netfn_capwap_pkt_stats *stats;
 	struct netfn_capwap_tunid *ncti;
+	rx_handler_func_t *rx_handler;
 	struct sk_buff *skb = *pskb;
 	struct net_device *dev;
 
@@ -88,9 +89,19 @@ static rx_handler_result_t netfn_capwap_tunid_rx_handler(struct sk_buff **pskb)
 	NETFN_CAPWAP_TUN_STATS_INC(&stats->rx_pkts);
 	NETFN_CAPWAP_TUN_STATS_ADD(&stats->rx_bytes, skb->len);
 
-	skb->dev = dev;
-	netif_receive_skb(skb);
+	/*
+	 * Only set the dev if it's not exception packet.
+	 */
+	if (likely(!NETFN_CAPWAP_CB(skb)->exception)) {
+		skb->dev = dev;
+	}
 
+	rx_handler = rcu_dereference(skb->dev->rx_handler);
+	if (likely(rx_handler) && (rx_handler(&skb) == RX_HANDLER_CONSUMED)) {
+		return RX_HANDLER_CONSUMED;
+	}
+
+	netif_receive_skb(skb);
 	return RX_HANDLER_CONSUMED;
 }
 
@@ -118,7 +129,7 @@ static netdev_tx_t netfn_capwap_tunid_tx(struct sk_buff *skb, struct net_device 
 	rcu_read_lock_bh();
 	tun_dev = rcu_dereference(ncti->tunnels[pre->tunnel_id]);
 	if (!tun_dev) {
-		NETFN_CAPWAP_TUN_STATS_INC(stats->tx_failures);
+		NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_failures);
 		rcu_read_unlock_bh();
 		dev_kfree_skb(skb);
 		return NETDEV_TX_OK;
