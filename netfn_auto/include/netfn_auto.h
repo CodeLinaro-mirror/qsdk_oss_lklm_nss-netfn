@@ -228,7 +228,9 @@ enum netfn_auto_rule_mac_xlate {
 enum netfn_auto_vlan_rule {
 	VLAN_DONT_USE,
 	INNER_INGRESS = 7,
+	VLAN_TPID_INNER = 15,
 	INNER_EGRESS = 151,
+	VLAN_TPID_OUTER = 188,
 	OUTER_INGRESS = 244,
 	OUTER_EGRESS = 50,
 	INNER = 135,
