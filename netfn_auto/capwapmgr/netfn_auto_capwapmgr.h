@@ -1365,7 +1365,7 @@ int netfn_auto_capwap_parse_dtls_cfg(struct netfn_dtls_cfg *cfg, struct nlattr *
 		break;
 
 		case DTLS_DSCP:
-			cfg->dscp = (uint8_t)nla_get_u32(attr);
+			cfg->tos = (uint8_t)nla_get_u32(attr);
 		break;
 
 		case DTLS_HOP_LIMIT:
