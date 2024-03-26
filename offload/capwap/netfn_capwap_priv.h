@@ -62,7 +62,7 @@ struct netfn_capwap_frags {
  */
 static inline void netfn_capwap_frags_init(struct netfn_capwap_frags *frags)
 {
-	__skb_queue_head_init(&frags->list);
+	skb_queue_head_init(&frags->list);
 	frags->frag_id = -1;
 	frags->frag_sz = frags->tot_sz = 0;
 }

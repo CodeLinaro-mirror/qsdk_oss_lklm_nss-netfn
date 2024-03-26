@@ -106,7 +106,7 @@ static int netfn_pkt_steer_rcv_poll(struct napi_struct *napi, int budget)
 	uint32_t processed = 0;
 	int cpu;
 
-	__skb_queue_head_init(&skb_head);
+	skb_queue_head_init(&skb_head);
 
 	/*
 	 * TODO: Implement Fair Reap budget.

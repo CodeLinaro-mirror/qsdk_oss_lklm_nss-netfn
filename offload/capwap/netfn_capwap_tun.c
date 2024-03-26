@@ -66,7 +66,7 @@ static bool netfn_capwap_tun_rx(struct netfn_capwap_tun *nct, struct sk_buff *sk
 	struct sk_buff_head q_head;
 	uint64_t rx_bytes = 0;
 
-	__skb_queue_head_init(&q_head);
+	skb_queue_head_init(&q_head);
 	__skb_queue_head(&q_head, skb);
 
 	/*
@@ -574,7 +574,7 @@ static void netfn_capwap_tun_tx_cb(struct netfn_pkt_steer *tx_steer, struct sk_b
 		struct sk_buff *skb_frag, *tmp;
 		struct sk_buff_head q_frags;
 
-		__skb_queue_head_init(&q_frags);
+		skb_queue_head_init(&q_frags);
 		__skb_unlink(skb, q_head);
 
 		/*
