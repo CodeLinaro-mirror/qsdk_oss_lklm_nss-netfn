@@ -526,6 +526,35 @@ static uint8_t *netfn_capwap_dec_l3(struct netfn_capwap_dec *dec, struct sk_buff
 }
 
 /*
+ * netfn_capwap_dec_l2()
+ *     Decapsulate L2 header
+ */
+static uint8_t *netfn_capwap_dec_l2(struct netfn_capwap_dec *dec, struct sk_buff *skb, uint8_t *start, struct netfn_capwap_prehdr *preh)
+{
+       struct ethhdr *ehdr = (struct ethhdr *)start;
+       uint8_t next_hdr = 0;
+       uint16_t proto;
+
+       proto = ehdr->h_proto;
+       next_hdr += ETH_HLEN;
+
+       /*
+        * Outer header has a VLAN
+        */
+       if (eth_type_vlan(proto)) {
+               struct vlan_hdr *vh = (struct vlan_hdr *)(start + ETH_HLEN);
+
+               proto = vh->h_vlan_encapsulated_proto;
+               preh->vlan_pcp = ((ntohs(vh->h_vlan_TCI) & VLAN_PRIO_MASK) >> VLAN_PRIO_SHIFT);
+               next_hdr += sizeof(*vh);
+       }
+
+       skb->protocol = proto;
+       return start + next_hdr;
+}
+
+
+/*
  * netfn_capwap_dec()
  *	Decapsulates headers. Converts inner packet from 802.11 to 802.3
  *	and adds preheader if needed.
@@ -556,9 +585,11 @@ static bool netfn_capwap_dec(struct netfn_capwap_dec *dec, struct sk_buff *skb, 
 	if (dec->features & NETFN_CAPWAP_FEATURES_DTLS) {
 		preh.dscp = skb->priority;
 		next_hdr = netfn_capwap_dec_capwap(dec, skb, next_hdr, &preh);
+		preh.vlan_pcp = skb_vlan_tag_get_prio(skb);
 		goto skip_headers;
 	}
 
+	next_hdr = netfn_capwap_dec_l2(dec, skb, next_hdr, &preh);
 	next_hdr = netfn_capwap_dec_l3(dec, skb, next_hdr, &preh);
 	next_hdr = netfn_capwap_dec_l4(dec, skb, next_hdr, &preh);
 	next_hdr = netfn_capwap_dec_capwap(dec, skb, next_hdr, &preh);

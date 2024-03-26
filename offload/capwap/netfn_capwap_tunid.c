@@ -103,7 +103,7 @@ static netdev_tx_t netfn_capwap_tunid_tx(struct sk_buff *skb, struct net_device 
 	struct netfn_capwap_prehdr *pre = (struct netfn_capwap_prehdr *)skb->data;
 	struct netfn_capwap_tunid *ncti = netdev_priv(dev);
 	struct netfn_capwap_pkt_stats *stats = &ncti->stats;
-	uint32_t tunid = pre->tunnel_id;
+	uint16_t tunid = pre->tunnel_id;
 	struct net_device *tun_dev;
 
 	/*
