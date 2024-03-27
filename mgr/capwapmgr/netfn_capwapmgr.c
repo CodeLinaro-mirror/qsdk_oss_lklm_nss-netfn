@@ -211,13 +211,7 @@ int __init netfn_capwapmgr_init_module(void)
 		return -1;
 	}
 
-	/*
-	 * Assign the DB handle to
-	 * the CAPWAP Manager module here.
-	 */
-	spin_lock_bh(&mgr->lock);
 	mgr->d = d;
-	spin_unlock_bh(&mgr->lock);
 
 	/*
 	 * Pass the DB handle to

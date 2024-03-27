@@ -88,12 +88,12 @@ typedef enum {
 } netfn_capwapmgr_tun_update_t;
 
 /**
- * netfn_capwapmgr_flow_cookie_cfg_info
+ * netfn_capwapmgr_fc_info
  *      Flow Cookie Config Information.
  */
-struct netfn_capwapmgr_flow_cookie_cfg_info {
-	struct netfn_tuple tuple;		/**< Tuple Information */
-	struct netfn_flow_cookie flow_cookie;	/**< Flow Cookie */
+struct netfn_capwapmgr_fc_info {
+	netfn_tuple_t tuple;		/**< Tuple Information */
+	struct netfn_flow_cookie nfc;	/**< Flow Cookie */
 };
 
 /**
@@ -110,6 +110,8 @@ struct netfn_capwapmgr_tun_update {
 					/**< DTLS decap session */
 		} dtls;
 
+		struct netfn_capwapmgr_fc_info fci;
+					/**< Flow Cookie Config Info */
 		struct net_device *dev;
 					/**< Source interface */
 		uint32_t mtu;		/**< Path MTU */
@@ -117,8 +119,6 @@ struct netfn_capwapmgr_tun_update {
 					/**< Destination MAC */
 		uint8_t ver;		/**< CAPWAP version */
 		uint8_t reserved[7];	/**< Reserved */
-		struct netfn_capwapmgr_flow_cookie_cfg_info fcinfo;
-					/**< Flow Cookie Config Info */
 	} update_cfg;
 };
 
