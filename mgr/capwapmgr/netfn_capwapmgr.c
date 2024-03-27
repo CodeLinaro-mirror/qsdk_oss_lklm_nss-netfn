@@ -36,39 +36,36 @@ struct netfn_capwapmgr g_mgr;
  */
 static const char *netfn_capwapmgr_stats_str[] = {
 	"WAN Net device NULL",
-					/**< NULL WAN net device */
 	"Top Net Device NULL",
-					/**< NULL top net device */
 	"Unsupported tuple type",
-					/**< Unsupported tuple type */
 	"Unsupported L4 protocol",
-					/**< Unsupported l4 protocol */
 	"CAPWAP offload tunnel alloc failed",
-					/**< Failed to allocate capwap tunnel in offload engine */
 	"CAPWAP offload tunnel free failed",
-					/**< Failed to free capwap tunnel in offload engine */
 	"Failed to create flow rule",
-					/**< Failed to create flow rule */
 	"Failed to destroy flow rule",
-					/**< Failed to destroy flow rule */
 	"CAPWAP offload tunnel id alloc failed",
-					/**< Failed to allocate tunid version of capwap tunnel in offload engine */
 	"CAPWAP offload tunnel id free failed",
-					/**< Failed to free tunid version of capwap tunnel in offload engine */
 	"CAPWAP offload tunnel context get failed",
-					/**< Failed to get tunnel context from offload engine */
 	"CAPWAP offlaod tunid dev free failed",
-					/**< Failed to free capwap tunid dev in offload engine */
 	"CAPWAP offlaod tunid dtls alloc failed",
-					/**< Failed to free capwap tunid dev in offload engine */
 	"CAPWAP offlaod tunid dev bind failed",
-					/**< Failed to free capwap tunid dev in offload engine */
-	"CAPWAP offload netfn flow cookie DB alloc failed",
-					/**< Failed to instantiate the flow cookie DB in offload engine */
-	"CAPWAP offload netfn flow cookie add failed",
-					/**< Failed to add flow cookie entry as reported in offload engine */
-	"CAPWAP offload netfn flow cookie delete failed",
-					/**< Failed to delete flow cookie entry as reported in offload engine */
+	"Failed to get tunnel stats",
+	"Invalid tunnel create configuration ",
+	"Updating tunnel config when tunnel is enabled ",
+	"Failed to Deinitialize the tunnel ",
+	"Failed to Initialize the tunnel ",
+	"Invalid DTLS configuration ",
+	"DTLS Session Switch failed ",
+	"DTLS Encap Session Add Failed ",
+	"DTLS Decap session Add Failed ",
+	"DTLS Tunnel is not configured ",
+	"DTLS Tunnel enabled ",
+	"Tunnel ID inactive ",
+	"Tunnel ID out of range ",
+	"Parent Dev Delete Failed : Active tunnels",
+	"Flow cookie DB alloc failed",
+	"Flow cookie add failed",
+	"Flow cookie delete failed",
 };
 
 /*
@@ -113,6 +110,60 @@ static int netfn_capwapmgr_stats_print(struct seq_file *sf, void *ptr)
           return 0;
 }
 
+
+/*
+ * netfn_capwapmgr_snap_read()
+ *	Read Snap header
+ */
+static ssize_t netfn_capwapmgr_snap_read(struct file *f, char *buf, size_t count, loff_t *offset)
+{
+	int len;
+	char lbuf[26];
+	uint64_t snap;
+
+	memcpy(&snap, netfn_capwapmgr_snap, NETFN_CAPWAP_SNAP_HDR_LEN);
+	len = snprintf(lbuf, sizeof(lbuf), "%llx\n", snap);
+
+	return simple_read_from_buffer(buf, count, offset, lbuf, len);
+}
+
+/*
+ * netfn_capwapmgr_snap_write()
+ *	Write snap header
+ */
+static ssize_t netfn_capwapmgr_snap_write(struct file *f, const char *buffer, size_t len, loff_t *offset)
+{
+	ssize_t size;
+	char data[16];
+	uint64_t res;
+	int status;
+
+	size = simple_write_to_buffer(data, sizeof(data), offset, buffer, len);
+	if (size < 0) {
+		netfn_capwapmgr_warn("Error reading snap header from debugfs");
+		return size;
+	}
+
+	status = kstrtou64(data, 16, &res);
+	if (status) {
+		netfn_capwapmgr_warn("Error updating snap header from debugfs");
+		return status;
+	}
+
+	memcpy(netfn_capwapmgr_snap, &res, NETFN_CAPWAP_SNAP_HDR_LEN);
+	return len;
+}
+
+/*
+ * netfn_capwapmgr_snap_ops
+ *	File handler to configure snap header
+ */
+const struct file_operations netfn_capwapmgr_snap_ops = {
+	.owner = THIS_MODULE,
+	.write = netfn_capwapmgr_snap_write,
+	.read = netfn_capwapmgr_snap_read
+};
+
 /*
  * netfn_capwapmgr_stats_open
  *	Open file handler for common stats debugfs.
@@ -147,7 +198,7 @@ int __init netfn_capwapmgr_init_module(void)
 	 */
 	init_completion(&mgr->completion);
 	kref_init(&mgr->ref);
-	spin_lock_init(&mgr->lock);
+	mutex_init(&mgr->lock);
 
 	/*
 	 * Instantiate the Flow Cookie Data Base here.
@@ -193,6 +244,11 @@ int __init netfn_capwapmgr_init_module(void)
 	if (!debugfs_create_file("stats", S_IRUGO, mgr->dentry,
                 NULL, &netfn_capwapmgr_stats_ops)) {
 		netfn_capwapmgr_warn("%p: Unable to create error statistics file entry in debugfs\n", mgr);
+	}
+
+	if (!debugfs_create_file("snap_hdr", (S_IRUGO | S_IWUSR), mgr->dentry,
+                NULL, &netfn_capwapmgr_snap_ops)) {
+		netfn_capwapmgr_warn("%p: Unable to create debugfs entry for snap header\n", mgr);
 	}
 
 	netfn_capwapmgr_info("NETFN CAPWAPMGR loaded: (%s)\n", NETFN_CAPWAPMGR_BUILD_ID);

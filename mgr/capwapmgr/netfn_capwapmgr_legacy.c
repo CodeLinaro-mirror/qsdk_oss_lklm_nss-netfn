@@ -35,12 +35,6 @@
 #include "netfn_capwapmgr_tun.h"
 #include "netfn_capwapmgr_tunid.h"
 
-
-/*
- * Netfn dtls flags are left shifted by 1.
- */
-#define NETFN_CAPWAPMGR_DTLS_FLAG_SHIFT_TO_NETFN 1
-
 /*
  * NETFN dtls offload only supports 32bit nounce value
  */
@@ -145,7 +139,7 @@ done:
  * netfn_capwapmgr_legacy2crypto
  *	API to convert legacy crypto config to netfn crypto.
  */
-static netfn_capwapmgr_ret_t netfn_capwapmgr_legacy2crypto(struct netfn_dtls_crypto *netfn_crypto, struct nss_dtlsmgr_crypto *legacy_crypto)
+netfn_capwapmgr_ret_t netfn_capwapmgr_legacy2crypto(struct netfn_dtls_crypto *netfn_crypto, struct nss_dtlsmgr_crypto *legacy_crypto)
 {
 	const uint8_t *legacy_keys;
 	uint16_t keylen;
@@ -180,6 +174,85 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_legacy2crypto(struct netfn_dtls_cry
 
 	return NETFN_CAPWAPMGR_SUCCESS;
 }
+EXPORT_SYMBOL(netfn_capwapmgr_legacy2crypto);
+
+/*
+ * netfn_capwapgr_legacy2dtls
+ *	API to convert legacy DTLS config to netfn config.
+ */
+netfn_capwapmgr_ret_t netfn_capwapmgr_legacy2dtls(struct nss_dtlsmgr_config *dtls_data, struct netfn_dtls_cfg *enc, struct netfn_dtls_cfg *dec)
+{
+	netfn_capwapmgr_ret_t status;
+	struct netfn_dtls_cfg *netfn_dtls_cfg = NULL;
+	struct nss_dtlsmgr_crypto *legacy_crypto = NULL;
+	struct netfn_dtls_crypto *netfn_crypto = NULL;
+
+	/*
+	 * Encap Specific configuration.
+	 */
+	netfn_dtls_cfg = enc;
+	legacy_crypto = &dtls_data->encap.crypto;
+	netfn_crypto = &netfn_dtls_cfg->base;
+
+	status = netfn_capwapmgr_legacy2crypto(netfn_crypto, legacy_crypto);
+	if (status != NETFN_CAPWAPMGR_SUCCESS) {
+		return status;
+	}
+
+	netfn_dtls_cfg->flags = dtls_data->flags | NETFN_DTLS_FLAG_CAPWAP;
+	netfn_dtls_cfg->version = netfn_capwapmgr_dtls_version_enum_to_netfn[dtls_data->encap.ver];
+	netfn_dtls_cfg->epoch = htons(dtls_data->encap.epoch);
+
+	/*
+	 * If DSCP copy from skb is enabled, update the corresponding field
+	 * in the netfn configuration. Else update the default dscp value.
+	 */
+	if (dtls_data->encap.dscp_copy) {
+		netfn_dtls_cfg->flags |= NETFN_DTLS_FLAG_CP_TOS;
+	} else {
+		netfn_dtls_cfg->dscp = dtls_data->encap.dscp;
+	}
+
+	/*
+	 * Copy over the default IP DF and TTL values.
+	 */
+	netfn_dtls_cfg->df = dtls_data->encap.df;
+	netfn_dtls_cfg->hop_limit = dtls_data->encap.ip_ttl;
+
+	/*
+	 * Update config specifying this is encap session configuration.
+	 */
+	netfn_dtls_cfg->flags = NETFN_DTLS_FLAG_ENC;
+
+	/*
+	 * Decap Specific configuration.
+	 */
+	netfn_dtls_cfg = dec;
+	legacy_crypto = &dtls_data->decap.crypto;
+	netfn_crypto = &netfn_dtls_cfg->base;
+
+	status = netfn_capwapmgr_legacy2crypto(netfn_crypto, legacy_crypto);
+	if (status != NETFN_CAPWAPMGR_SUCCESS) {
+		return status;
+	}
+
+	/*
+	 * TODO:Once netfn DTLS config structure is updated. Make sure this is still needed.
+	 * Currently the netfn dtls config takes encap and deacp specific parameters for a
+	 * decap session as well as for an encap session.
+	 */
+	netfn_dtls_cfg->flags = dtls_data->flags | NETFN_DTLS_FLAG_CAPWAP;
+	netfn_dtls_cfg->version = netfn_capwapmgr_dtls_version_enum_to_netfn[dtls_data->encap.ver];
+	netfn_dtls_cfg->epoch = htons(dtls_data->encap.epoch);
+	netfn_dtls_cfg->replay_win = dtls_data->decap.window_size;
+
+	/*
+	 * Update config specifying this is decap session configuration.
+	 */
+	netfn_dtls_cfg->flags &= ~NETFN_DTLS_FLAG_ENC;
+	return status;
+}
+EXPORT_SYMBOL(netfn_capwapmgr_legacy2dtls);
 
 /*
  * netfn_capwapmgr_legacy_rule2tun_cfg
@@ -350,78 +423,12 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 	 * If DTLS is enabled, convert the dtls rule as well.
 	 */
 	if (dtls_enabled) {
-		struct netfn_dtls_cfg *netfn_dtls_cfg = NULL;
-		struct nss_dtlsmgr_crypto *legacy_crypto = NULL;
-		struct netfn_dtls_crypto *netfn_crypto = NULL;
-
 		/*
 		 * Update DTLS enable flag;
 		 */
 		cfg->ext_cfg.ext_valid_flags |= NETFN_CAPWAPMGR_EXT_VALID_DTLS_ENC | NETFN_CAPWAPMGR_EXT_VALID_DTLS_DEC;
 
-		/*
-		 * Encap Specific configuration.
-		 */
-		netfn_dtls_cfg = &cfg->ext_cfg.enc;
-		legacy_crypto = &dtls_data->encap.crypto;
-		netfn_crypto = &netfn_dtls_cfg->base;
-
-		status = netfn_capwapmgr_legacy2crypto(netfn_crypto, legacy_crypto);
-		if (status != NETFN_CAPWAPMGR_SUCCESS) {
-			return status;
-		}
-
-		netfn_dtls_cfg->flags = dtls_data->flags | NETFN_DTLS_FLAG_CAPWAP;
-		netfn_dtls_cfg->version = netfn_capwapmgr_dtls_version_enum_to_netfn[dtls_data->encap.ver];
-		netfn_dtls_cfg->epoch = htons(dtls_data->encap.epoch);
-
-		/*
-		 * If DSCP copy from skb is enabled, update the corresponding field
-		 * in the netfn configuration. Else update the default dscp value.
-		 */
-		if (dtls_data->encap.dscp_copy) {
-			netfn_dtls_cfg->flags |= NETFN_DTLS_FLAG_CP_TOS;
-		} else {
-			netfn_dtls_cfg->dscp = dtls_data->encap.dscp;
-		}
-
-		/*
-		 * Copy over the default IP DF and TTL values.
-		 */
-		netfn_dtls_cfg->df = dtls_data->encap.df;
-		netfn_dtls_cfg->hop_limit = dtls_data->encap.ip_ttl;
-
-		/*
-		 * Update config specifying this is encap session configuration.
-		 */
-		netfn_dtls_cfg->flags |= NETFN_DTLS_FLAG_ENC;
-
-		/*
-		 * Decap Specific configuration.
-		 */
-		netfn_dtls_cfg = &cfg->ext_cfg.dec;
-		legacy_crypto = &dtls_data->decap.crypto;
-		netfn_crypto = &netfn_dtls_cfg->base;
-
-		status = netfn_capwapmgr_legacy2crypto(netfn_crypto, legacy_crypto);
-		if (status != NETFN_CAPWAPMGR_SUCCESS) {
-			return status;
-		}
-
-		/*
-		 * TODO:Once netfn DTLS config structure is updated. Make sure this is still needed.
-		 * Currently the netfn dtls config takes encap and deacp specific parameters for a
-		 * decap session as well as for an encap session.
-		 */
-		netfn_dtls_cfg->flags = dtls_data->flags | NETFN_DTLS_FLAG_CAPWAP;
-		netfn_dtls_cfg->version = netfn_capwapmgr_dtls_version_enum_to_netfn[dtls_data->encap.ver];
-		netfn_dtls_cfg->epoch = htons(dtls_data->encap.epoch);
-		netfn_dtls_cfg->replay_win = dtls_data->decap.window_size;
-
-		/*
-		 * Update config specifying this is decap session configuration.
-		 */
-		netfn_dtls_cfg->flags &= ~NETFN_DTLS_FLAG_ENC;
+		status = netfn_capwapmgr_legacy2dtls(dtls_data, &cfg->ext_cfg.enc, &cfg->ext_cfg.dec);
 	}
 
 	return status;

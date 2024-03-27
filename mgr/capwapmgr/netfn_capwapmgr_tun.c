@@ -129,7 +129,7 @@ static int netfn_capwapmgr_tun_stats_print(struct seq_file *sf, void *ptr)
 	seq_puts(sf, "\n Flow stats \n");
 
 	flow_stats = &ctx->stats;
-	seq_puts(sf, "\n Ingress interface \n");
+	seq_printf(sf, "\n Wan Dev: %s \n", ctx->cfg.flow.out_dev->name);
 	seq_printf(sf, "\t[%s]: %llu\n", "Tx Packets", flow_stats->flow_tx_pkts);
 	seq_printf(sf, "\t[%s]: %llu\n", "Tx Bytes", flow_stats->flow_tx_bytes);
 	seq_printf(sf, "\t[%s]: %llu\n", "Rx packets", flow_stats->flow_rx_pkts);
@@ -137,7 +137,12 @@ static int netfn_capwapmgr_tun_stats_print(struct seq_file *sf, void *ptr)
 
 	seq_puts(sf, "\n");
 
-	seq_puts(sf, "\n Capwap Interface \n");
+	if (ctx->dtls_dev) {
+		seq_printf(sf, "\n DTLS Dev: %s \n", ctx->dtls_dev->name);
+	} else {
+		seq_printf(sf, "\n CAPWAP Dev: %s \n", ctx->capwap_dev->name);
+	}
+
 	seq_printf(sf, "\t[%s]: %llu\n", "Tx Packets", flow_stats->return_tx_pkts);
 	seq_printf(sf, "\t[%s]: %llu\n", "Tx Bytes", flow_stats->return_tx_bytes);
 	seq_printf(sf, "\t[%s]: %llu\n", "Rx packets", flow_stats->return_rx_pkts);
@@ -299,6 +304,7 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_rule_create(struct netfn_capwa
 				cfg,
 				NETFN_FLOWMGR_GET_NETFN_ERROR_CODE(netfn_status),
 				NETFN_FLOWMGR_GET_AE_ERROR_CODE(netfn_status));
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_FLOW_RULE_CREATE]);
 		return NETFN_CAPWAPMGR_ERROR_FLOW_RULE_CREATE;
 	}
 
@@ -331,6 +337,7 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_rule_destroy(struct netfn_capw
 				cfg,
 				NETFN_FLOWMGR_GET_NETFN_ERROR_CODE(netfn_status),
 				NETFN_FLOWMGR_GET_AE_ERROR_CODE(netfn_status));
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_FLOW_RULE_DESTROY]);
 		return NETFN_CAPWAPMGR_ERROR_FLOW_RULE_DESTROY;
 	}
 
@@ -393,11 +400,15 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_cookie_del(struct netfn_capwap
 static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update_dest_mac(struct netfn_capwapmgr_tun_ctx *ctx, uint8_t *dest_mac)
 {
 	netfn_capwapmgr_ret_t status;
+	long bit_pos;
 
-	status = netfn_capwapmgr_flow_rule_destroy(&ctx->cfg);
-	if (status != NETFN_CAPWAPMGR_SUCCESS) {
-		netfn_capwapmgr_warn("%px: Failed to delete flow rule when updating destination mac address\n", ctx);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_FLOW_CONFIGURED) - 1;
+	if (__test_and_clear_bit(bit_pos, ctx->state)) {
+		status = netfn_capwapmgr_flow_rule_destroy(&ctx->cfg);
+		if (status != NETFN_CAPWAPMGR_SUCCESS) {
+			netfn_capwapmgr_warn("%px: Failed to delete flow rule when updating destination mac address\n", ctx);
+			return status;
+		}
 	}
 
 	/*
@@ -409,8 +420,10 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update_dest_mac(struct netfn_ca
 	status = netfn_capwapmgr_flow_rule_create(&ctx->cfg);
 	if (status != NETFN_CAPWAPMGR_SUCCESS) {
 		netfn_capwapmgr_warn("%px:Failed to re-create flow rule with new destination mac address\n", ctx);
+		return status;
 	}
 
+	__set_bit(bit_pos, ctx->state);
 	return status;
 }
 
@@ -421,11 +434,15 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update_dest_mac(struct netfn_ca
 static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update_mtu(struct netfn_capwapmgr_tun_ctx *ctx, uint32_t mtu)
 {
 	netfn_capwapmgr_ret_t status;
+	long bit_pos;
 
-	status = netfn_capwapmgr_flow_rule_destroy(&ctx->cfg);
-	if (status != NETFN_CAPWAPMGR_SUCCESS) {
-		netfn_capwapmgr_warn("%px: Failed to delete flow rule when updating path mtu\n", ctx);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_FLOW_CONFIGURED) - 1;
+	if (__test_and_clear_bit(bit_pos, ctx->state)) {
+		status = netfn_capwapmgr_flow_rule_destroy(&ctx->cfg);
+		if (status != NETFN_CAPWAPMGR_SUCCESS) {
+			netfn_capwapmgr_warn("%px: Failed to delete flow rule when updating destination mac address\n", ctx);
+			return status;
+		}
 	}
 
 	ctx->cfg.flow.flow_mtu = mtu;
@@ -435,6 +452,16 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update_mtu(struct netfn_capwapm
 		netfn_capwapmgr_warn("%px:Failed to re-create flow rule with new destination mac address\n", ctx);
 	}
 
+	__set_bit(bit_pos, ctx->state);
+
+	/*
+	 * Upate capwap dev's MTU.
+	 * This internally handles updating dtls devices MTU as well
+	 * when DTLS is enabled.
+	 */
+	rtnl_lock();
+	__dev_set_mtu(ctx->capwap_dev, mtu);
+	rtnl_unlock();
 	return status;
 }
 
@@ -445,11 +472,15 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update_mtu(struct netfn_capwapm
 static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update_src_interface(struct netfn_capwapmgr_tun_ctx *ctx, struct net_device *dev)
 {
 	netfn_capwapmgr_ret_t status;
+	long bit_pos;
 
-	status = netfn_capwapmgr_flow_rule_destroy(&ctx->cfg);
-	if (status != NETFN_CAPWAPMGR_SUCCESS) {
-		netfn_capwapmgr_warn("%px: Failed to delete flow rule when updating src interface\n", ctx);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_FLOW_CONFIGURED) - 1;
+	if (__test_and_clear_bit(bit_pos, ctx->state)) {
+		status = netfn_capwapmgr_flow_rule_destroy(&ctx->cfg);
+		if (status != NETFN_CAPWAPMGR_SUCCESS) {
+			netfn_capwapmgr_warn("%px: Failed to delete flow rule when updating destination mac address\n", ctx);
+			return status;
+		}
 	}
 
 	/*
@@ -463,6 +494,7 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update_src_interface(struct net
 		netfn_capwapmgr_warn("%px:Failed to re-create flow rule with new src interface\n", ctx);
 	}
 
+	__set_bit(bit_pos, ctx->state);
 	return status;
 }
 
@@ -474,7 +506,7 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update_src_interface(struct net
  */
 static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_dtls_enable(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_dtls_cfg *enc, struct netfn_dtls_cfg *dec)
 {
-	netfn_capwapmgr_ret_t status = NETFN_CAPWAPMGR_ERROR_MAX;
+	netfn_capwapmgr_ret_t status = NETFN_CAPWAPMGR_SUCCESS;
 	netfn_tuple_t dec_tuple = {0};
 	long bit_pos;
 	int ret = 0;
@@ -482,12 +514,14 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_dtls_enable(struct netfn_capwap
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_BIND) - 1;
 	if (test_bit(bit_pos, ctx->state)) {
 		netfn_capwapmgr_warn("%px: DTLS already enabled\n", ctx);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_DTLS_ENABLED]);
+		return NETFN_CAPWAPMGR_ERROR_DTLS_ENABLED;
 	}
 
 	ctx->dtls_dev = netfn_dtls_tun_alloc(0);
 	if (!ctx->dtls_dev) {
 		netfn_capwapmgr_warn("%p:Failed to allocate dtls tunnel in DTLS offload engine\n", ctx);
+		status = NETFN_CAPWAPMGR_ERROR_DTLS_ALLOC;
 		goto fail;
 	}
 
@@ -500,6 +534,7 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_dtls_enable(struct netfn_capwap
 	ret = netfn_dtls_tun_session_add(ctx->dtls_dev, enc, &ctx->cfg.tuple);
 	if (ret) {
 		netfn_capwapmgr_warn("Failed to add Encap dtls session %d\n", ret);
+		status = NETFN_CAPWAPMGR_ERROR_DTLS_ENCAP_SESSION_ADD;
 		goto fail;
 	}
 
@@ -507,14 +542,20 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_dtls_enable(struct netfn_capwap
 	if (ret) {
 		netfn_capwapmgr_warn("Failed to add Decap dtls session %d\n", ret);
 		netfn_dtls_tun_session_del(ctx->dtls_dev, true, enc->epoch);
+		status = NETFN_CAPWAPMGR_ERROR_DTLS_DECAP_SESSION_ADD;
 		goto fail;
 	}
+
+	rtnl_lock();
+	__dev_set_mtu(ctx->dtls_dev, ctx->cfg.flow.flow_mtu);
+	rtnl_unlock();
 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_CONFIGURED) - 1;
 	__set_bit(bit_pos, ctx->state);
 
 	if (!netfn_capwap_tun_bind(ctx->capwap_dev, ctx->dtls_dev)) {
 		netfn_capwapmgr_warn("%px: Failed to bind DTLS netdevice\n", ctx);
+		status = NETFN_CAPWAPMGR_ERROR_DTLS_BIND;
 		goto fail;
 	}
 
@@ -574,6 +615,7 @@ fail:
 		netfn_dtls_tun_free(ctx->dtls_dev);
 	}
 
+	atomic64_inc(&g_mgr.stats.error_stats[status]);
 	return status;
 }
 
@@ -585,13 +627,14 @@ fail:
  */
 static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_dtls_disable(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_dtls_cfg *enc, struct netfn_dtls_cfg *dec)
 {
-	netfn_capwapmgr_ret_t status = NETFN_CAPWAPMGR_ERROR_MAX;
+	netfn_capwapmgr_ret_t status = NETFN_CAPWAPMGR_SUCCESS;
 	long bit_pos;
 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_BIND) - 1;
 	if (!test_bit(bit_pos, ctx->state)) {
 		netfn_capwapmgr_warn("%px: DTLS not enabled\n", ctx);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_DTLS_TUN_NOT_CONFIGURED]);
+		return NETFN_CAPWAPMGR_ERROR_DTLS_TUN_NOT_CONFIGURED;
 	}
 
 	/*
@@ -626,7 +669,7 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_dtls_disable(struct netfn_capwa
 	status = netfn_capwapmgr_flow_rule_destroy(&ctx->cfg);
 	if (status != NETFN_CAPWAPMGR_SUCCESS) {
 		netfn_capwapmgr_warn("%px: Failed to delete flow rule when enabling dtls\n", ctx);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
+		return status;
 	}
 
 	/*
@@ -644,7 +687,7 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_dtls_disable(struct netfn_capwa
 
 /*
  * netfn_capwapmgr_tun_update_dtls_session
- *	Update path MTU.
+ *	DTLS Session update
  */
 static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update_dtls_session(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_dtls_cfg *dtls_cfg, bool encap)
 {
@@ -654,27 +697,58 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update_dtls_session(struct netf
 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_BIND) - 1;
 	if (!test_bit(bit_pos, ctx->state)) {
-		netfn_capwapmgr_warn("%px:Cannot add DTLS sessios withour creating the DTLS tunnel\n", ctx);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
+		netfn_capwapmgr_warn("%px:Cannot add DTLS session without creating the DTLS tunnel\n", ctx);
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_DTLS_TUN_NOT_CONFIGURED]);
+		return NETFN_CAPWAPMGR_ERROR_DTLS_TUN_NOT_CONFIGURED;
 	}
 
 	if (encap) {
+		dtls_cfg->flags = ctx->cfg.ext_cfg.enc.flags;
+		dtls_cfg->version = ctx->cfg.ext_cfg.enc.version;
+		dtls_cfg->df = ctx->cfg.ext_cfg.enc.df;
+		dtls_cfg->dscp = ctx->cfg.ext_cfg.enc.dscp;
+		dtls_cfg->hop_limit = ctx->cfg.ext_cfg.enc.hop_limit;
+
 		ret = netfn_dtls_tun_session_add(ctx->dtls_dev, dtls_cfg, &ctx->cfg.tuple);
 		if (ret) {
 			netfn_capwapmgr_warn("Failed to add Encap dtls session %d\n", ret);
-			return NETFN_CAPWAPMGR_ERROR_MAX;
+			atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_DTLS_ENCAP_SESSION_ADD]);
+			return NETFN_CAPWAPMGR_ERROR_DTLS_ENCAP_SESSION_ADD;
 		}
 		memcpy(&ctx->cfg.ext_cfg.enc, dtls_cfg, sizeof(struct netfn_dtls_cfg));
 	} else {
+		dtls_cfg->flags = ctx->cfg.ext_cfg.dec.flags;
+		dtls_cfg->version = ctx->cfg.ext_cfg.dec.version;
+
 		netfn_capwapmgr_tun_get_reply(&ctx->cfg.tuple, &dec);
 		ret = netfn_dtls_tun_session_add(ctx->dtls_dev, dtls_cfg, &dec);
 		if (ret) {
 			netfn_capwapmgr_warn("Failed to add Decap dtls session %d\n", ret);
-			return NETFN_CAPWAPMGR_ERROR_MAX;
+			atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_DTLS_DECAP_SESSION_ADD]);
+			return NETFN_CAPWAPMGR_ERROR_DTLS_DECAP_SESSION_ADD;
 		}
 		memcpy(&ctx->cfg.ext_cfg.dec, dtls_cfg, sizeof(struct netfn_dtls_cfg));
 	}
 
+	return NETFN_CAPWAPMGR_SUCCESS;
+}
+
+/*
+ * netfn_capwapmgr_tun_dtls_session_switch
+ *	Switch DTLS session.
+ */
+static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_dtls_session_switch(struct netfn_capwapmgr_tun_ctx *ctx, bool encap)
+{
+	long bit_pos;
+
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_BIND) - 1;
+	if (!test_bit(bit_pos, ctx->state)) {
+		netfn_capwapmgr_warn("%px:Cannot switch DTLS session without creating the DTLS tunnel\n", ctx);
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_DTLS_SESSION_SWITCH]);
+		return NETFN_CAPWAPMGR_ERROR_DTLS_SESSION_SWITCH;
+	}
+
+	netfn_dtls_tun_session_switch(ctx->dtls_dev, encap);
 	return NETFN_CAPWAPMGR_SUCCESS;
 }
 
@@ -696,24 +770,28 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tun_init_cfg(struct netfn_capwapmgr_tun_cf
 	valid_ext = cfg->ext_cfg.ext_valid_flags;
 	if (!cfg->flow.out_dev) {
 		netfn_capwapmgr_warn("%px: NULL Wan netdevice\n", cfg);
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_NULL_WAN_NDEV]);
 		return NETFN_CAPWAPMGR_ERROR_NULL_WAN_NDEV;
 	}
 
 	if ((valid_ext & NETFN_CAPWAPMGR_EXT_VALID_VLAN) || (valid_ext & NETFN_CAPWAPMGR_EXT_VALID_PPPOE)) {
 		if (!cfg->flow.top_outdev) {
 			netfn_capwapmgr_warn("%px: NULL top netdevice\n", cfg);
+			atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_NULL_TOP_NDEV]);
 			return NETFN_CAPWAPMGR_ERROR_NULL_TOP_NDEV;
 		}
 	}
 
 	if (tuple->tuple_type != NETFN_TUPLE_5TUPLE) {
 		netfn_capwapmgr_warn("%px:Unsupported tuple type %d\n", cfg, tuple->tuple_type);
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_UNSUPPORTED_TUPLE_TYPE]);
 		return NETFN_CAPWAPMGR_ERROR_UNSUPPORTED_TUPLE_TYPE;
 	}
 
 	protocol = tuple->tuples.tuple_5.protocol;
 	if((protocol != IPPROTO_UDP) && (protocol != IPPROTO_UDPLITE)) {
 		netfn_capwapmgr_warn("%px:Unsupported l4 protocol %d\n", cfg, protocol);
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_UNSUPPORTED_L4_PROTO]);
 		return NETFN_CAPWAPMGR_ERROR_UNSUPPORTED_L4_PROTO;
 	}
 
@@ -724,12 +802,14 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tun_init_cfg(struct netfn_capwapmgr_tun_cf
 	if (valid_ext & NETFN_CAPWAPMGR_EXT_VALID_DTLS) {
 		if (!(valid_ext & NETFN_CAPWAPMGR_EXT_VALID_DTLS_ENC)) {
 			netfn_capwapmgr_warn("%px: Unidirectional DTLS session not supported(%x) \n", cfg, valid_ext);
-			return NETFN_CAPWAPMGR_ERROR_MAX;
+			atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_DTLS_CFG]);
+			return NETFN_CAPWAPMGR_ERROR_DTLS_CFG;
 		}
 
 		if (!(valid_ext & NETFN_CAPWAPMGR_EXT_VALID_DTLS_DEC)) {
 			netfn_capwapmgr_warn("%px: Unidirectional DTLS session not supported(%x) \n", cfg, valid_ext);
-			return NETFN_CAPWAPMGR_ERROR_MAX;
+			atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_DTLS_CFG]);
+			return NETFN_CAPWAPMGR_ERROR_DTLS_CFG;
 		}
 	}
 
@@ -774,6 +854,9 @@ bool netfn_capwapmgr_tun_init(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_CAPWAP_CONFIGURED) - 1;
 	__set_bit(bit_pos, ctx->state);
 
+	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_ENABLED) - 1;
+	__set_bit(bit_pos, ctx->state);
+
 	/*
 	 * If DTLS is enabled on this tunnel, configure DTLS offload accordingly.
 	 * We onyl check for encap flag as in tunnel config validation,
@@ -812,6 +895,10 @@ bool netfn_capwapmgr_tun_init(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_
 		netfn_dtls_tun_session_del(ctx->dtls_dev, true, cfg->ext_cfg.enc.epoch);
 		goto fail;
 	}
+
+	rtnl_lock();
+	__dev_set_mtu(ctx->dtls_dev, ctx->cfg.flow.flow_mtu);
+	rtnl_unlock();
 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_CONFIGURED) - 1;
 	__set_bit(bit_pos, ctx->state);
@@ -1049,6 +1136,7 @@ struct net_device *netfn_capwapmgr_tun_alloc(struct netfn_capwapmgr_tun_cfg *cfg
 	 * deref:netfn_capwapmgr_tun_free.
 	 */
 	netfn_capwapmgr_ref(mgr);
+	atomic_inc(&mgr->stats.tun_dev_alloc);
 	return capwap_dev;
 }
 EXPORT_SYMBOL(netfn_capwapmgr_tun_alloc);
@@ -1069,7 +1157,8 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tun_free(struct net_device *dev)
 	 */
 	if (netfn_capwapmgr_tun_deinit(ctx)) {
 		netfn_capwapmgr_warn("%px: Tunnel De-init failed \n", dev);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_TUN_DEINIT]);
+		return NETFN_CAPWAPMGR_ERROR_TUN_DEINIT;
 	}
 
 	/*
@@ -1077,13 +1166,15 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tun_free(struct net_device *dev)
 	 */
 	if (netfn_capwap_tun_free(ctx->capwap_dev)) {
 		netfn_capwapmgr_warn("%px: Failed to free capwap tun \n", dev);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_TUN_FREE]);
+		return NETFN_CAPWAPMGR_ERROR_TUN_FREE;
 	}
 
 	/*
 	 * ref:netfn_capwapmgr_tun_alloc.
 	 */
 	netfn_capwapmgr_deref(mgr);
+	atomic_inc(&mgr->stats.tun_dev_free);
 	return NETFN_CAPWAPMGR_SUCCESS;
 }
 EXPORT_SYMBOL(netfn_capwapmgr_tun_free);
@@ -1091,16 +1182,12 @@ EXPORT_SYMBOL(netfn_capwapmgr_tun_free);
 /*
  * netfn_capwapmgr_tun_update()
  *	Update tunnel configuration.
- *
- * NOTE:rtnl lock should be held before calling this API.
  */
 netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update(struct net_device *dev, struct netfn_capwapmgr_tun_update *cfg)
 {
 	netfn_capwapmgr_ret_t status = NETFN_CAPWAPMGR_SUCCESS;
 	struct netfn_capwapmgr_tun_ctx *ctx = NULL;
 	long bit_pos;
-
-	BUG_ON(!rtnl_is_locked());
 
 	ctx = netfn_capwap_tun_pvt_get(dev);
 
@@ -1110,7 +1197,8 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update(struct net_device *dev, struct 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_ENABLED) - 1;
 	if (test_bit(bit_pos, ctx->state)) {
 		netfn_capwapmgr_warn("%px: Updating Tunnel configuration not supported when tunnel is enabled\n", dev);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_TUN_ENABLED]);
+		return NETFN_CAPWAPMGR_ERROR_TUN_ENABLED;
 	}
 
 	switch (cfg->type) {
@@ -1146,9 +1234,16 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tun_update(struct net_device *dev, struct 
 
 	case NETFN_CAPWAPMGR_DEL_NETFN_FLOW_COOKIE:
 		return netfn_capwapmgr_flow_cookie_del(ctx, &cfg->update_cfg.fcinfo);
+
+	case NETFN_CAPWAPMGR_DTLS_ENCAP_SESSION_SWITCH:
+		return netfn_capwapmgr_tun_dtls_session_switch(ctx, true);
+
+	case NETFN_CAPWAPMGR_DTLS_DECAP_SESSION_SWITCH:
+		return netfn_capwapmgr_tun_dtls_session_switch(ctx, false);
+
 	default:
 		netfn_capwapmgr_warn("%px: Unknown cfg update type received", dev);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
+		return NETFN_CAPWAPMGR_ERROR_INVALID_CFG;
 	}
 }
 EXPORT_SYMBOL(netfn_capwapmgr_tun_update);
@@ -1183,7 +1278,8 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tun_get_stats(struct net_device *dev, stru
 	 */
 	if (netfn_capwap_tun_stats_get(dev, &stats->capwap)) {
 		netfn_capwapmgr_warn("%px: Failed to capwap offload stats\n", dev);
-		return NETFN_CAPWAPMGR_ERROR_MAX;
+		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_STATS_GET]);
+		return NETFN_CAPWAPMGR_ERROR_STATS_GET;
 	}
 
 	return NETFN_CAPWAPMGR_SUCCESS;
