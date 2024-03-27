@@ -241,10 +241,10 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		 */
 		if ((v4->in_vlan_tag[0] & 0xFFF) != 0xFFF) {
 			cfg->ext_cfg.ext_valid_flags |= NETFN_CAPWAPMGR_EXT_VALID_VLAN;
-			cfg->ext_cfg.vlan.outer.ingress_vlan_tag = v4->in_vlan_tag[0];
-			if ((v4->in_vlan_tag[1] & 0xFFF) != 0xFFF) {
-				cfg->ext_cfg.vlan.inner.ingress_vlan_tag = v4->in_vlan_tag[1];
-			}
+			cfg->ext_cfg.vlan.inner.egress_vlan_tag = v4->in_vlan_tag[0];
+			cfg->ext_cfg.vlan.inner.ingress_vlan_tag = 0xFFF;
+			cfg->ext_cfg.vlan.outer.egress_vlan_tag = v4->in_vlan_tag[1];
+			cfg->ext_cfg.vlan.outer.ingress_vlan_tag = 0xFFF;
 		}
 
 		/*
@@ -285,10 +285,10 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 
 		if ((v6->in_vlan_tag[0] & 0xFFF) != 0xFFF) {
 			cfg->ext_cfg.ext_valid_flags |= NETFN_CAPWAPMGR_EXT_VALID_VLAN;
-			cfg->ext_cfg.vlan.outer.ingress_vlan_tag = v6->in_vlan_tag[0];
-			if ((v6->in_vlan_tag[1] & 0xFFF) != 0xFFF) {
-				cfg->ext_cfg.vlan.inner.ingress_vlan_tag = v6->in_vlan_tag[1];
-			}
+			cfg->ext_cfg.vlan.inner.egress_vlan_tag = v6->in_vlan_tag[0];
+			cfg->ext_cfg.vlan.inner.ingress_vlan_tag = 0xFFF;
+			cfg->ext_cfg.vlan.outer.egress_vlan_tag = v6->in_vlan_tag[1];
+			cfg->ext_cfg.vlan.outer.ingress_vlan_tag = 0xFFF;
 		}
 
 		/*

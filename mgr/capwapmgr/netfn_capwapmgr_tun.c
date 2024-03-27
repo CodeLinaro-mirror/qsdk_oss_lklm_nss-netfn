@@ -232,13 +232,6 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_rule_create(struct netfn_capwa
 	 */
 	memcpy(&original.tuple, &cfg->tuple, sizeof(netfn_tuple_t));
 
-	/*
-	 * TODO: Flow manager currently expects source and destination port in
-	 * host order. Once its fixed, update this.
-	 */
-	original.tuple.tuples.tuple_5.l4_src_ident = ntohs(cfg->tuple.tuples.tuple_5.l4_src_ident);
-	original.tuple.tuples.tuple_5.l4_dest_ident = ntohs(cfg->tuple.tuples.tuple_5.l4_dest_ident);
-
 	netfn_capwapmgr_tun_get_reply(&original.tuple, &reply.tuple);
 
 	/*
@@ -250,10 +243,12 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_rule_create(struct netfn_capwa
 		memcpy(&original.rule_info.vlan_rule, vlan, sizeof(struct netfn_flowmgr_vlan_rule));
 
 		/*
-		 * For the reply direction, update the egress VLAN tags.
+		 * For the reply direction, update the ingress VLAN tags.
 		 */
 		reply.rule_info.rule_valid_flags |= NETFN_FLOWMGR_VALID_RULE_FLAG_VLAN;
+		reply.rule_info.vlan_rule.inner.ingress_vlan_tag = vlan->inner.egress_vlan_tag;
 		reply.rule_info.vlan_rule.inner.egress_vlan_tag = vlan->inner.ingress_vlan_tag;
+		reply.rule_info.vlan_rule.outer.ingress_vlan_tag = vlan->outer.egress_vlan_tag;
 		reply.rule_info.vlan_rule.outer.egress_vlan_tag = vlan->outer.ingress_vlan_tag;
 	}
 
@@ -273,8 +268,8 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_rule_create(struct netfn_capwa
 
 	reply.flow_info.in_dev = flow->out_dev;
 	reply.flow_info.out_dev = flow->in_dev;
-	reply.flow_info.top_indev = flow->top_indev;
-	reply.flow_info.top_outdev = flow->top_outdev;
+	reply.flow_info.top_indev = flow->top_outdev;
+	reply.flow_info.top_outdev = flow->top_indev;
 	reply.flow_info.flow_mtu = flow->flow_mtu;
 
 	/*
@@ -287,6 +282,13 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_rule_create(struct netfn_capwa
 	 */
 	original.flow_flags |= NETFN_FLOWMGR_FLOW_FLAG_VP_FLOW;
 	reply.flow_flags |= NETFN_FLOWMGR_FLOW_FLAG_VP_FLOW;
+
+	/*
+	 * For the DL direction, use NOEDIT flag.
+	 * This is to ensure that the vlan header is not stripped of by PPE,
+	 * as we need to read the vlan pcp value and update the metaheader.
+	 */
+	reply.rule_info.rule_valid_flags |= NETFN_FLOWMGR_VALID_RULE_FLAG_NOEDIT_RULE;
 
 	/*
 	 * Create flow rule.
@@ -317,13 +319,6 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_rule_destroy(struct netfn_capw
 	 * Get original and reply directions tuple information from tunnel configuration.
 	 */
 	memcpy(&original.tuple, &cfg->tuple, sizeof(netfn_tuple_t));
-
-	/*
-	 * TODO: Flow manager currently expects source and destination port in
-	 * host order. Once its fixed, update this.
-	 */
-	original.tuple.tuples.tuple_5.l4_src_ident = ntohs(cfg->tuple.tuples.tuple_5.l4_src_ident);
-	original.tuple.tuples.tuple_5.l4_dest_ident = ntohs(cfg->tuple.tuples.tuple_5.l4_dest_ident);
 
 	netfn_capwapmgr_tun_get_reply(&original.tuple, &reply.tuple);
 
@@ -738,12 +733,11 @@ struct net_device *netfn_capwapmgr_tun_alloc(struct netfn_capwapmgr_tun_cfg *cfg
 	}
 
 	/*
-	 * Update the flow rule's IN dev as CAPWAP dev.
+	 * Update CAPWAP dev associated with the tunnel.
 	 */
 	dev_hold(capwap_dev);
 	ctx = netfn_capwap_tun_pvt_get(capwap_dev);
 	ctx->capwap_dev = capwap_dev;
-	cfg->flow.in_dev = capwap_dev;
 
 	if (!netfn_capwapmgr_tun_init(ctx, cfg)) {
 		netfn_capwapmgr_warn("%px:Failed to initialize the capwap tunnel\n", cfg);

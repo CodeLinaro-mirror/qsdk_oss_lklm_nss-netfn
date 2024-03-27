@@ -233,12 +233,6 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_add(struct net_device *dev, uint8_t 
 		goto fail;
 	}
 
-	/*
-	 * Update flow rules destination as capwap.
-	 */
-	cfg->flow.out_dev = tunid_dev;
-	cfg->flow.top_outdev = tunid_dev;
-
 	tunid_ctx = netfn_capwap_tun_pvt_get(tunid_dev);
 	tunid_ctx->capwap_dev = tunid_dev;
 
