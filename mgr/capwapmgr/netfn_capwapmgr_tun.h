@@ -51,6 +51,8 @@
 					/**< Tunnel deinit in progress */
 #define NETFN_CAPWAPMGR_TUN_STATE_DEINIT_DONE 0x0040
 					/**< Tunnel deinit done */
+#define NETFN_CAPWAPMGR_TUN_STATE_ENABLED 0x0080
+					/**< Tunnel enabled */
 
 #define NETFN_CAPWAPMGR_TUN_STATE_MAX 24
 					/**< Max tunnel states */
