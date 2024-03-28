@@ -446,10 +446,10 @@ static netfn_flow_cookie_status_t netfn_flow_cookie_db_entry_extract_tuple_ipv4(
 
 		t->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V4;
 		t->tuple_type = NETFN_TUPLE_5TUPLE;
-		t->tuples.tuple_5.src_ip.ip4.s_addr = ntohl(iph->saddr);
-		t->tuples.tuple_5.dest_ip.ip4.s_addr = ntohl(iph->daddr);
-		t->tuples.tuple_5.l4_src_ident = ntohs(tcph->source);
-		t->tuples.tuple_5.l4_dest_ident = ntohs(tcph->dest);
+		t->tuples.tuple_5.src_ip.ip4.s_addr = iph->saddr;
+		t->tuples.tuple_5.dest_ip.ip4.s_addr = iph->daddr;
+		t->tuples.tuple_5.l4_src_ident = tcph->source;
+		t->tuples.tuple_5.l4_dest_ident = tcph->dest;
 		t->tuples.tuple_5.protocol = iph->protocol;
 
 		return NETFN_FLOW_COOKIE_STATUS_SUCCESS;
@@ -461,10 +461,10 @@ static netfn_flow_cookie_status_t netfn_flow_cookie_db_entry_extract_tuple_ipv4(
 
 		t->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V4;
 		t->tuple_type = NETFN_TUPLE_5TUPLE;
-		t->tuples.tuple_5.src_ip.ip4.s_addr = ntohl(iph->saddr);
-		t->tuples.tuple_5.dest_ip.ip4.s_addr = ntohl(iph->daddr);
-		t->tuples.tuple_5.l4_src_ident = ntohs(udph->source);
-		t->tuples.tuple_5.l4_dest_ident = ntohs(udph->dest);
+		t->tuples.tuple_5.src_ip.ip4.s_addr = iph->saddr;
+		t->tuples.tuple_5.dest_ip.ip4.s_addr = iph->daddr;
+		t->tuples.tuple_5.l4_src_ident = udph->source;
+		t->tuples.tuple_5.l4_dest_ident = udph->dest;
 		t->tuples.tuple_5.protocol = iph->protocol;
 
 		return NETFN_FLOW_COOKIE_STATUS_SUCCESS;
@@ -507,16 +507,16 @@ static netfn_flow_cookie_status_t netfn_flow_cookie_db_entry_extract_tuple_ipv6(
 
 		t->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V6;
 		t->tuple_type = NETFN_TUPLE_5TUPLE;
-		t->tuples.tuple_5.src_ip.ip6.s6_addr32[0] = ntohl(ip6h->saddr.s6_addr32[0]);
-		t->tuples.tuple_5.src_ip.ip6.s6_addr32[1] = ntohl(ip6h->saddr.s6_addr32[1]);
-		t->tuples.tuple_5.src_ip.ip6.s6_addr32[2] = ntohl(ip6h->saddr.s6_addr32[2]);
-		t->tuples.tuple_5.src_ip.ip6.s6_addr32[3] = ntohl(ip6h->saddr.s6_addr32[3]);
-		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[0] = ntohl(ip6h->daddr.s6_addr32[0]);
-		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[1] = ntohl(ip6h->daddr.s6_addr32[1]);
-		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[2] = ntohl(ip6h->daddr.s6_addr32[2]);
-		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[3] = ntohl(ip6h->daddr.s6_addr32[3]);
-		t->tuples.tuple_5.l4_src_ident = ntohs(tcph->source);
-		t->tuples.tuple_5.l4_dest_ident = ntohs(tcph->dest);
+		t->tuples.tuple_5.src_ip.ip6.s6_addr32[0] = ip6h->saddr.s6_addr32[0];
+		t->tuples.tuple_5.src_ip.ip6.s6_addr32[1] = ip6h->saddr.s6_addr32[1];
+		t->tuples.tuple_5.src_ip.ip6.s6_addr32[2] = ip6h->saddr.s6_addr32[2];
+		t->tuples.tuple_5.src_ip.ip6.s6_addr32[3] = ip6h->saddr.s6_addr32[3];
+		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[0] = ip6h->daddr.s6_addr32[0];
+		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[1] = ip6h->daddr.s6_addr32[1];
+		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[2] = ip6h->daddr.s6_addr32[2];
+		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[3] = ip6h->daddr.s6_addr32[3];
+		t->tuples.tuple_5.l4_src_ident = tcph->source;
+		t->tuples.tuple_5.l4_dest_ident = tcph->dest;
 		t->tuples.tuple_5.protocol = ip6h->nexthdr;
 
 		return NETFN_FLOW_COOKIE_STATUS_SUCCESS;
@@ -528,16 +528,16 @@ static netfn_flow_cookie_status_t netfn_flow_cookie_db_entry_extract_tuple_ipv6(
 
 		t->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V6;
 		t->tuple_type = NETFN_TUPLE_5TUPLE;
-		t->tuples.tuple_5.src_ip.ip6.s6_addr32[0] = ntohl(ip6h->saddr.s6_addr32[0]);
-		t->tuples.tuple_5.src_ip.ip6.s6_addr32[1] = ntohl(ip6h->saddr.s6_addr32[1]);
-		t->tuples.tuple_5.src_ip.ip6.s6_addr32[2] = ntohl(ip6h->saddr.s6_addr32[2]);
-		t->tuples.tuple_5.src_ip.ip6.s6_addr32[3] = ntohl(ip6h->saddr.s6_addr32[3]);
-		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[0] = ntohl(ip6h->daddr.s6_addr32[0]);
-		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[1] = ntohl(ip6h->daddr.s6_addr32[1]);
-		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[2] = ntohl(ip6h->daddr.s6_addr32[2]);
-		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[3] = ntohl(ip6h->daddr.s6_addr32[3]);
-		t->tuples.tuple_5.l4_src_ident = ntohs(udph->source);
-		t->tuples.tuple_5.l4_dest_ident = ntohs(udph->dest);
+		t->tuples.tuple_5.src_ip.ip6.s6_addr32[0] = ip6h->saddr.s6_addr32[0];
+		t->tuples.tuple_5.src_ip.ip6.s6_addr32[1] = ip6h->saddr.s6_addr32[1];
+		t->tuples.tuple_5.src_ip.ip6.s6_addr32[2] = ip6h->saddr.s6_addr32[2];
+		t->tuples.tuple_5.src_ip.ip6.s6_addr32[3] = ip6h->saddr.s6_addr32[3];
+		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[0] = ip6h->daddr.s6_addr32[0];
+		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[1] = ip6h->daddr.s6_addr32[1];
+		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[2] = ip6h->daddr.s6_addr32[2];
+		t->tuples.tuple_5.dest_ip.ip6.s6_addr32[3] = ip6h->daddr.s6_addr32[3];
+		t->tuples.tuple_5.l4_src_ident = udph->source;
+		t->tuples.tuple_5.l4_dest_ident = udph->dest;
 		t->tuples.tuple_5.protocol = ip6h->nexthdr;
 
 		return NETFN_FLOW_COOKIE_STATUS_SUCCESS;
