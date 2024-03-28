@@ -114,6 +114,8 @@ struct netfn_capwap_dec_stats {
 	uint64_t err_large_frags;		/**< Error packet of oversize. */
 	uint64_t err_csum_fail;			/**< Error packet because of wrong checksum. */
 	uint64_t err_malformed;			/**< Error packet because of malformed packet. */
+	uint64_t err_excess_len;		/**< Error packet if frag size exceeds total len. */
+	uint64_t err_nwireless_len;		/**< Error packets because of invalid nwireless len. */
 	uint64_t reserve[2];			/**< Reserve for future use. */
 };
 

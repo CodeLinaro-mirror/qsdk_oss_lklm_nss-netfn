@@ -580,6 +580,7 @@ uint64_t netfn_capwap_enc_get_err_stats(struct netfn_capwap_enc *enc)
 	err_stats += stats->err_direct_dtls;
 	err_stats += stats->err_nwireless_len;
 	err_stats += stats->err_insufficient_hroom;
+	err_stats += stats->err_dev_tx;
 
 	return 0;
 }

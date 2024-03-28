@@ -55,6 +55,8 @@ static int8_t *g_dec_stats_str[] = {
 	"err_large_frags",
 	"err_csum_fail",
 	"err_malformed",
+	"err_excess_len",
+	"err_nwireless_len",
 	"res1",
 	"res2",
 };
@@ -63,7 +65,7 @@ static int8_t *g_dec_stats_str[] = {
  * netfn_capwap_dec_convert()
  *	Converts 802.11 to 802.3 pkt and adds meta header
  */
-static bool netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buff *skb)
+static void netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buff *skb)
 {
 	bool flow_id_lookup_needed = dec->features & NETFN_CAPWAP_FEATURES_FLOW_COOKIE;
 	struct netfn_capwap_dec_stats *stats = &dec->stats;
@@ -89,7 +91,7 @@ static bool netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buf
 	 * For exception packets we don't need conversion.
 	 */
 	if (unlikely(mdata->exception)) {
-		return true;
+		return;
 	}
 
 	/*
@@ -118,8 +120,8 @@ static bool netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buf
 	/*
 	 * Save mac addresses for constructing 802.3 frame.
 	 */
-	ether_addr_copy((u8 *)smac, (u8 *)wlan_hdr->addr1);
-	ether_addr_copy((u8 *)dmac, (u8 *)wlan_hdr->addr3);
+	ether_addr_copy((u8 *)smac, (u8 *)wlan_hdr->addr3);
+	ether_addr_copy((u8 *)dmac, (u8 *)wlan_hdr->addr1);
 
 	next_hdr += sizeof(*wlan_hdr);
 
@@ -159,13 +161,13 @@ add_prehdr:
 	__skb_push(skb, start - next_hdr);
 
 	if (!flow_id_lookup_needed) {
-		return true;
+		return;
 	}
 
 	d = netfn_capwap_get_db_handle();
 	if (!d) {
 		NETFN_CAPWAP_TUN_STATS_INC(&stats->flow_cookie_no_db);
-		return true;
+		return;
 	}
 
 	/*
@@ -180,13 +182,12 @@ add_prehdr:
 	 */
 	nfc_status = netfn_flow_cookie_db_entry_get_flow_cookie_using_skb(d, skb, offset, &nfc);
 	if (nfc_status != NETFN_FLOW_COOKIE_STATUS_SUCCESS) {
-		return true;
+		return;
 	}
 
 	phdr->flow_id = nfc.flow_id;
 	phdr->scs_sdwf_id = nfc.scs_id;
 	phdr->type |= (nfc.valid_flag & NETFN_CAPWAP_DEC_PHDR_TYPE_MASK);
-	return true;
 }
 
 /*
@@ -253,10 +254,7 @@ static struct sk_buff *netfn_capwap_dec_fast_reasm(struct netfn_capwap_dec *dec,
 	/*
 	 * Convert to 802.11 if needed and attach meta header.
 	 */
-	if (!netfn_capwap_dec_convert(dec, skb1)) {
-		__skb_queue_head(q_free, skb1);
-		return NULL;
-	}
+	netfn_capwap_dec_convert(dec, skb1);
 
 	NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.fast_reasm);
 	return skb1;
@@ -365,10 +363,9 @@ static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec *dec,
 	 * Check if total payload size exceeds max payload size
 	 */
 	if (unlikely(frags->tot_sz > dec->max_payload_sz)) {
-		NETFN_CAPWAP_TUN_STATS_INC(&stats->err_large_frags);
+		NETFN_CAPWAP_TUN_STATS_ADD(&stats->err_large_frags, skb_queue_len(frag_list));
 		dev_kfree_skb_list_fast(frag_list);
-		netfn_capwap_frags_init(frags);
-		return NULL;
+		goto done;
 	}
 
 	/*
@@ -381,6 +378,17 @@ static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec *dec,
 	}
 
 	/*
+	 * This is the case where either:
+	 * 1. We have received duplicate fragments.
+	 * 2. Or we have received overlapping fragments.
+	 */
+	if (unlikely(frags->tot_sz && (frags->frag_sz > frags->tot_sz))) {
+		NETFN_CAPWAP_TUN_STATS_ADD(&stats->err_excess_len, skb_queue_len(frag_list));
+		dev_kfree_skb_list_fast(frag_list);
+		goto done;
+	}
+
+	/*
 	 * Check if we have received all frags.
 	 */
 	if (frags->frag_sz != frags->tot_sz) {
@@ -388,14 +396,14 @@ static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec *dec,
 	}
 
 	reasm_skb = netfn_capwap_dec_linearize(frags, stats);
+	if (!reasm_skb) {
+		goto done;
+	}
 
 	/*
 	 * Convert to 802.11 if needed and attach meta header.
 	 */
-	if (!netfn_capwap_dec_convert(dec, reasm_skb)) {
-		__skb_queue_head(q_free, reasm_skb);
-		goto done;
-	}
+	netfn_capwap_dec_convert(dec, reasm_skb);
 
 	NETFN_CAPWAP_TUN_STATS_INC(&stats->slow_reasm);
 done:
@@ -474,6 +482,7 @@ static uint8_t *netfn_capwap_dec_capwap(struct netfn_capwap_dec *dec, struct sk_
 		 */
 		nwireless = cw_hlen - sizeof(*nch);
 		if (unlikely((nwireless / sizeof(*winfo)) > NETFN_CAPWAP_MAX_NWIRELESS)) {
+			NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.err_nwireless_len);
 			return start + next_hdr;
 		}
 
@@ -847,6 +856,8 @@ uint64_t netfn_capwap_dec_get_err_stats(struct netfn_capwap_dec *dec)
 	err_stats += stats->err_large_frags;
 	err_stats += stats->err_csum_fail;
 	err_stats += stats->err_malformed;
+	err_stats += stats->err_excess_len;
+	err_stats += stats->err_nwireless_len;
 
 	return err_stats;
 }
@@ -861,6 +872,7 @@ uint64_t netfn_capwap_dec_get_drop_stats(struct netfn_capwap_dec *dec)
 	uint64_t drop_stats = 0;
 
 	drop_stats += stats->drop_missing_frags;
+	drop_stats += stats->drop_queue_full;
 
 	return drop_stats;
 }

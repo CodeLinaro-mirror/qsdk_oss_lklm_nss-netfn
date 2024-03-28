@@ -431,6 +431,11 @@ static ssize_t netfn_capwap_tun_stats_show(struct file *fp, char __user *ubuf, s
 	}
 
 	/*
+	 * Update stats before printing.
+	 */
+	netfn_capwap_tun_stats_update(nct);
+
+	/*
 	 * Print pkt stats.
 	 */
 	BUILD_BUG_ON(ARRAY_SIZE(g_tun_stats_str) != NETFN_CAPWAP_TUN_STATS_MAX);
