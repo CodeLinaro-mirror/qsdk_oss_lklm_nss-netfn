@@ -25,6 +25,7 @@
 #include <linux/seq_file.h>
 #include <linux/rtnetlink.h>
 
+#include <ppe_drv.h>
 #include <netfn_capwapmgr.h>
 #include "netfn_capwapmgr_priv.h"
 #include "netfn_capwapmgr_tun.h"
@@ -330,10 +331,15 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_rule_destroy(struct netfn_capw
 
 	/*
 	 * Destroy flow rule.
+	 *
+	 * We check for PPE error code as well, since theres a posibility that PPE flushed the
+	 * flow rule because of some error packets. And in this case we should continue to
+	 * destroy the tunnel.
 	 */
 	netfn_status = netfn_flowmgr_rule_decel(&original, &reply, NETFN_FLOWMGR_ACCEL_MODE_PPE);
-	if (NETFN_FLOWMGR_GET_NETFN_ERROR_CODE(netfn_status) != NETFN_FLOWMGR_RET_SUCCESS) {
-		netfn_capwapmgr_warn("%px: Failed to push flow rule flow_mgr_error %d,ae_error %d",
+	if ((NETFN_FLOWMGR_GET_NETFN_ERROR_CODE(netfn_status) != NETFN_FLOWMGR_RET_SUCCESS) &&
+		(NETFN_FLOWMGR_GET_AE_ERROR_CODE(netfn_status) != PPE_DRV_RET_FAILURE_DESTROY_NO_CONN)) {
+		netfn_capwapmgr_warn("%px: Failed to destroy flow rule flow_mgr_error %d,ae_error %d",
 				cfg,
 				NETFN_FLOWMGR_GET_NETFN_ERROR_CODE(netfn_status),
 				NETFN_FLOWMGR_GET_AE_ERROR_CODE(netfn_status));
