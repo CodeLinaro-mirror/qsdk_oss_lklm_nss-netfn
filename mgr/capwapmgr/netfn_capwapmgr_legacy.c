@@ -27,6 +27,7 @@
 #include <linux/if_ether.h>
 #include <linux/netdevice.h>
 #include <linux/if_pppox.h>
+#include <linux/udp.h>
 
 #include <ppe_drv_iface.h>
 #include <netfn_capwapmgr.h>
@@ -417,6 +418,14 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 	cfg->capwap.enc.ttl = capwap_rule->encap.ttl;
 	cfg->capwap.enc.tos = capwap_rule->encap.tos;
 	cfg->capwap.enc.mtu = cfg->flow.flow_mtu;
+
+	/*
+	 * If protocol is UDPLite checksum coverage is set to size of udphdr.
+	 * In non-legacy mode it should be passed from user.
+	 */
+	if (tuple->tuples.tuple_5.protocol == IPPROTO_UDPLITE) {
+		cfg->capwap.enc.csum_cov = sizeof(struct udphdr);
+	}
 
 	cfg->capwap.dec.max_frags = capwap_rule->decap.max_fragments;
 	cfg->capwap.dec.max_payload_sz = capwap_rule->decap.max_buffer_size;

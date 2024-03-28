@@ -155,7 +155,7 @@ static void netfn_capwap_enc_l3(struct netfn_capwap_enc *enc, struct sk_buff *sk
 
 		iph->version = 4;
 		iph->ihl = sizeof(*iph) >> 2;
-		iph->tos = mdata->phdr.dscp;
+		iph->tos = (mdata->phdr.dscp << 2);
 		iph->tot_len = htons(skb->len);
 		iph->id = htons(enc->ipv4_id++);
 		iph->frag_off = 0;
@@ -174,7 +174,7 @@ static void netfn_capwap_enc_l3(struct netfn_capwap_enc *enc, struct sk_buff *sk
 	skb->protocol = htons(ETH_P_IPV6);
 
 	ip6h->version = 6;
-	ip6_flow_hdr(ip6h, mdata->phdr.dscp, 0);	/* Sets dscp and flow label. */
+	ip6_flow_hdr(ip6h, (mdata->phdr.dscp << 2), 0);	/* Sets dscp and flow label. */
 	ip6h->nexthdr = hdr->proto_next_hdr;
 	ip6h->payload_len = htons(skb->len - sizeof(*ip6h));
 	ip6h->hop_limit = hdr->ttl;
@@ -318,7 +318,7 @@ static bool netfn_capwap_enc_frag(struct netfn_capwap_enc *enc, struct sk_buff *
 
 		skb = dev_alloc_skb(skb_size);
 		if (!skb) {
-			pr_debug("%px: Unable to allocate memory for fragment len(%ld).\n", enc, skb_size);
+			pr_warn_ratelimited("%px: Unable to allocate memory for fragment len(%ld).\n", enc, skb_size);
 			NETFN_CAPWAP_TUN_STATS_INC(&stats->drop_mem_alloc);
 			return false;
 		}
@@ -432,7 +432,7 @@ bool netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, st
 	 * Fragment the skb if needed.
 	 */
 	if (unlikely(!netfn_capwap_enc_frag(enc, orig_skb, q_frag))) {
-		pr_debug("%px: Fragmentation failed\n", enc);
+		pr_warn_ratelimited("%px: Fragmentation failed\n", enc);
 		dev_kfree_skb_list_fast(q_frag);
 		return false;
 	}

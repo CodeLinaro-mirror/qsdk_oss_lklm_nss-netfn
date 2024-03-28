@@ -101,6 +101,8 @@ static bool netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buf
 		goto add_prehdr;
 	}
 
+	phdr->type |= NETFN_CAPWAP_PKT_TYPE_80211;
+
 	/*
 	 * We only convert 802.11 DATA frame. In case of non-data packets
 	 * we add meta header and punt to host.
@@ -274,7 +276,7 @@ static struct sk_buff *netfn_capwap_dec_linearize(struct netfn_capwap_frags *fra
 	skb_size = frags->tot_sz + NETFN_CAPWAP_HEADROOM_RESERVE + NETFN_CAPWAP_TAILROOM_RESERVE;
 	skb = dev_alloc_skb(skb_size);
 	if (!skb) {
-		pr_debug("%px: Unable to allocate skb of size(%d)\n", &frags->list, skb_size);
+		pr_warn_ratelimited("%px: Unable to allocate skb of size(%d)\n", &frags->list, skb_size);
 		dev_kfree_skb_list_fast(&frags->list);
 		return NULL;
 	}
@@ -476,7 +478,7 @@ static uint8_t *netfn_capwap_dec_capwap(struct netfn_capwap_dec *dec, struct sk_
 		}
 
 		BUILD_BUG_ON(NETFN_CAPWAP_MAX_NWIRELESS > sizeof(*winfo));
-		preh->nwireless = nwireless;
+		preh->nwireless = (nwireless / sizeof(*winfo));
 		*((struct netfn_capwap_winfo *)preh->wl_info) = *winfo;
 
 		/*
@@ -527,14 +529,14 @@ static uint8_t *netfn_capwap_dec_l3(struct netfn_capwap_dec *dec, struct sk_buff
 	if (ntohs(skb->protocol) == ETH_P_IP) {
 		iph = (struct iphdr *)start;
 
-		preh->dscp = ipv4_get_dsfield(iph);
+		preh->dscp = (ipv4_get_dsfield(iph) >> 2);
 		skb->protocol = iph->protocol;
 		return start + sizeof(*iph);
 	}
 
 	ip6h = (struct ipv6hdr *)start;
 
-	preh->dscp = ipv6_get_dsfield(ip6h);
+	preh->dscp = (ipv6_get_dsfield(ip6h) >> 2);
 	skb->protocol = ip6h->nexthdr;
 	return start + sizeof(*ip6h);
 }
@@ -597,7 +599,7 @@ static bool netfn_capwap_dec(struct netfn_capwap_dec *dec, struct sk_buff *skb, 
 	 * Its stripped by DTLS.
 	 */
 	if (dec->features & NETFN_CAPWAP_FEATURES_DTLS) {
-		preh.dscp = skb->priority;
+		preh.dscp = (skb->priority >> 2);
 		next_hdr = netfn_capwap_dec_capwap(dec, skb, next_hdr, &preh);
 		preh.vlan_pcp = skb_vlan_tag_get_prio(skb);
 		goto skip_headers;
