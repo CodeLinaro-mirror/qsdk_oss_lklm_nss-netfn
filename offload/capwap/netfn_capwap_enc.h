@@ -91,4 +91,16 @@ bool netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct 
  */
 void netfn_capwap_enc_mtu_update(struct netfn_capwap_enc *enc, unsigned int mtu);
 
+/*
+ * netfn_capwap_enc_get_err_stats()
+ *	Accumulates encapsulation error stats and return sum
+ */
+uint64_t netfn_capwap_enc_get_err_stats(struct netfn_capwap_enc *enc);
+
+/*
+ * netfn_capwap_enc_get_drop_stats()
+ *	Accumulates encapsulation drop stats and return sum
+ */
+uint64_t netfn_capwap_enc_get_drop_stats(struct netfn_capwap_enc *enc);
+
 #endif /* __NETFN_CAPWAP_ENC_H */

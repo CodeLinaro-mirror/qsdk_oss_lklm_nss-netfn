@@ -464,9 +464,11 @@ struct nss_capwap_pn_stats {
 	uint64_t rx_packets;		/**< Number of packets received. */
 	uint64_t rx_bytes;		/**< Number of bytes received. */
 	uint64_t rx_dropped;		/**< Number of dropped Rx packets. */
+	uint64_t rx_errors;             /**< Total rx error. */
 	uint64_t tx_packets;		/**< Number of packets transmitted. */
 	uint64_t tx_bytes;		/**< Number of bytes transmitted. */
 	uint64_t tx_dropped;		/**< Number of dropped Tx packets. */
+	uint64_t tx_errors;             /**< Total tx error. */
 };
 
 /**
@@ -543,8 +545,6 @@ struct nss_capwap_tunnel_stats {
 			/**< Exceeds max fragments allowed (10). */
 	uint64_t rx_drop_missing_frags;
 			/**< Re-assembly failure because of missing fragments. */
-	uint64_t rx_drop_linearize_fail;
-			/**< Drop because of linearization failure. */
 	uint64_t tx_keepalive_pkts;
 			/**< Keep alive packets received by offload engine. */
 };

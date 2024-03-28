@@ -68,4 +68,17 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
  *	Initializes the decap object.
  */
 bool netfn_capwap_dec_init(struct netfn_capwap_dec *dec, struct netfn_capwap_dec_cfg *cfg, struct netfn_capwap_tun *nct);
+
+/*
+ * netfn_capwap_dec_get_err_stats()
+ *	Accumulates decapsulation error stats and return sum
+ */
+uint64_t netfn_capwap_dec_get_err_stats(struct netfn_capwap_dec *dec);
+
+/*
+ * netfn_capwap_dec_get_drop_stats()
+ *	Accumulates decapsulation drop stats and return sum
+ */
+uint64_t netfn_capwap_dec_get_drop_stats(struct netfn_capwap_dec *dec);
+
 #endif /* __NETFN_CAPWAP_DEC_H */

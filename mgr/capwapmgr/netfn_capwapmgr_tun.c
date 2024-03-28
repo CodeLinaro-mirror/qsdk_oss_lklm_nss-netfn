@@ -120,10 +120,12 @@ static int netfn_capwapmgr_tun_stats_print(struct seq_file *sf, void *ptr)
 	pkt_stats = &stats.pkts;
 	seq_printf(sf, "\t[%s]: %llu\n", "Tx Packets", pkt_stats->tx_pkts);
 	seq_printf(sf, "\t[%s]: %llu\n", "Tx Bytes", pkt_stats->tx_bytes);
-	seq_printf(sf, "\t[%s]: %llu\n", "Tx Failures", pkt_stats->tx_failures);
+	seq_printf(sf, "\t[%s]: %llu\n", "Tx error", pkt_stats->tx_errors);
+	seq_printf(sf, "\t[%s]: %llu\n", "Tx dropped", pkt_stats->tx_dropped);
 	seq_printf(sf, "\t[%s]: %llu\n", "Rx Packets", pkt_stats->rx_pkts);
 	seq_printf(sf, "\t[%s]: %llu\n", "Rx Bytes", pkt_stats->rx_bytes);
-	seq_printf(sf, "\t[%s]: %llu\n", "Rx Failures", pkt_stats->rx_failures);
+	seq_printf(sf, "\t[%s]: %llu\n", "Rx error", pkt_stats->rx_errors);
+	seq_printf(sf, "\t[%s]: %llu\n", "Rx dropped", pkt_stats->rx_dropped);
 	seq_puts(sf, "\n");
 
 	seq_puts(sf, "\n Flow stats \n");
