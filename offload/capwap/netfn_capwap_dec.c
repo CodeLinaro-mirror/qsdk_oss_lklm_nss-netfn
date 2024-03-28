@@ -718,8 +718,8 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 		return false;
 	}
 
-	__skb_queue_head_init(&q_frags);
-	__skb_queue_head_init(&q_free);
+	skb_queue_head_init(&q_frags);
+	skb_queue_head_init(&q_free);
 	while (likely(skb_queue_len(q_head))) {
 		skb = __skb_dequeue(q_head);
 
