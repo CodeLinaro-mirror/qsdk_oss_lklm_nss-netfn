@@ -927,7 +927,7 @@ bool netfn_capwapmgr_tun_init(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_
 	}
 
 	rtnl_lock();
-	__dev_set_mtu(ctx->dtls_dev, ctx->cfg.flow.flow_mtu);
+	__dev_set_mtu(ctx->dtls_dev, cfg->flow.flow_mtu);
 	rtnl_unlock();
 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DTLS_CONFIGURED) - 1;
