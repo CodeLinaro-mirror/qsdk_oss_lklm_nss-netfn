@@ -137,9 +137,9 @@ bool netfn_auto_flowmgr_parse_ip_xlate(struct netfn_flowmgr_create_rule *origina
 	uint32_t ip_version;
 
 	nla_for_each_nested(ip_xlate_rule, attr, rem) {
-		netfn_auto_info("ip_xlate_rule->nla_type: %d\n", ip_xlate_rule->nla_type);
+		netfn_auto_info("ip_xlate_rule->nla_type: %d\n", nla_type(ip_xlate_rule));
 
-		switch(ip_xlate_rule->nla_type) {
+		switch(nla_type(ip_xlate_rule)) {
 		case IP_VERSION :
 			ip_version = nla_get_u32(ip_xlate_rule);
 			netfn_auto_info("From Netlink, ip version: %d\n", ip_version);
@@ -200,7 +200,7 @@ bool netfn_auto_flowmgr_parse_vlan(struct netfn_flowmgr_create_rule *original, s
 	netfn_auto_info("VLAN_RULE\n");
 	nla_for_each_nested(vlan_rule, attr, rem) {
 
-		switch(vlan_rule->nla_type) {
+		switch(nla_type(vlan_rule)) {
 		case INNER_INGRESS:
 			_inner = nla_data(vlan_rule);
 			if(kstrtou32(_inner, 16, &inner) < 0) {

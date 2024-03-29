@@ -25,22 +25,6 @@
 #include <netfn_flow_cookie.h>
 
 /*
- * TODO: can be moved to netfn_auto.h
- */
-uint8_t string_to_int(const char* str) {
-	const uint32_t prime = 16777619;
-	uint32_t hash = 2166136261;
-
-	while (*str) {
-		hash ^= (uint8_t)*str;
-		hash *= prime;
-		str++;
-	}
-
-	return (uint8_t)hash;
-}
-
-/*
  * netfn_auto_flowcookie_parse_tuple()
  * 	flowcookie tuple parse
  */

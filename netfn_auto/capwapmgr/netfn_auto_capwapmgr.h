@@ -79,7 +79,7 @@ bool netfn_auto_parse_vlan_rule(struct netfn_flowmgr_vlan_rule *vlan_rule, struc
 	char *_inner, *_outer;
 	netfn_auto_info("\nVLAN_RULE\n");
 	nla_for_each_nested(attr, vlan_info, rem) {
-		switch(attr->nla_type) {
+		switch(nla_type(attr)) {
 		case INNER_INGRESS:
 			_inner = nla_data(attr);
 			if(kstrtou32(_inner, 16, &inner) < 0) {
@@ -143,10 +143,10 @@ bool netfn_auto_capwap_parse_encap_cfg(struct netfn_capwap_enc_cfg *cfg, struct 
 		int rem_flag, flag = 0;
 		char *data;
 
-		switch(attr->nla_type) {
+		switch(nla_type(attr)) {
 		case FLAGS:
 			nla_for_each_nested(flags, attr, rem_flag) {
-				switch(flags->nla_type) {
+				switch(nla_type(flags)) {
 				case VLAN:
 					flag |= NSS_CAPWAP_RULE_CREATE_VLAN_CONFIGURED;
 					netfn_auto_info("FLAG: VLAN\n");
@@ -160,7 +160,7 @@ bool netfn_auto_capwap_parse_encap_cfg(struct netfn_capwap_enc_cfg *cfg, struct 
 					netfn_auto_info("FLAG: UDP_LITE\n");
 					break;
 				default:
-					netfn_auto_info("FLAG: WRONG FLAG: %d\n", flags->nla_type);
+					netfn_auto_info("FLAG: WRONG FLAG: %d\n", nla_type(flags));
 				}
 			}
 			netfn_auto_info("FLAG is %d\n", flag);
@@ -208,7 +208,7 @@ bool netfn_auto_capwap_parse_encap_cfg(struct netfn_capwap_enc_cfg *cfg, struct 
 			break;
 
 		default:
-			netfn_auto_info("Wrong attribute in capwap_encap_cfg %d\n", attr->nla_type);
+			netfn_auto_info("Wrong attribute in capwap_encap_cfg %d\n", nla_type(attr));
 			return false;
 		}
 	}
@@ -222,9 +222,9 @@ bool netfn_auto_capwap_parse_decap_cfg(struct netfn_capwap_dec_cfg *cfg, struct 
 	int rem;
 
 	nla_for_each_nested(attr, decap_cfg, rem) {
-		if(attr->nla_type == MAX_FRAGS) {
+		if(nla_type(attr) == MAX_FRAGS) {
 			cfg->max_frags = nla_get_u32(attr);
-		} else if (attr->nla_type == MAX_PAYLOAD_SIZE) {
+		} else if (nla_type(attr) == MAX_PAYLOAD_SIZE) {
 			cfg->max_payload_sz = (uint16_t)nla_get_u32(attr);
 		}
 	}
@@ -239,8 +239,8 @@ int netfn_auto_capwap_legacy_parse_ipv4_create(struct nlattr *ip_rule_info, stru
 	char *mac_addr;
 	struct nlattr *return_info = NULL, *flow_info = NULL, *qos_info = NULL, *dscp_info = NULL, *attr = NULL, *flags = NULL;
 	nla_for_each_nested(attr, ip_rule_info, rem) {
-		netfn_auto_info("IP_RULE attr->nla_type: %d\n", attr->nla_type);
-		switch(attr->nla_type) {
+		netfn_auto_info("IP_RULE attr->nla_type: %d\n", nla_type(attr));
+		switch(nla_type(attr)) {
 		case SRC_IF_NUM:
 			ip_rule->src_interface_num = nla_get_u32(attr);
 			netfn_auto_info(" src_interface_num: %d\n", ip_rule->src_interface_num);
@@ -256,7 +256,7 @@ int netfn_auto_capwap_legacy_parse_ipv4_create(struct nlattr *ip_rule_info, stru
 		case FLAGS :
 			nla_for_each_nested(flags, attr, rem_flag) {
 				flag = 0;
-				switch(flags->nla_type) {
+				switch(nla_type(flags)) {
 				case VLAN:
 					flag |= NSS_CAPWAP_RULE_CREATE_VLAN_CONFIGURED;
 					netfn_auto_info("FLAG: VLAN\n");
@@ -373,8 +373,8 @@ int netfn_auto_capwap_legacy_parse_ipv4_create(struct nlattr *ip_rule_info, stru
 
 		case FLOW_INFO :
 			nla_for_each_nested(flow_info, attr, flow_info_rem) {
-				netfn_auto_info("IP_RULE FLOW_INFO attr->nla_type: %d\n", flow_info->nla_type);
-				switch(flow_info->nla_type) {
+				netfn_auto_info("IP_RULE FLOW_INFO attr->nla_type: %d\n", nla_type(flow_info));
+				switch(nla_type(flow_info)) {
 				case FLOW_PPPOE_IF_EXIST :
 					ip_rule->flow_pppoe_if_exist = nla_get_u32(flow_info);
 					netfn_auto_info("IP_RULE_flow_pppoe_if_exist : %d\n", ip_rule->flow_pppoe_if_exist);
@@ -385,7 +385,7 @@ int netfn_auto_capwap_legacy_parse_ipv4_create(struct nlattr *ip_rule_info, stru
 					break;
 
 				default :
-					netfn_auto_info("Wrong attr %d in IP_RULE\n", flow_info->nla_type);
+					netfn_auto_info("Wrong attr %d in IP_RULE\n", nla_type(flow_info));
 					break;
 				}
 			}
@@ -393,8 +393,8 @@ int netfn_auto_capwap_legacy_parse_ipv4_create(struct nlattr *ip_rule_info, stru
 
 		case RETURN_INFO :
 			nla_for_each_nested(return_info, attr, return_info_rem) {
-				netfn_auto_info("IP_RULE RETURN_INFO attr->nla_type: %d\n", return_info->nla_type);
-				switch(return_info->nla_type) {
+				netfn_auto_info("IP_RULE RETURN_INFO attr->nla_type: %d\n", nla_type(return_info));
+				switch(nla_type(return_info)) {
 				case RETURN_PPPOE_IF_EXIST :
 					ip_rule->return_pppoe_if_exist = nla_get_u32(return_info);
 					netfn_auto_info("IP_RULE_return_pppoe_if_exist : %d\n", ip_rule->return_pppoe_if_exist);
@@ -404,7 +404,7 @@ int netfn_auto_capwap_legacy_parse_ipv4_create(struct nlattr *ip_rule_info, stru
 					netfn_auto_info("IP_RULE_return_pppoe_if_num : %d\n", ip_rule->return_pppoe_if_num);
 					break;
 				default :
-					netfn_auto_info("Wrong attr %d in IP_RULE\n", return_info->nla_type);
+					netfn_auto_info("Wrong attr %d in IP_RULE\n", nla_type(return_info));
 					break;
 				}
 			}
@@ -418,8 +418,8 @@ int netfn_auto_capwap_legacy_parse_ipv4_create(struct nlattr *ip_rule_info, stru
 
 		case QOS_INFO :
 			nla_for_each_nested(qos_info, attr, qos_info_rem) {
-				netfn_auto_info("IP_RULE QOS_INFO attr->nla_type: %d\n", qos_info->nla_type);
-				switch(qos_info->nla_type) {
+				netfn_auto_info("IP_RULE QOS_INFO attr->nla_type: %d\n", nla_type(qos_info));
+				switch(nla_type(qos_info)) {
 				case QOS_TAG:
 					ip_rule->qos_tag = nla_get_u32(qos_info);
 					netfn_auto_info("IP_RULE_qos_tag : %d\n", ip_rule->qos_tag);
@@ -433,7 +433,7 @@ int netfn_auto_capwap_legacy_parse_ipv4_create(struct nlattr *ip_rule_info, stru
 					netfn_auto_info("IP_RULE_return_qos_tag : %d\n", ip_rule->return_qos_tag);
 					break;
 				default :
-					netfn_auto_info("Wrong attr %d in IP_RULE\n", return_info->nla_type);
+					netfn_auto_info("Wrong attr %d in IP_RULE\n", nla_type(return_info));
 					break;
 				}
 			}
@@ -441,8 +441,8 @@ int netfn_auto_capwap_legacy_parse_ipv4_create(struct nlattr *ip_rule_info, stru
 
 		case DSCP_INFO :
 			nla_for_each_nested(dscp_info, attr, dscp_info_rem) {
-				netfn_auto_info("IP_RULE DSCP_INFO attr->nla_type: %d\n", dscp_info->nla_type);
-				switch(dscp_info->nla_type) {
+				netfn_auto_info("IP_RULE DSCP_INFO attr->nla_type: %d\n", nla_type(dscp_info));
+				switch(nla_type(dscp_info)) {
 				case DSCP_ITAG :
 					ip_rule->dscp_itag = nla_get_u32(dscp_info);
 					netfn_auto_info("IP_RULE_dscp_itag : %d\n", ip_rule->dscp_itag);
@@ -468,7 +468,7 @@ int netfn_auto_capwap_legacy_parse_ipv4_create(struct nlattr *ip_rule_info, stru
 					netfn_auto_info("IP_RULE_return_dscp : %d\n", ip_rule->return_dscp);
 					break;
 				default :
-					netfn_auto_info("Wrong attr %d in IP_RULE_DSCP_INFO\n", dscp_info->nla_type);
+					netfn_auto_info("Wrong attr %d in IP_RULE_DSCP_INFO\n", nla_type(dscp_info));
 					break;
 				}
 			}
@@ -515,7 +515,7 @@ int netfn_auto_capwap_legacy_parse_ipv4_create(struct nlattr *ip_rule_info, stru
 			break;
 
 		default :
-			netfn_auto_info("Wrong attr %d in IP_RULE\n", attr->nla_type);
+			netfn_auto_info("Wrong attr %d in IP_RULE\n", nla_type(attr));
 			break;
 		}
 	}
@@ -529,15 +529,15 @@ int netfn_auto_capwap_legacy_parse_capwap_rule(struct nlattr *capwap_rule_info, 
 	char *bssid, *sip, *dip;
 	int rem, decap_rem, encap_rem, rem_flag, flag;
 	nla_for_each_nested(attr, capwap_rule_info, rem) {
-		netfn_auto_info("CAPWAP_RULE attr->nla_type: %d\n", attr->nla_type);
-		switch(attr->nla_type) {
+		netfn_auto_info("CAPWAP_RULE attr->nla_type: %d\n", nla_type(attr));
+		switch(nla_type(attr)) {
 		/*
 		 * TODO: OUTER_SGT_VALUE missing
 		 */
 		case ENCAP:
 			nla_for_each_nested(encap, attr, encap_rem) {
-				netfn_auto_info("CAPWAP_RULE ENCAP attr->nla_type: %d\n", encap->nla_type);
-				switch (encap->nla_type) {
+				netfn_auto_info("CAPWAP_RULE ENCAP attr->nla_type: %d\n", nla_type(encap));
+				switch (nla_type(encap)) {
 				case SRC_IP:
 					sip = nla_data(encap);
 					netfn_auto_info("capwap_legacy_encap_sip<str> %s\n", sip);
@@ -597,15 +597,15 @@ int netfn_auto_capwap_legacy_parse_capwap_rule(struct nlattr *capwap_rule_info, 
 					break;
 
 				default :
-					netfn_auto_info("nWrong attr %d in CAPWAP_ENCAP_RULE\n", encap->nla_type);
+					netfn_auto_info("nWrong attr %d in CAPWAP_ENCAP_RULE\n", nla_type(encap));
 				}
 			}
 			break;
 
 		case DECAP:
 			nla_for_each_nested(decap, attr, decap_rem) {
-				netfn_auto_info("CAPWAP_RULE DECAP attr->nla_type: %d\n", decap->nla_type);
-				switch (decap->nla_type) {
+				netfn_auto_info("CAPWAP_RULE DECAP attr->nla_type: %d\n", nla_type(decap));
+				switch (nla_type(decap)) {
 				case MAX_FRAGS:
 					capwap_rule->decap.max_fragments = nla_get_u32(decap);
 					netfn_auto_info("CAPWAP_RULE_DECAP_MAX_FRAGS: %d\n", capwap_rule->decap.max_fragments);
@@ -617,7 +617,7 @@ int netfn_auto_capwap_legacy_parse_capwap_rule(struct nlattr *capwap_rule_info, 
 					break;
 
 				default :
-					netfn_auto_info("nWrong attr %d in CAPWAP_DECAP_RULE\n", decap->nla_type);
+					netfn_auto_info("nWrong attr %d in CAPWAP_DECAP_RULE\n", nla_type(decap));
 				}
 			}
 			break;
@@ -635,7 +635,7 @@ int netfn_auto_capwap_legacy_parse_capwap_rule(struct nlattr *capwap_rule_info, 
 		case TYPE_FLAGS:
 			nla_for_each_nested(flags, attr, rem_flag) {
 				flag = 0;
-				switch(flags->nla_type) {
+				switch(nla_type(flags)) {
 				case VLAN:
 					flag |= NSS_CAPWAP_RULE_CREATE_VLAN_CONFIGURED;
 					netfn_auto_info("FLAG: VLAN\n");
@@ -678,7 +678,7 @@ int netfn_auto_capwap_legacy_parse_capwap_rule(struct nlattr *capwap_rule_info, 
 			break;
 
 		default:
-			netfn_auto_info("Wrong attr %d in CAPWAP_RULE\n", attr->nla_type);
+			netfn_auto_info("Wrong attr %d in CAPWAP_RULE\n", nla_type(attr));
 			break;
 		}
 	}
@@ -699,7 +699,7 @@ void print_array(const uint8_t *array, size_t len)
 void hex_string_to_byte_array(const char *hex_string, uint8_t *byte_array, uint8_t len)
 {
 	int i;
-	for (i = 0; i < len/2; i++) {
+	for (i = 0; i < len; i++) {
 		sscanf(hex_string + 2*i + 2, "%2hhx", &byte_array[i]);
 	}
 }
@@ -712,7 +712,7 @@ int netfn_auto_capwap_legacy_parse_crypto_config(struct nlattr * crypto_config, 
 	char *data;
 
 	nla_for_each_nested(crypto_info, crypto_config, crypto_rem) {
-		switch(crypto_info->nla_type) {
+		switch(nla_type(crypto_info)) {
 		case DTLS_CRYPTO_ALGO:
 			crypto->algo = nla_get_u32(crypto_info);
 			netfn_auto_info("crypto->algo :%d\n", crypto->algo);
@@ -776,7 +776,7 @@ int netfn_auto_capwap_legacy_parse_crypto_config(struct nlattr * crypto_config, 
 			break;
 
 		default:
-			netfn_auto_info("Wrong value for dtls_crypto: %d\n", crypto_info->nla_type);
+			netfn_auto_info("Wrong value for dtls_crypto: %d\n", nla_type(crypto_info));
 		}
 	}
 
@@ -791,12 +791,12 @@ int netfn_auto_capwap_legacy_parse_dtlsmgr_config(struct nlattr *dtlsmgr_config_
 	char *sip, *dip;
 
 	nla_for_each_nested(attr, dtlsmgr_config_info, rem) {
-		netfn_auto_info("DTLS_CONFIG_INFO attr->nla_type: %d\n", attr->nla_type);
-		switch(attr->nla_type) {
+		netfn_auto_info("DTLS_CONFIG_INFO attr->nla_type: %d\n", nla_type(attr));
+		switch(nla_type(attr)) {
 		case FLAGS:
 			nla_for_each_nested(flags, attr, rem_flag) {
 				flag = 0;
-				switch(flags->nla_type) {
+				switch(nla_type(flags)) {
 				case ENC:
 					flag |= NETFN_DTLS_FLAG_ENC;
 					netfn_auto_info("FLAG: ENC\n");
@@ -837,8 +837,8 @@ int netfn_auto_capwap_legacy_parse_dtlsmgr_config(struct nlattr *dtlsmgr_config_
 
 		case ENCAP:
 			nla_for_each_nested(encap, attr, encap_rem) {
-				netfn_auto_info("DTLS_CONFIG_INFO_ENCAP attr->nla_type: %d\n", encap->nla_type);
-				switch (encap->nla_type) {
+				netfn_auto_info("DTLS_CONFIG_INFO_ENCAP attr->nla_type: %d\n", nla_type(encap));
+				switch (nla_type(encap)) {
 				case DTLS_CRYPTO:
 					crypto = &nss_dtlsmgr_config->encap.crypto;
 					netfn_auto_capwap_legacy_parse_crypto_config(encap, crypto);
@@ -907,8 +907,8 @@ int netfn_auto_capwap_legacy_parse_dtlsmgr_config(struct nlattr *dtlsmgr_config_
 
 		case DECAP:
 			nla_for_each_nested(decap, attr, decap_rem) {
-				netfn_auto_info("DTLS_CONFIG_INFO_DECAP attr->nla_type: %d\n", decap->nla_type);
-				switch(decap->nla_type) {
+				netfn_auto_info("DTLS_CONFIG_INFO_DECAP attr->nla_type: %d\n", nla_type(decap));
+				switch(nla_type(decap)) {
 				case DTLS_CRYPTO:
 					crypto = &nss_dtlsmgr_config->decap.crypto;
 					netfn_auto_capwap_legacy_parse_crypto_config(decap, crypto);
@@ -925,12 +925,12 @@ int netfn_auto_capwap_legacy_parse_dtlsmgr_config(struct nlattr *dtlsmgr_config_
 					break;
 
 				default:
-					netfn_auto_info("Wrong value for DTLS_DECAP: %d\n", decap->nla_type);
+					netfn_auto_info("Wrong value for DTLS_DECAP: %d\n", nla_type(decap));
 				}
 			}
 			break;
 		default:
-			netfn_auto_info("Wrong val for DTLS_CONFIG_INFO attr->nla_type: %d\n", attr->nla_type);
+			netfn_auto_info("Wrong val for DTLS_CONFIG_INFO attr->nla_type: %d\n", nla_type(attr));
 		}
 	}
 	return 1;
@@ -943,8 +943,8 @@ int netfn_auto_capwap_legacy_parse_ipv6_create(struct nlattr *ip_rule_info, stru
 	char *mac_addr;
 	struct nlattr *return_info = NULL, *flow_info = NULL, *qos_info = NULL, *dscp_info = NULL, *attr = NULL, *flags = NULL;
 	nla_for_each_nested(attr, ip_rule_info, rem) {
-		netfn_auto_info("IP_RULE attr->nla_type: %d\n", attr->nla_type);
-		switch(attr->nla_type) {
+		netfn_auto_info("IP_RULE attr->nla_type: %d\n", nla_type(attr));
+		switch(nla_type(attr)) {
 		case SRC_IF_NUM:
 			ip_rule->src_interface_num = nla_get_u32(attr);
 			netfn_auto_info(" src_interface_num: %d\n", ip_rule->src_interface_num);
@@ -960,7 +960,7 @@ int netfn_auto_capwap_legacy_parse_ipv6_create(struct nlattr *ip_rule_info, stru
 		case FLAGS :
 			nla_for_each_nested(flags, attr, rem_flag) {
 				flag = 0;
-				switch(flags->nla_type) {
+				switch(nla_type(flags)) {
 				case VLAN:
 					flag |= NSS_CAPWAP_RULE_CREATE_VLAN_CONFIGURED;
 					netfn_auto_info("FLAG: VLAN\n");
@@ -1032,8 +1032,8 @@ int netfn_auto_capwap_legacy_parse_ipv6_create(struct nlattr *ip_rule_info, stru
 
 		case FLOW_INFO :
 			nla_for_each_nested(flow_info, attr, flow_info_rem) {
-				netfn_auto_info("IP_RULE FLOW_INFO attr->nla_type: %d\n", flow_info->nla_type);
-				switch(flow_info->nla_type) {
+				netfn_auto_info("IP_RULE FLOW_INFO attr->nla_type: %d\n", nla_type(flow_info));
+				switch(nla_type(flow_info)) {
 				case FLOW_WINDOW_SCALE:
 					ip_rule->flow_window_scale = (uint8_t)nla_get_u32(flow_info);
 					netfn_auto_info("IP_RULE_flow_window_size : %d\n", ip_rule->flow_window_scale);
@@ -1059,7 +1059,7 @@ int netfn_auto_capwap_legacy_parse_ipv6_create(struct nlattr *ip_rule_info, stru
 					netfn_auto_info("IP_RULE_flow_pppoe_if_num : %d\n", ip_rule->flow_pppoe_if_num);
 					break;
 				default :
-					netfn_auto_info("Wrong attr %d in IP_RULE\n", flow_info->nla_type);
+					netfn_auto_info("Wrong attr %d in IP_RULE\n", nla_type(flow_info));
 					break;
 				}
 			}
@@ -1077,8 +1077,8 @@ int netfn_auto_capwap_legacy_parse_ipv6_create(struct nlattr *ip_rule_info, stru
 
 		case RETURN_INFO :
 			nla_for_each_nested(return_info, attr, return_info_rem) {
-				netfn_auto_info("IP_RULE RETURN_INFO attr->nla_type: %d\n", return_info->nla_type);
-				switch(return_info->nla_type) {
+				netfn_auto_info("IP_RULE RETURN_INFO attr->nla_type: %d\n", nla_type(return_info));
+				switch(nla_type(return_info)) {
 				case RETURN_WINDOW_SCALE:
 					ip_rule->return_window_scale = (uint8_t)nla_get_u32(return_info);
 					netfn_auto_info("IP_RULE_return_window_size : %d\n", ip_rule->return_window_scale);
@@ -1104,7 +1104,7 @@ int netfn_auto_capwap_legacy_parse_ipv6_create(struct nlattr *ip_rule_info, stru
 					netfn_auto_info("IP_RULE_return_pppoe_if_num : %d\n", ip_rule->return_pppoe_if_num);
 					break;
 				default :
-					netfn_auto_info("Wrong attr %d in IP_RULE\n", return_info->nla_type);
+					netfn_auto_info("Wrong attr %d in IP_RULE\n", nla_type(return_info));
 					break;
 				}
 			}
@@ -1128,8 +1128,8 @@ int netfn_auto_capwap_legacy_parse_ipv6_create(struct nlattr *ip_rule_info, stru
 
 		case QOS_INFO :
 			nla_for_each_nested(qos_info, attr, qos_info_rem) {
-				netfn_auto_info("IP_RULE QOS_INFO attr->nla_type: %d\n", qos_info->nla_type);
-				switch(qos_info->nla_type) {
+				netfn_auto_info("IP_RULE QOS_INFO attr->nla_type: %d\n", nla_type(qos_info));
+				switch(nla_type(qos_info)) {
 				case QOS_TAG:
 					ip_rule->qos_tag = nla_get_u32(qos_info);
 					netfn_auto_info("IP_RULE_qos_tag : %d\n", ip_rule->qos_tag);
@@ -1143,7 +1143,7 @@ int netfn_auto_capwap_legacy_parse_ipv6_create(struct nlattr *ip_rule_info, stru
 					netfn_auto_info("IP_RULE_return_qos_tag : %d\n", ip_rule->return_qos_tag);
 					break;
 				default :
-					netfn_auto_info("Wrong attr %d in IP_RULE\n", return_info->nla_type);
+					netfn_auto_info("Wrong attr %d in IP_RULE\n", nla_type(qos_info));
 					break;
 				}
 			}
@@ -1151,8 +1151,8 @@ int netfn_auto_capwap_legacy_parse_ipv6_create(struct nlattr *ip_rule_info, stru
 
 		case DSCP_INFO :
 			nla_for_each_nested(dscp_info, attr, dscp_info_rem) {
-				netfn_auto_info("IP_RULE DSCP_INFO attr->nla_type: %d\n", dscp_info->nla_type);
-				switch(dscp_info->nla_type) {
+				netfn_auto_info("IP_RULE DSCP_INFO attr->nla_type: %d\n", nla_type(dscp_info));
+				switch(nla_type(dscp_info)) {
 				case DSCP_ITAG :
 					ip_rule->dscp_itag = nla_get_u32(dscp_info);
 					netfn_auto_info("IP_RULE_dscp_itag : %d\n", ip_rule->dscp_itag);
@@ -1178,7 +1178,7 @@ int netfn_auto_capwap_legacy_parse_ipv6_create(struct nlattr *ip_rule_info, stru
 					netfn_auto_info("IP_RULE_return_dscp : %d\n", ip_rule->return_dscp);
 					break;
 				default :
-					netfn_auto_info("Wrong attr %d in IP_RULE_DSCP_INFO\n", dscp_info->nla_type);
+					netfn_auto_info("Wrong attr %d in IP_RULE_DSCP_INFO\n", nla_type(dscp_info));
 					break;
 				}
 			}
@@ -1225,7 +1225,7 @@ int netfn_auto_capwap_legacy_parse_ipv6_create(struct nlattr *ip_rule_info, stru
 			break;
 
 		default :
-			netfn_auto_info("Wrong attr %d in IP_RULE\n", attr->nla_type);
+			netfn_auto_info("Wrong attr %d in IP_RULE\n", nla_type(attr));
 			break;
 		}
 	}
@@ -1239,11 +1239,11 @@ int netfn_auto_capwap_legacy_parse_dtls_config_update(struct nlattr *dtls_config
 	int rem;
 
 	nla_for_each_nested(attr, dtls_config, rem) {
-		if(attr->nla_type == DTLS_CRYPTO) {
+		if(nla_type(attr) == DTLS_CRYPTO) {
 			netfn_auto_capwap_legacy_parse_crypto_config(attr, &udata->crypto);
-		} else if (attr->nla_type == DTLS_EPOCH) {
+		} else if (nla_type(attr) == DTLS_EPOCH) {
 			udata->epoch = (uint16_t)nla_get_u32(attr);
-		} else if (attr->nla_type == DTLS_WINDOW_SIZE) {
+		} else if (nla_type(attr) == DTLS_WINDOW_SIZE) {
 			udata->window_size = (uint16_t)nla_get_u32(attr);
 		}
 	}
@@ -1260,10 +1260,10 @@ int netfn_auto_capwap_parse_dtls_cfg(struct netfn_dtls_cfg *cfg, struct nlattr *
 	char *data;
 
 	nla_for_each_nested(attr, dtls_cfg, rem) {
-		switch(attr->nla_type) {
+		switch(nla_type(attr)) {
 		case DTLS_CRYPTO:
 			nla_for_each_nested(crypto, attr, rem_crypto) {
-				switch(crypto->nla_type) {
+				switch(nla_type(crypto)) {
 				case DTLS_CRYPTO_CIPHER_KEY_LEN:
 					cfg->base.cipher.key_len = (uint16_t)nla_get_u32(crypto);
 					break;
@@ -1314,7 +1314,7 @@ int netfn_auto_capwap_parse_dtls_cfg(struct netfn_dtls_cfg *cfg, struct nlattr *
 		case FLAGS:
 			flag = 0;
 			nla_for_each_nested(flags, attr, rem_flag) {
-				switch(flags->nla_type) {
+				switch(nla_type(flags)) {
 				case ENC:
 					flag |= NETFN_DTLS_FLAG_ENC;
 					netfn_auto_info("FLAG: NETFN_DTLS_FLAG_ENC\n");
