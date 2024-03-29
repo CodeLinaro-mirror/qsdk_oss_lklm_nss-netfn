@@ -1162,8 +1162,9 @@ static inline nss_capwapmgr_status_t nss_capwapmgr_dtls_rekey_tx_cipher_switch(s
  * Flow rule add types. Mutually exclusive fields.
  * This indicates whether SCS or SDWF ID is configured for inner packet lookup.
  */
-#define NSS_CAPWAPMR_FLOW_ATTR_SCS_VALID NETFN_CAPWAP_PKT_TYPE_SCS_ID_VALID					/**< SCS Identification valid in flow attributes. */
-#define NSS_CAPWAPMR_FLOW_ATTR_SDWF_VALID NETFN_CAPWAP_PKT_TYPE_SDWF_ID_VALID
+#define NSS_CAPWAP_FLOW_ATTR_SCS_VALID NETFN_CAPWAP_PKT_TYPE_SCS_ID_VALID
+			/**< SCS Identification valid in flow attributes. */
+#define NSS_CAPWAP_FLOW_ATTR_SDWF_VALID NETFN_CAPWAP_PKT_TYPE_SDWF_ID_VALID
 			/**< SDWF Identification valid in flow attributes. */
 
 /**
