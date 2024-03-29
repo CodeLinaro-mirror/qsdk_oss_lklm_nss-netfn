@@ -52,7 +52,7 @@ struct netfn_dtls_cfg {
 	__be16 version;				/* DTLS version (0xFFFE/v1.0 or 0xFDFE/v1.2) */
 	__be16 epoch;				/* Unique epoch value */
 	uint8_t df;				/* Default DF value for outer IP */
-	uint8_t dscp;				/* Default dscp value for outer IP */
+	uint8_t tos;				/* Default TOS/DS Field value for outer IP */
 	uint8_t hop_limit;			/* Default TTL limit for outer IP */
 };
 
