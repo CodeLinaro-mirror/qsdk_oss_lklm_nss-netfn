@@ -211,7 +211,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy2dtls(struct nss_dtlsmgr_config *dtl
 	if (dtls_data->encap.dscp_copy) {
 		netfn_dtls_cfg->flags |= NETFN_DTLS_FLAG_CP_TOS;
 	} else {
-		netfn_dtls_cfg->dscp = dtls_data->encap.dscp << 2;
+		netfn_dtls_cfg->tos = dtls_data->encap.dscp << 2;
 	}
 
 	/*

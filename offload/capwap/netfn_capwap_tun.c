@@ -29,6 +29,7 @@
 
 #include <ppe_vp_public.h>
 #include <ppe_drv.h>
+#include <netfn_dtls.h>
 
 #include "netfn_capwap.h"
 #include "netfn_capwap_priv.h"
@@ -91,16 +92,14 @@ fail:
  * netfn_capwap_tun_rx_handler()
  *	Receive an SKB queueu for processing.
  */
-static rx_handler_result_t netfn_capwap_tun_rx_handler(struct sk_buff **pskb)
+static void netfn_capwap_tun_rx_handler(struct sk_buff *skb, void *data)
 {
+	struct net_device *dev = data;
 	struct netfn_capwap_tun *nct;
-	struct sk_buff *skb = *pskb;
 
-	nct = netdev_priv(rcu_dereference_bh(skb->dev->rx_handler_data));
+	nct = netdev_priv(dev);
 
 	netfn_capwap_tun_rx(nct, skb);
-
-	return RX_HANDLER_CONSUMED;
 }
 
 /*
@@ -827,9 +826,7 @@ bool netfn_capwap_tun_bind(struct net_device *dev, struct net_device *next)
 	old_next_dev = xchg(&nct->next_dev, next);
 	netfn_capwap_enc_mtu_update(&nct->enc, next->mtu);
 	BUG_ON(old_next_dev != nct->vp_dev);
-	rtnl_lock();
-	netdev_rx_handler_register(next, &netfn_capwap_tun_rx_handler, dev);
-	rtnl_unlock();
+	netfn_dtls_register_data_cb(next, &netfn_capwap_tun_rx_handler, dev);
 
 	pr_info("%px: Successfully binded dev(%s)-->next(%s)\n", nct, dev->name, next->name);
 	return true;
@@ -852,9 +849,7 @@ bool netfn_capwap_tun_unbind(struct net_device *dev)
 	old_next_dev = xchg(&nct->next_dev, nct->vp_dev);
 	BUG_ON(old_next_dev == nct->vp_dev);
 
-	rtnl_lock();
-	netdev_rx_handler_unregister(old_next_dev);
-	rtnl_unlock();
+	netfn_dtls_unregister_data_cb(old_next_dev);
 	dev_put(old_next_dev);
 
 	pr_info("%px: Successfully unbinded(%s)\n", nct, dev->name);

@@ -21,6 +21,8 @@
 #include <netfn_dtls_types.h>
 #include <linux/netdevice.h>
 
+typedef void (*netfn_dtls_rx_handler_t)(struct sk_buff *skb, void *data);
+
 /*
  * A tunnel compose of two types of Session(s); one for encapsulation & one for decapsulation.
  * Each tunnel is represented using dev under which Session has to be inserted.
@@ -84,5 +86,26 @@ void netfn_dtls_tun_session_switch(struct net_device *dev, bool encap);
  * @param[in] epoch	Epoch value used during session addition.
  */
 void netfn_dtls_tun_session_del(struct net_device *dev, bool encap, __be16 epoch);
+
+/*
+ * netfn_dtls_register_data_cb
+ *	Register for DTLS data packet.
+ *
+ * @datatypes
+ * netfn_dtls_rx_handler_t
+ *
+ * @param[in] dev	DTLS device on which register.
+ * @param[in] cb	Callback handler.
+ * @param[in] cb_data	App data to pass during CB.
+ */
+bool netfn_dtls_register_data_cb(struct net_device *dev, netfn_dtls_rx_handler_t cb, void *cb_data);
+
+/*
+ * netfn_dtls_unregister_data_cb
+ *	Unregister for DTLS data packet.
+ *
+ * @param[in] dev	DTLS device on which register.
+ */
+void netfn_dtls_unregister_data_cb(struct net_device *dev);
 
 #endif /* __NETFN_DTLS_H */
