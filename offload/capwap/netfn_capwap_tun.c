@@ -229,6 +229,7 @@ static int netfn_capwap_tun_open(struct net_device *dev)
 		netfn_capwap_frags_init(&ctx->reasm_table[i]);
 	}
 
+	ctx->dec = &nct->dec;
 	rcu_assign_pointer(nct->dec.ctx, ctx);
 	netif_start_queue(dev);
 	return 0;

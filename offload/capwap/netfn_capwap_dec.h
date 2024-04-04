@@ -35,6 +35,7 @@ struct netfn_capwap_dec_ctx {
 	struct sk_buff *reasm_cache;		/* Fast reassembly buffer. */
 	struct netfn_capwap_frags reasm_table[NETFN_CAPWAP_TUN_MAX_REASM_WIN];
 						/* Slow reassembly frags queues. */
+	struct netfn_capwap_dec *dec;		/* Back pointer to parent. */
 };
 
 /*
