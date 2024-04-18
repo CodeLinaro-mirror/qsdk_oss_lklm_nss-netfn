@@ -170,23 +170,23 @@ static inline int netfn_auto_flowcookie_rule_add(struct sk_buff *skb, struct gen
 		}
 
 		nla_for_each_nested(attr, flow_cookie_info, rem) {
-			netfn_auto_info("\nattr->nla_type: %d\n", attr->nla_type);
-			if(attr->nla_type == FLOWCOOKIE_FLOW_ID) {
+			netfn_auto_info("\nattr->nla_type: %d\n", nla_type(attr));
+			if(nla_type(attr) == FLOWCOOKIE_FLOW_ID) {
 				flow_id = nla_get_u32(attr);
 				flow_cookie.flow_id = flow_id;
 				netfn_auto_info("\nFrom netlink, flow_cookie_flow_id :%d\n", flow_id);
-			} else if(attr->nla_type == FLOWCOOKIE_FLOW_MARK) {
+			} else if(nla_type(attr) == FLOWCOOKIE_FLOW_MARK) {
 				flow_mark = nla_get_u32(attr);
 				flow_cookie.flow_mark = flow_mark;
 				netfn_auto_info("\nFrom netlink, flow_cookie_flow_mark :%d\n", flow_mark);
-			} else if(attr->nla_type == FLOWCOOKIE_SAWF_HANDLE) {
+			} else if(nla_type(attr) == FLOWCOOKIE_SAWF_HANDLE) {
 				int rem, val;
 				struct nlattr *sawf_handle = NULL;
 				netfn_auto_info("\nFLOWCOOKIE_SAWF_HANDLE not empty\n");
 				nla_for_each_nested(sawf_handle, attr, rem) {
-					netfn_auto_info("\nsawf_handle->nla_type: %d\n", sawf_handle->nla_type);
+					netfn_auto_info("\nsawf_handle->nla_type: %d\n", nla_type(sawf_handle));
 
-					if(sawf_handle->nla_type == FLOWCOOKIE_SAWF_ID) {
+					if(nla_type(sawf_handle) == FLOWCOOKIE_SAWF_ID) {
 						val = nla_get_u32(sawf_handle);
 						flow_cookie.sawf_handle.sawf_id = val;
 						netfn_auto_info("\nFrom netlink, flow_cookie_sawf_id :%d\n", val);
@@ -323,8 +323,8 @@ static inline int netfn_auto_flowcookie_sawf_handle_get(struct sk_buff *skb, str
 
 		netfn_auto_info("\nFLOWCOOKIE_SAWF_HANDLE not empty\n");
 		nla_for_each_nested(sawf_handle, attr, rem) {
-			netfn_auto_info("\nsawf_handle->nla_type: %d\n", sawf_handle->nla_type);
-			if(sawf_handle->nla_type == FLOWCOOKIE_SAWF_ID) {
+			netfn_auto_info("\nsawf_handle->nla_type: %d\n", nla_type(sawf_handle));
+			if(nla_type(sawf_handle) == FLOWCOOKIE_SAWF_ID) {
 				val = nla_get_u32(sawf_handle);
 				netfn_auto_sawf_handle.sawf_id = val;
 				netfn_auto_info("\nFrom netlink, flow_cookie_sawf_id :%d\n", val);

@@ -586,7 +586,6 @@ bool netfn_auto_verify_ipv6(const char *ip_str, struct in6_addr *ip6)
 /*
  * netfn_auto_verify_ip()
  * 	Copy ipv4 address
- * 	TODO: This function is based on old tuple strucure and can be removed
  */
 bool netfn_auto_verify_ip(const char *ip_str, uint32_t *original_ip_addr, uint8_t ip_version)
 {

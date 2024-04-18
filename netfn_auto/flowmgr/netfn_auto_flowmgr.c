@@ -213,7 +213,7 @@ int netfn_auto_flowmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 		int rem;
 
 		nla_for_each_nested(flow_flags, attr, rem) {
-			switch(flow_flags->nla_type) {
+			switch(nla_type(flow_flags)) {
 			case BRIDGE:
 				flag |= NETFN_FLOWMGR_FLOW_FLAG_BRIDGE_FLOW;
 				netfn_auto_info("FLOW FLAG BRIDGE FLOW, updated flag val : 0x%x\n", flag);
@@ -265,8 +265,8 @@ int netfn_auto_flowmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 		flow_info = info->attrs[FLOW_INFO];
 
 		nla_for_each_nested(attr ,flow_info, rem) {
-			netfn_auto_info("Flow_INFO attr->nla_type: %d\n", attr->nla_type);
-			switch (attr->nla_type) {
+			netfn_auto_info("Flow_INFO attr->nla_type: %d\n", nla_type(attr));
+			switch (nla_type(attr)) {
 			case FLOW_IN_DEV:
 				dev_name = nla_data(attr);
 				netfn_auto_info("FLOW INFO FLOW_IN_DEV: %s\n", dev_name);
@@ -339,7 +339,7 @@ int netfn_auto_flowmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 				break;
 
 			default:
-				netfn_auto_warn("WRONG attr: %d in FLOW INFO\n", attr->nla_type);
+				netfn_auto_warn("WRONG attr: %d in FLOW INFO\n", nla_type(attr));
 				break;
 			}
 		}
@@ -354,14 +354,14 @@ int netfn_auto_flowmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 		netfn_auto_info("RULE INFO NOT EMPTY\n");
 
 		nla_for_each_nested(attr ,rule, rem) {
-			netfn_auto_info("attr->nla_type: %d\n", attr->nla_type);
-			if(attr->nla_type == VALID_FLAGS) {
+			netfn_auto_info("attr->nla_type: %d\n", nla_type(attr));
+			if(nla_type(attr) == VALID_FLAGS) {
 				struct nlattr * valid_flags = NULL;
 				int rem;
 
 				nla_for_each_nested(valid_flags, attr, rem) {
 					flag = 0;
-					switch(valid_flags->nla_type) {
+					switch(nla_type(valid_flags)) {
 						case VLAN:
 							flag |= NETFN_FLOWMGR_VALID_RULE_FLAG_VLAN;
 							netfn_auto_info("VALID FLAG vlan, updated flag val : 0x%x\n", flag);
@@ -472,7 +472,7 @@ int netfn_auto_flowmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 							break;
 
 						default:
-							netfn_auto_warn("Wrong valid flag %d\n", valid_flags->nla_type);
+							netfn_auto_warn("Wrong valid flag %d\n", nla_type(valid_flags));
 					}
 				}
 
@@ -480,20 +480,20 @@ int netfn_auto_flowmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 				reply.rule_info.rule_valid_flags = flag_ret;
 				netfn_auto_info("original rule flags: 0x%x\n", flag);
 				netfn_auto_info("reply rule flags: 0x%x\n", flag_ret);
-			} else if (attr->nla_type == IP_XLATE_RULE) {
+			} else if (nla_type(attr) == IP_XLATE_RULE) {
 				if (!netfn_auto_flowmgr_parse_ip_xlate(&original, &reply, attr)) {
 					netfn_auto_warn("Error in IP_XLATE_RULE parsing for flowmgr rule add\n");
 					goto fail;
 				}
 
 				netfn_auto_info("IP_XLATE_RULE parsing success for flowmgr rule add\n");
-			} else if (attr->nla_type == MAC_XLATE_RULE) {
+			} else if (nla_type(attr) == MAC_XLATE_RULE) {
 					struct nlattr *mac_xlate_rule = NULL;
 					char *smac, *dmac;
 					int rem;
 					netfn_auto_info("MAC_XLATE_RULE\n");
 					nla_for_each_nested(mac_xlate_rule, attr, rem) {
-						switch(mac_xlate_rule->nla_type) {
+						switch(nla_type(mac_xlate_rule)) {
 						case SRC_MAC:
 							smac = nla_data(mac_xlate_rule);
 							netfn_auto_info("src mac: %s\n", smac);
@@ -518,7 +518,7 @@ int netfn_auto_flowmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 					}
 
 					netfn_auto_info("MAC_XLATE_RULE parsing success for flowmgr rule add\n");
-			} else if(attr->nla_type == UDP_LITE_RULE) {
+			} else if(nla_type(attr) == UDP_LITE_RULE) {
 				struct nlattr *udp_lite_rule = NULL;
 				int rem;
 				uint32_t c_cov;
@@ -526,7 +526,7 @@ int netfn_auto_flowmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 				netfn_auto_info("UDP_LITE_RULE\n");
 				nla_for_each_nested(udp_lite_rule, attr, rem) {
 
-					switch(udp_lite_rule->nla_type) {
+					switch(nla_type(udp_lite_rule)) {
 					case CHECKSUM_COVERAGE:
 						c_cov = nla_get_u32(udp_lite_rule);
 						netfn_auto_info("From netlink, udp_lite_rule checksum_coverage: %d\n", c_cov);
@@ -539,7 +539,7 @@ int netfn_auto_flowmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 					}
 				}
 
-			} else if (attr->nla_type == PPPOE_RULE) {
+			} else if (nla_type(attr) == PPPOE_RULE) {
 
 				/*
 				 * TODO: Need to seperate out PPPOE_RULE for flow and return direction
@@ -550,7 +550,7 @@ int netfn_auto_flowmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 				netfn_auto_info("PPPOE_RULE\n");
 
 				nla_for_each_nested(pppoe_rule, attr, rem) {
-					switch(pppoe_rule->nla_type) {
+					switch(nla_type(pppoe_rule)) {
 					case SESSION_ID:
 						session_id = nla_get_u32(pppoe_rule);
 						netfn_auto_info("From Netlink, pppoe_rule session_id: %d\n", session_id);
@@ -574,14 +574,14 @@ int netfn_auto_flowmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 				}
 
 				netfn_auto_info("PPPOE RULE parsing successful for flowmgr rule add\n");
-			} else if (attr->nla_type == QOS_RULE) {
+			} else if (nla_type(attr) == QOS_RULE) {
 				struct nlattr *qos_rule = NULL;
 				int qos_tag, priority, rem;
 				char *net_dev;
 				netfn_auto_info("QOS_RULE\n");
 
 				nla_for_each_nested(qos_rule, attr, rem) {
-					switch(qos_rule->nla_type) {
+					switch(nla_type(qos_rule)) {
 					case WIFI_QOS_TAG:
 						qos_tag = nla_get_u32(qos_rule);
 						netfn_auto_info("qos_rule qos_tag: %d\n", qos_tag);
@@ -612,13 +612,13 @@ int netfn_auto_flowmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 				}
 
 				netfn_auto_info("QOS RULE parsing successful for flowmgr rule add\n");
-			} else if (attr->nla_type == DSCP_RULE) {
+			} else if (nla_type(attr) == DSCP_RULE) {
 				struct nlattr *dscp_rule = NULL;
 				int dscp_val, rem;
 				netfn_auto_info("DSCP_RULE\n");
 
 				nla_for_each_nested(dscp_rule, attr, rem) {
-					switch(dscp_rule->nla_type) {
+					switch(nla_type(dscp_rule)) {
 					case DSCP_VAL:
 						dscp_val = nla_get_u32(dscp_rule);
 						netfn_auto_info("dscp_rule dscp_val: %d\n", dscp_val);
@@ -632,14 +632,14 @@ int netfn_auto_flowmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 				}
 
 				netfn_auto_info("DSCP RULE parsing successful for flowmgr rule add\n");
-			} else if (attr->nla_type == VLAN_RULE) {
+			} else if (nla_type(attr) == VLAN_RULE) {
 				if (!netfn_auto_flowmgr_parse_vlan(&original, &reply, attr)) {
 					netfn_auto_warn("Error in VLAN_RULE for flowmgr rule add\n");
 					goto fail;
 				}
 
 				netfn_auto_info("VLAN_RULE parsing successful for flowmgr rule add\n");
-			} else if (attr->nla_type == VLAN_FILTER_RULE) {
+			} else if (nla_type(attr) == VLAN_FILTER_RULE) {
 				struct nlattr *vlan_filter_rule = NULL;
 				int rem;
 				uint32_t tag, flags;
@@ -647,7 +647,7 @@ int netfn_auto_flowmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 				netfn_auto_info("VLAN_FILTER_RULE\n");
 
 				nla_for_each_nested(vlan_filter_rule, attr, rem) {
-					switch(vlan_filter_rule->nla_type) {
+					switch(nla_type(vlan_filter_rule)) {
 					case VLAN_TAG:
 						_tag = nla_data(vlan_filter_rule);
 						if(kstrtou32(_tag, 16, &tag) < 0) {

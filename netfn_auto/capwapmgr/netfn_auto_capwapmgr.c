@@ -49,9 +49,9 @@ int netfn_auto_capwap_legacy_config_dtls(struct sk_buff *skb, struct genl_info *
  * nla_policy for capwapmgr
  */
 static struct nla_policy netfn_auto_capwapmgr_genl_policy[NETFN_AUTO_CAPWAPMGR_GNL_MAX + 1] = {
-	[FLOW_INFO]		=	{ .type = NLA_NESTED, },
 	[L2_INFO]		=	{ .type = NLA_NESTED, },
 	[IP_RULE]		=	{ .type = NLA_NESTED, },
+	[FLOW_INFO]		=	{ .type = NLA_NESTED, },
 	[CAPWAP_TUN_RULE]   =	{ .type = NLA_NESTED, },
 };
 
@@ -105,12 +105,12 @@ int netfn_auto_capwapmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 		l2_info = info->attrs[L2_INFO];
 		nla_for_each_nested(attr ,l2_info, rem) {
 
-			if(attr->nla_type == VALID_FLAGS) {
+			if(nla_type(attr) == VALID_FLAGS) {
 				struct nlattr *valid_flags = NULL;
 				int rem;
 
 				nla_for_each_nested(valid_flags, attr, rem) {
-					switch(valid_flags->nla_type) {
+					switch(nla_type(valid_flags)) {
 					case VLAN:
 						flag |= NETFN_CAPWAPMGR_EXT_VALID_VLAN;
 						netfn_auto_info("VALID_FLAG: VLAN\n");
@@ -132,21 +132,21 @@ int netfn_auto_capwapmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 						netfn_auto_info("VALID_FLAG: DTLS_DEC\n");
 						break;
 					default:
-						netfn_auto_warn("VALID_FLAG: WRONG FLAG: %d\n", valid_flags->nla_type);
+						netfn_auto_warn("VALID_FLAG: WRONG FLAG: %d\n", nla_type(valid_flags));
 					}
 				}
 				netfn_auto_info("VALID_FLAG is %d\n", flag);
 				cfg.ext_cfg.ext_valid_flags = flag;
-			} else if(attr->nla_type == VLAN_RULE) {
+			} else if(nla_type(attr) == VLAN_RULE) {
 				netfn_auto_parse_vlan_rule(&cfg.ext_cfg.vlan, attr);
 
-			} else if(attr->nla_type == PPPOE_RULE) {
+			} else if(nla_type(attr) == PPPOE_RULE) {
 				struct nlattr *pppoe_rule = NULL;
 				int session_id, rem;
 				char *server_mac;
 				netfn_auto_info("PPPOE_RULE\n");
 				nla_for_each_nested(pppoe_rule, attr, rem) {
-					switch(pppoe_rule->nla_type) {
+					switch(nla_type(pppoe_rule)) {
 						case SESSION_ID:
 							session_id = nla_get_u32(pppoe_rule);
 							netfn_auto_info("From Netlink, pppoe_rule session_id: %d\n", session_id);
@@ -181,7 +181,7 @@ int netfn_auto_capwapmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 			return -EINVAL;
 		}
 		nla_for_each_nested(ip_attr ,ip_rule, rem) {
-			if(ip_attr->nla_type == TUPLE_INFO) {
+			if(nla_type(ip_attr) == TUPLE_INFO) {
 				if(netfn_auto_parse_tuple(&cfg.tuple, ip_attr) == false)
 				{
 					return -EINVAL;
@@ -203,16 +203,16 @@ int netfn_auto_capwapmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 		}
 
 		nla_for_each_nested(attr ,capwap_tun_rule, rem) {
-			if(attr->nla_type == ENCAP) {
+			if(nla_type(attr) == ENCAP) {
 				netfn_auto_capwap_parse_encap_cfg(&cfg.capwap.enc, attr);
-			} else if (attr->nla_type == DECAP) {
+			} else if (nla_type(attr) == DECAP) {
 				netfn_auto_capwap_parse_decap_cfg(&cfg.capwap.dec, attr);
-			} else if (info->attrs[CAPWAP_VER]) {
-				capwap_ver = nla_get_u32(info->attrs[CAPWAP_VER]);
+			} else if (nla_type(attr) == CAPWAP_VER) {
+				capwap_ver = nla_get_u32(attr);
 				netfn_auto_info("NL_CAPWAP_VER : %d\n", capwap_ver);
 				cfg.capwap.capwap_ver = capwap_ver;
-			} else if (info->attrs[FEATURES]) {
-				int features = nla_get_u32(info->attrs[FEATURES]);
+			} else if (nla_type(attr) == FEATURES) {
+				int features = nla_get_u32(attr);
 				netfn_auto_info("NL_CAPWAP_FEATURES : %d\n", features);
 				cfg.capwap.features = features;
 			}
@@ -284,10 +284,10 @@ int netfn_auto_capwapmgr_rule_get(struct sk_buff *skb, struct genl_info *info)
 		int rem;
 
 		nla_for_each_nested(attr ,dtls_data, rem) {
-			if(attr->nla_type == ENCAP) {
+			if(nla_type(attr) == ENCAP) {
 				netfn_auto_capwap_parse_dtls_cfg(&cfg.update_cfg.dtls.enc, attr);
 
-			} else if (attr->nla_type == DECAP) {
+			} else if (nla_type(attr) == DECAP) {
 				netfn_auto_capwap_parse_dtls_cfg(&cfg.update_cfg.dtls.dec, attr);
 			}
 		}
