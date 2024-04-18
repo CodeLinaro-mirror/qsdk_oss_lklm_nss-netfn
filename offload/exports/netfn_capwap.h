@@ -143,30 +143,21 @@ int netfn_capwap_tunid_stats_get(struct net_device *dev, uint8_t id, struct netf
 void *netfn_capwap_tunid_pvt_get(struct net_device *dev);
 
 /*
- * netfn_capwap_tun_flow_cookie_cfg()
- *	Sets the flag to enable/disable
- *	the Flow Cookie Lookup functionality.
+ * netfn_capwap_tun_enable_flow_db()
+ *	Enables the the Flow Cookie Lookup functionality.
  *
  * @dev: Netdevice.
- * @bool: Enable the feature by sending true.
+ * @db: Netfn Flow Cookie DB.
  * @return: void.
  */
-void netfn_capwap_tun_flow_cookie_cfg(struct net_device *dev, bool enable);
+void netfn_capwap_tun_enable_flow_db(struct net_device *dev, struct netfn_flow_cookie_db *db);
 
 /*
- * netfn_capwap_set_db_handle()
+ * netfn_capwap_tun_disable_flow_db()
+ *	Disables the the Flow Cookie Lookup functionality.
  *
- * @netfn_flow_cookie_db: Netfn Flow Cookie DB handle.
+ * @dev: Netdevice.
  * @return: void.
  */
-void netfn_capwap_set_db_handle(struct netfn_flow_cookie_db *d);
-
-/*
- * netfn_capwap_clear_db_handle()
- *
- * @void.
- * @return: void.
- */
-void netfn_capwap_clear_db_handle(void);
-
+void netfn_capwap_tun_disable_flow_db(struct net_device *dev);
 #endif /* __NETFN_CAPWAP_H */

@@ -29,30 +29,6 @@
 
 #include "netfn_flow_cookie_stats.h"
 
-#define NETFN_FLOW_COOKIE_DB_HASH_SHIFT 12					/* Hash Shift for Hash Table Size */
-#define NETFN_FLOW_COOKIE_DB_HASH_SZ (1 << NETFN_FLOW_COOKIE_DB_HASH_SHIFT)	/* Hash Table Size */
-#define NETFN_FLOW_COOKIE_DB_HASH_MASK (NETFN_FLOW_COOKIE_DB_HASH_SZ - 1)	/* Hash Table Mask */
-
-#define NETFN_FLOW_COOKIE_DB_ENTRY_FLAG    (1 << 1)		/* Label used for DB entries */
-#define NETFN_FLOW_COOKIE_DB_FLAG        (1 << 0)		/* Label used for DB instance */
-#define NETFN_FLOW_COOKIE_DB_FLAG_OTHER     (1 << 1)		/* Label used for other purpose */
-
-/*
- * netfn_flow_cookie_db
- *	Database structure.
- */
-struct netfn_flow_cookie_db {
-	struct kref ref;		                        	/* Reference count */
-	uint32_t flags;		                              		/* Database Flags */
-	size_t entry_size;		                      		/* Size of each entry, controlled by the implementation class */
-	struct hlist_head *db_table;					/* Hash Table for the flows */
-	uint16_t hash_size;		                    	        /* Number of hash buckets */
-	uint8_t id;     				        	/* Unique Database Id */
-	struct dentry *dentry;  	  	                        /* Debug fs entry */
-	atomic64_t db_base_stats[NETFN_FLOW_COOKIE_DB_STATS_MAX];	/* DB Base Stats */
-	spinlock_t lock;						/* DB specific Spin Lock */
-};
-
 /*
  * netfn_flow_cookie_db_entry
  *	Netfn flow Cookie DB entry structure.
@@ -61,22 +37,6 @@ struct netfn_flow_cookie_db {
 struct netfn_flow_cookie_db_entry {
 	struct hlist_node node;			/* Hash List Node representation */
 	struct netfn_tuple tuple;		/* Five Tuple */
-	struct netfn_flow_cookie flow_cookie;	/* Flow Cookie */
-	atomic64_t Hit_count;			/* Hit count for the flow */
-	struct rcu_head rcu;			/* RCU delayed update work */
+	struct netfn_flow_cookie cookie;	/* Flow Cookie */
+	uint64_t hits;				/* Flow hits */
 };
-
-/*
- * DB internal functionality APIs.
- * Called from outer APIs.
- */
-/*
- * Hash Table Functions.
- */
-extern bool netfn_flow_cookie_db_hash_table_alloc(struct netfn_flow_cookie_db *d, uint32_t num_entries);
-
-/*
- * Performs Hash function computations and returns
- * the Hash Index for the 5 tuple info of the flow provided.
- */
-inline uint32_t netfn_flow_cookie_db_calculate_hash_idx(struct netfn_flow_cookie_db *d, struct netfn_tuple *t);

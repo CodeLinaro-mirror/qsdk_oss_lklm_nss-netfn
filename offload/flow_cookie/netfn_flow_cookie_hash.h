@@ -23,11 +23,8 @@
 
 #include <linux/types.h>
 
-#define NETFN_FLOW_COOKIE_HASH_SHIFT 12
-#define NETFN_FLOW_COOKIE_HASH_MASK ((1 << NETFN_FLOW_COOKIE_HASH_SHIFT) - 1)
-
-extern uint32_t netfn_flow_cookie_hash_compute_v4(uint8_t protocol, uint32_t src_ip, uint16_t src_ident,
-				uint32_t dest_ip, uint16_t dest_ident);
-
-extern uint32_t netfn_flow_cookie_hash_compute_v6(uint8_t protocol, uint32_t src_ip[4], uint16_t src_ident,
-				uint32_t dest_ip[4], uint16_t dest_ident);
+/*
+ * Performs Hash function computations and returns
+ * the Hash Index for the 5 tuple info of the flow provided.
+ */
+uint32_t netfn_flow_cookie_db_hash(struct netfn_flow_cookie_db *db, struct netfn_tuple *t);

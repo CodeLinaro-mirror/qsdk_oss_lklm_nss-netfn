@@ -23,59 +23,54 @@
 
 #include <linux/in.h>
 #include <linux/types.h>
+#include <linux/limits.h>
+#include <linux/hash.h>
+#include <linux/ip.h>
+#include <netfn_types.h>
+#include <netfn_flow_cookie.h>
 #include "netfn_flow_cookie_hash.h"
+#include "netfn_flow_cookie_db.h"
 
-uint32_t netfn_flow_cookie_hash_compute_v4(uint8_t protocol, uint32_t src_ip, uint16_t src_ident,
-			uint32_t dest_ip, uint16_t dest_ident)
+/*
+ * netfn_flow_cookie_db_hash()
+ *      Calculates Hash Index from the 5 tuple info.
+ */
+uint32_t netfn_flow_cookie_db_hash(struct netfn_flow_cookie_db *db, struct netfn_tuple *t)
 {
-	uint32_t hash = 0;
 
-	/*
-	 * Following Hash Function is a generic one
-	 * and used at various other modules.
-	 * Moreover, detailed experimentation has also been performed
-	 * and it has been certified that the performace results
-	 * are well in acceptable range.
-	 */
+	switch (t->tuple_type) {
+	case NETFN_TUPLE_5TUPLE:
+		struct netfn_tuple_5tuple *t5 = &t->tuples.tuple_5;
+		uint32_t hash = 0;
 
-	hash ^= (ntohl(src_ip ^ dest_ip));
+		if (t->ip_version == IPVERSION) {
+			uint32_t dst_ip = t5->dest_ip.ip4.s_addr;
+			uint32_t src_ip = t5->src_ip.ip4.s_addr;
 
-	hash ^= (protocol ^ (ntohs((src_ident) ^ (dest_ident))));
+			hash ^= (ntohl(src_ip ^ dst_ip));
+		} else {
+			uint32_t *dst_ip = t5->dest_ip.ip6.s6_addr32;
+			uint32_t *src_ip = t5->src_ip.ip6.s6_addr32;
 
-	/*
-	 * We perform AND with the NETFN_FLOW_COOKIE_HASH_MASK for the obtained hash_idx
-	 * to ensure that we never go out of the boundary chosen.
-	 */
-	hash = ((hash >> NETFN_FLOW_COOKIE_HASH_SHIFT) ^ hash) & NETFN_FLOW_COOKIE_HASH_MASK;
+			hash ^= (ntohl(src_ip[0] ^ dst_ip[0]));
+			hash ^= (ntohl(src_ip[1] ^ dst_ip[1]));
+			hash ^= (ntohl(src_ip[2] ^ dst_ip[2]));
+			hash ^= (ntohl(src_ip[3] ^ dst_ip[3]));
+		}
 
-	return hash;
-}
+		/*
+		 * hash_32 needs a 32-bit key & num bits
+		 */
+		hash ^= (t5->protocol ^ (ntohs(t5->l4_src_ident ^ t5->l4_dest_ident)));
+		hash = hash_32(hash, db->max_bits);
 
-uint32_t netfn_flow_cookie_hash_compute_v6(uint8_t protocol, uint32_t src_ip[4], uint16_t src_ident,
-			uint32_t dest_ip[4], uint16_t dest_ident)
-{
-	uint32_t hash = 0;
-	uint8_t idx;
+		pr_debug("%p: Hash computed - %x\n", t, hash);
+		return hash;
 
-	/*
-	 * Following Hash Function is a generic one
-	 * and used at various other modules.
-	 * Moreover, detailed experimentation has also been performed
-	 * and it has been certified that the performace results
-	 * are well in acceptable range.
-	 */
-
-	for (idx = 0; idx < 4; idx++) {
-		hash ^= (ntohl(src_ip[idx] ^ dest_ip[idx]));
+	default:
+		pr_warn("%p: Unsupported tuple format(%d)\n", t, t->tuple_type);
+		return U32_MAX;
 	}
 
-	hash ^= (protocol ^ (ntohs((src_ident) ^ (dest_ident))));
-
-	/*
-	 * We perform AND with the NETFN_FLOW_COOKIE_HASH_MASK for the obtained hash_idx
-	 * to ensure that we never go out of the boundary chosen.
-	 */
-	hash = ((hash >> NETFN_FLOW_COOKIE_HASH_SHIFT) ^ hash) & NETFN_FLOW_COOKIE_HASH_MASK;
-
-	return hash;
+	return U32_MAX;
 }

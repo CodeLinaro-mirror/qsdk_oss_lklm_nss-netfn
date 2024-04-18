@@ -41,8 +41,10 @@ struct netfn_capwap_tun {
 	struct net_device *vp_dev;		/* Pointer to VP dev. */
 	uint32_t features;			/* Features enabled for tunnel. */
 
+	struct netfn_flow_cookie_db __rcu *db;	/* Store the DB handle here */
+
 	struct netfn_capwap_pkt_stats stats;	/* Tunnel stats. */
-	struct netfn_capwap_enc enc;	/* Tunnel encap object. */
+	struct netfn_capwap_enc enc;		/* Tunnel encap object. */
 	struct netfn_capwap_dec dec;		/* Tunnel decap object. */
 	struct dentry *dentry;			/* Debug entry for the tunnel. */
 

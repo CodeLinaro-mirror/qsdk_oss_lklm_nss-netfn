@@ -81,5 +81,4 @@ uint64_t netfn_capwap_dec_get_err_stats(struct netfn_capwap_dec *dec);
  *	Accumulates decapsulation drop stats and return sum
  */
 uint64_t netfn_capwap_dec_get_drop_stats(struct netfn_capwap_dec *dec);
-
 #endif /* __NETFN_CAPWAP_DEC_H */
