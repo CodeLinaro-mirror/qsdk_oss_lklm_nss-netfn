@@ -1246,7 +1246,7 @@ static inline nss_capwapmgr_status_t nss_capwapmgr_add_flow_rule(struct net_devi
 	nfc = &cfg.update_cfg.fci.nfc;
 	nfc->valid_flag = flow_info->flow_attr.type;
 	nfc->flow_id = flow_info->flow_attr.flow_id;
-	nfc->scs_id = flow_info->flow_attr.scs_sdwf_id;
+	nfc->scs_sdwf_hdl = flow_info->flow_attr.scs_sdwf_id;
 	rtnl_lock();
 	netfn_ret = netfn_capwapmgr_tunid_update(dev, tunnel_id, &cfg);
 	rtnl_unlock();

@@ -364,17 +364,17 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_cookie_add(struct netfn_capwap
 	 * to perform the desired DB operation.
 	 */
 
-	if (netfn_flow_cookie_db_entry_add(ctx->mgr->d, &(fci->tuple), &(fci->nfc)) == NETFN_FLOW_COOKIE_STATUS_FAILURE) {
+	if (netfn_flow_cookie_db_add(ctx->db, &fci->tuple, &fci->nfc) != 0) {
 		atomic64_inc(&ctx->mgr->stats.error_stats[NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_ADD]);
 		return NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_ADD;
 	}
 
 	/*
-	 * rtnl lock protects concurrent updates.
+	 * If, this is the first entry then enable the flow cookie lookup
+	 * in CAPWAP decapsulation path
 	 */
-	ctx->flow_cookie_num++;
-	if (ctx->flow_cookie_num == 1) {
-		netfn_capwap_tun_flow_cookie_cfg(ctx->capwap_dev, true);
+	if (++ctx->flow_count == 1) {
+		netfn_capwap_tun_enable_flow_db(ctx->capwap_dev, ctx->db);
 	}
 
 	return NETFN_CAPWAPMGR_SUCCESS;
@@ -391,17 +391,17 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_flow_cookie_del(struct netfn_capwap
 	 * The Function Call ultimately hooks into the Flow Cookie Module
 	 * to perform the desired DB operation.
 	 */
-	if (netfn_flow_cookie_db_entry_del(ctx->mgr->d, &(fci->tuple)) == NETFN_FLOW_COOKIE_STATUS_FAILURE) {
+	if (netfn_flow_cookie_db_del(ctx->db, &fci->tuple) != 0) {
 		atomic64_inc(&ctx->mgr->stats.error_stats[NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_DEL]);
 		return NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_DEL;
 	}
 
 	/*
-	 * rtnl lock protects concurrent updates.
+	 * If, this is the last entry then disable the flow cookie lookup in
+	 * decapsulation path
 	 */
-	ctx->flow_cookie_num--;
-	if (ctx->flow_cookie_num == 0) {
-		netfn_capwap_tun_flow_cookie_cfg(ctx->capwap_dev, false);
+	if (--ctx->flow_count == 0) {
+		netfn_capwap_tun_disable_flow_db(ctx->capwap_dev);
 	}
 
 	return NETFN_CAPWAPMGR_SUCCESS;
@@ -992,7 +992,7 @@ skip_dtls:
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_TIMER_CONFIGURED) - 1;
 	__set_bit(bit_pos, ctx->state);
 
-	ctx->flow_cookie_num = 0;
+	ctx->flow_count = 0;
 
 	/*
 	 * Keep a copy of tunnel configuration in tunnel context.
@@ -1120,6 +1120,7 @@ bool netfn_capwapmgr_tun_deinit(struct netfn_capwapmgr_tun_ctx *ctx)
 		netfn_dtls_tun_free(ctx->dtls_dev);
 	}
 
+
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DEINIT_DONE) - 1;
 	__set_bit(bit_pos, ctx->state);
 	return true;
@@ -1135,9 +1136,10 @@ fail:
  */
 struct net_device *netfn_capwapmgr_tun_alloc(struct netfn_capwapmgr_tun_cfg *cfg)
 {
-	struct net_device *capwap_dev = NULL;
 	struct netfn_capwapmgr_tun_ctx *ctx = NULL;
+	struct net_device *capwap_dev = NULL;
 	struct netfn_capwapmgr *mgr = &g_mgr;
+	struct netfn_flow_cookie_db *db;
 
 	if (netfn_capwapmgr_tun_init_cfg(cfg) != NETFN_CAPWAPMGR_SUCCESS) {
 		netfn_capwapmgr_warn("%px: Failed to valiate the configuration\n", cfg);
@@ -1169,6 +1171,18 @@ struct net_device *netfn_capwapmgr_tun_alloc(struct netfn_capwapmgr_tun_cfg *cfg
 	}
 
 	/*
+	 * Instantiate the Flow Cookie Data Base here.
+	 */
+	db = netfn_flow_cookie_db_alloc(NETFN_CAPWAPMGR_FLOW_COOKIE_HASHTABLE_SIZE);
+	if (!db) {
+		atomic64_inc(&mgr->stats.error_stats[NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_DB_ALLOC]);
+		netfn_capwapmgr_warn("%p: Failed to alloc flow_db instance", ctx);
+		return NULL;
+	}
+
+	ctx->db = netfn_flow_cookie_db_ref(db);
+
+	/*
 	 * deref:netfn_capwapmgr_tun_free.
 	 */
 	netfn_capwapmgr_ref(mgr);
@@ -1189,10 +1203,26 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tun_free(struct net_device *dev)
 	ctx = netfn_capwap_tun_pvt_get(dev);
 
 	/*
+	 * Check if the flow_db has entries then Drop the reference taken in the alloc
+	 */
+	if (ctx->flow_count) {
+		pr_warn("%p: Active flows present in flow_db (%d)\n", ctx, ctx->flow_count);
+		netfn_capwap_tun_disable_flow_db(ctx->capwap_dev);
+
+		/*
+		 * TODO: purge entries in case flow_count is non-zero
+		 */
+		return NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_DEL;
+	}
+
+	netfn_flow_cookie_db_deref(ctx->db);
+	ctx->db = NULL;
+
+	/*
 	 * Deinit tunnel.
 	 */
 	if (netfn_capwapmgr_tun_deinit(ctx)) {
-		netfn_capwapmgr_warn("%px: Tunnel De-init failed \n", dev);
+		netfn_capwapmgr_warn("%px: Failed to de-init the tunnel\n", dev);
 		atomic64_inc(&g_mgr.stats.error_stats[NETFN_CAPWAPMGR_ERROR_TUN_DEINIT]);
 		return NETFN_CAPWAPMGR_ERROR_TUN_DEINIT;
 	}
