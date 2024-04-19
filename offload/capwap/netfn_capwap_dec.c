@@ -777,6 +777,14 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 	while (likely(skb_queue_len(q_head))) {
 		skb = __skb_dequeue(q_head);
 
+		if (likely(skb_queue_len(q_head))) {
+			struct sk_buff *nskb = __skb_peek(q_head);
+			uint8_t *ndata = nskb->data;
+
+			prefetch(ndata);
+			prefetch((uint8_t *)ndata + 64);
+		}
+
 		NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.pkts_rcvd);
 
 		/*
