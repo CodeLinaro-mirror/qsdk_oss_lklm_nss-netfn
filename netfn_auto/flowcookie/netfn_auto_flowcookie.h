@@ -39,7 +39,7 @@ bool netfn_auto_flowcookie_parse_tuple(struct netfn_tuple *original, struct nlat
  */
 int netfn_auto_flowcookie_get_cmd_index(const char *cmd)
 {
-	const char *flowcookie_cmds[] = {"RULE_ADD", "RULE_DEL", "RULE_INIT", "GET_FLOW_ID", "GET_FLOW_MARK", "GET_SAWF_HANDLE"};
+	const char *flowcookie_cmds[] = {"RULE_ADD", "RULE_DEL", "RULE_INIT"};
 	int i;
 
 	for(i = 0; i < sizeof(flowcookie_cmds); i++) {
