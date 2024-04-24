@@ -79,7 +79,7 @@ static bool netfn_capwap_tun_rx(struct netfn_capwap_tun *nct, struct sk_buff *sk
 	}
 
 	/*
-	 * RPS the packet to forwarding core.
+	 * RPS the data packet to forwarding core.
 	 */
 	netfn_pkt_steer_send_list(&nct->rx_steer, &q_head, NETFN_CAPWAP_RPS_CORE, &rx_bytes);
 	NETFN_CAPWAP_TUN_STATS_ADD(&stats->drop_queue_full, skb_queue_len(&q_head));
@@ -199,13 +199,18 @@ static int netfn_capwap_tun_open(struct net_device *dev)
 	 * Enable tx and rx pkt steering.
 	 */
 	if (!netfn_pkt_steer_enable(&nct->tx_steer)) {
-		pr_warn("%px: Unable to enable tx pkt steering.\n", nct);
+		pr_warn("%px: Unable to enable tx data pkt steering.\n", nct);
 		return -ENOMEM;
 	}
 
 	if (!netfn_pkt_steer_enable(&nct->rx_steer)) {
-		pr_warn("%px: Unable to enable rx pkt steering.\n", nct);
+		pr_warn("%px: Unable to enable rx data pkt steering.\n", nct);
 		goto fail_rx_steer;
+	}
+
+	if (!netfn_pkt_steer_enable(&nct->rx_steer_pri)) {
+		pr_warn("%px: Unable to enable rx control pkt steering.\n", nct);
+		goto fail_rx_steer_pri;
 	}
 
 	/*
@@ -229,6 +234,8 @@ static int netfn_capwap_tun_open(struct net_device *dev)
 	return 0;
 
 fail_ctx:
+	netfn_pkt_steer_disable(&nct->rx_steer_pri);
+fail_rx_steer_pri:
 	netfn_pkt_steer_disable(&nct->rx_steer);
 fail_rx_steer:
 	netfn_pkt_steer_disable(&nct->tx_steer);
@@ -272,6 +279,7 @@ static int netfn_capwap_tun_stop(struct net_device *dev)
 	 */
 	netfn_pkt_steer_disable(&nct->tx_steer);
 	netfn_pkt_steer_disable(&nct->rx_steer);
+	netfn_pkt_steer_disable(&nct->rx_steer_pri);
 	return 0;
 }
 
@@ -373,6 +381,7 @@ static void netfn_capwap_tun_destructor(struct net_device *dev)
 	 */
 	netfn_pkt_steer_deinit(&nct->tx_steer);
 	netfn_pkt_steer_deinit(&nct->rx_steer);
+	netfn_pkt_steer_deinit(&nct->rx_steer_pri);
 
 	debugfs_remove_recursive(nct->dentry);
 	free_netdev(dev);
@@ -495,7 +504,7 @@ static bool netfn_capwap_tun_list_rx(struct netfn_capwap_tun *nct, struct sk_buf
 	}
 
 	/*
-	 * RPS the packet to forwarding core.
+	 * RPS the data packet to forwarding core.
 	 */
 	netfn_pkt_steer_send_list(&nct->rx_steer, q_head, NETFN_CAPWAP_RPS_CORE, &rx_bytes);
 	NETFN_CAPWAP_TUN_STATS_ADD(&stats->drop_queue_full, skb_queue_len(q_head));
@@ -635,8 +644,38 @@ static void netfn_capwap_tun_tx_cb(struct netfn_pkt_steer *tx_steer, struct sk_b
 }
 
 /*
+ * netfn_capwap_tun_rx_pri_cb()
+ *	Rx priority packet steering callback
+ */
+static void netfn_capwap_tun_rx_pri_cb(struct netfn_pkt_steer *rx_steer, struct sk_buff_head *q_head)
+{
+	struct netfn_capwap_tun *nct = container_of(rx_steer, struct netfn_capwap_tun, rx_steer_pri);
+	struct sk_buff *skb, *next_skb;
+	rx_handler_func_t *rx_handler;
+
+	/*
+	 * Walk the queue and pass onto required handler.
+	 */
+	skb_queue_walk_safe(q_head, skb, next_skb) {
+		__skb_unlink(skb, q_head);
+		skb_reset_mac_header(skb);
+		skb_reset_transport_header(skb);
+
+		NETFN_CAPWAP_TUN_STATS_INC(&nct->stats.rx_pkts);
+		NETFN_CAPWAP_TUN_STATS_ADD(&nct->stats.rx_bytes, skb->len);
+
+		rx_handler = rcu_dereference(skb->dev->rx_handler);
+		if (likely(rx_handler) && (rx_handler(&skb) == RX_HANDLER_CONSUMED)) {
+			continue;
+		}
+
+		netif_receive_skb(skb);
+	}
+}
+
+/*
  * netfn_capwap_tun_rx_cb()
- *	Rx packet steering callback
+ *	Rx data packet steering callback
  */
 static void netfn_capwap_tun_rx_cb(struct netfn_pkt_steer *rx_steer, struct sk_buff_head *q_head)
 {
@@ -653,15 +692,9 @@ static void netfn_capwap_tun_rx_cb(struct netfn_pkt_steer *rx_steer, struct sk_b
 		skb_reset_mac_header(skb);
 		skb_reset_transport_header(skb);
 
-		/*
-		 * TODO: Optimize this.
-		 * Don't override skb fields in case of exception packets.
-		 */
-		if (likely(!NETFN_CAPWAP_CB(skb)->exception)) {
-			skb->dev = dev;
-			skb->pkt_type = PACKET_HOST;
-			skb->skb_iif = nct->dev->ifindex;
-		}
+		skb->dev = dev;
+		skb->pkt_type = PACKET_HOST;
+		skb->skb_iif = nct->dev->ifindex;
 
 		NETFN_CAPWAP_TUN_STATS_INC(&nct->stats.rx_pkts);
 		NETFN_CAPWAP_TUN_STATS_ADD(&nct->stats.rx_bytes, skb->len);
@@ -762,7 +795,7 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, stru
 	}
 
 	/*
-	 * Allocate tx pkt steering object.
+	 * Allocate tx data pkt steering object.
 	 */
 	info.cb = netfn_capwap_tun_tx_cb;
 	info.budget = NETFN_CAPWAP_TUN_TX_BUDGET;
@@ -771,13 +804,22 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, stru
 	netfn_pkt_steer_init(&nct->tx_steer, &info);
 
 	/*
-	 * Allocate rx pkt steering object.
+	 * Allocate rx data pkt steering object.
 	 */
 	info.cb = netfn_capwap_tun_rx_cb;
 	info.budget = NETFN_CAPWAP_TUN_RX_BUDGET;
 	info.weight = 1;
 	info.dev = dev;
 	netfn_pkt_steer_init(&nct->rx_steer, &info);
+
+	/*
+	 * Allocate rx control pkt steering object.
+	 */
+	info.cb = netfn_capwap_tun_rx_pri_cb;
+	info.budget = NETFN_CAPWAP_TUN_RX_BUDGET;
+	info.weight = 1;
+	info.dev = dev;
+	netfn_pkt_steer_init(&nct->rx_steer_pri, &info);
 
 	pr_info("%px: Successfully allocated tunnel(%s)\n", nct, dev->name);
 	return dev;

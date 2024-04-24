@@ -46,8 +46,9 @@ struct netfn_capwap_tun {
 	struct netfn_capwap_dec dec;		/* Tunnel decap object. */
 	struct dentry *dentry;			/* Debug entry for the tunnel. */
 
-	struct netfn_pkt_steer tx_steer;	/* Tx packet steering handle. */
-	struct netfn_pkt_steer rx_steer;	/* Rx Packet steering handle. */
+	struct netfn_pkt_steer tx_steer;	/* Tx data packet steering handle. */
+	struct netfn_pkt_steer rx_steer;	/* Rx data packet steering handle. */
+	struct netfn_pkt_steer rx_steer_pri;	/* Rx priority packet steering handle. */
 	uint32_t flags;				/* Flags for this tunnel. */
 	uint16_t id;				/* Tunnel identifier. */
 	uint8_t pvt[] __attribute__((aligned (sizeof(uint32_t))));

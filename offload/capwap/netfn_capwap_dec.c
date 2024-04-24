@@ -50,6 +50,7 @@ static int8_t *g_dec_stats_str[] = {
 	"flow_cookie_no_db",
 	"drop_missing_frags",
 	"drop_queue_full",
+	"drop_pri_queue_full",
 	"err_dec_failure",
 	"err_max_frags",
 	"err_large_frags",
@@ -715,6 +716,7 @@ void netfn_capwap_dec_stats_read(struct netfn_capwap_dec *dec, struct netfn_capw
  */
 bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head *q_head)
 {
+	struct netfn_capwap_tun *nct = container_of(dec, struct netfn_capwap_tun, dec);
 	struct netfn_capwap_dec_ctx *ctx;
 	struct sk_buff *skb, *reasm_skb;
 	struct sk_buff_head q_frags;
@@ -742,6 +744,18 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 		if (!netfn_capwap_dec(dec, skb, &is_frag)) {
 			NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.err_dec_failure);
 			__skb_queue_head(&q_free, skb);
+			continue;
+		}
+
+		/*
+		 * For control packet we don't process further.
+		 */
+		if (unlikely(NETFN_CAPWAP_CB(skb)->exception)) {
+			if (!netfn_pkt_steer_send(&nct->rx_steer_pri, skb, NETFN_CAPWAP_RPS_CORE)) {
+				NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.drop_pri_queue_full);
+				__skb_queue_head(&q_free, skb);
+			}
+
 			continue;
 		}
 
@@ -873,6 +887,7 @@ uint64_t netfn_capwap_dec_get_drop_stats(struct netfn_capwap_dec *dec)
 
 	drop_stats += stats->drop_missing_frags;
 	drop_stats += stats->drop_queue_full;
+	drop_stats += stats->drop_pri_queue_full;
 
 	return drop_stats;
 }
