@@ -66,10 +66,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v6_destroy_tuple_info(stru
 		/*
 		 * IPs
 		 */
-		memcpy(org_src_ip, original->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
-		memcpy(org_dst_ip, original->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_src_ip, reply->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(org_src_ip, original->tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(org_dst_ip, original->tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_src_ip, reply->tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 
 		if ((memcmp(org_src_ip, reply_dst_ip, sizeof(uint32_t) * 4)) || (memcmp(org_dst_ip, reply_src_ip, sizeof(uint32_t) * 4))) {
 			netfn_flowmgr_warn("Non-matching IP addresses in flow and return direction\n");
@@ -93,10 +93,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v6_destroy_tuple_info(stru
 		/*
 		 * IPs
 		 */
-		memcpy(org_src_ip, original->tuple.tuples.tuple_4.src_ip, sizeof(uint32_t) * 4);
-		memcpy(org_dst_ip, original->tuple.tuples.tuple_4.dest_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_src_ip, reply->tuple.tuples.tuple_4.src_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_4.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(org_src_ip, original->tuple.tuples.tuple_4.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(org_dst_ip, original->tuple.tuples.tuple_4.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_src_ip, reply->tuple.tuples.tuple_4.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_4.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 
 		/*
 		 * Ports
@@ -140,10 +140,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v6_destroy_tuple_info(stru
 		/*
 		 * IPs
 		 */
-		memcpy(org_src_ip, original->tuple.tuples.tuple_5.src_ip, sizeof(uint32_t) * 4);
-		memcpy(org_dst_ip, original->tuple.tuples.tuple_5.dest_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_src_ip, reply->tuple.tuples.tuple_5.src_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_5.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(org_src_ip, original->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(org_dst_ip, original->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_src_ip, reply->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 
 		/*
 		 * Ports
@@ -245,12 +245,12 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_destroy_v6_rule(struct netfn_flowmgr_destr
 
 	if (tuple_type == NETFN_TUPLE_3TUPLE) {
 		nirdm->tuple.protocol = original->tuple.tuples.tuple_3.protocol;
-		memcpy(nirdm->tuple.flow_ip, original->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
-		memcpy(nirdm->tuple.return_ip, original->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(nirdm->tuple.flow_ip, original->tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(nirdm->tuple.return_ip, original->tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 	} else if (tuple_type == NETFN_TUPLE_4TUPLE) {
 		nirdm->tuple.protocol = original->tuple.tuples.tuple_4.protocol;
-		memcpy(nirdm->tuple.flow_ip, original->tuple.tuples.tuple_4.src_ip, sizeof(uint32_t) * 4);
-		memcpy(nirdm->tuple.return_ip, original->tuple.tuples.tuple_4.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(nirdm->tuple.flow_ip, original->tuple.tuples.tuple_4.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(nirdm->tuple.return_ip, original->tuple.tuples.tuple_4.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 		if (original->tuple.tuples.tuple_4.ident_type == NETFN_4TUPLE_VALID_SRC_PORT) {
 			nirdm->tuple.flow_ident = original->tuple.tuples.tuple_4.l4_ident;
 		} else {
@@ -258,8 +258,8 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_destroy_v6_rule(struct netfn_flowmgr_destr
 		}
 	} else {
 		nirdm->tuple.protocol = original->tuple.tuples.tuple_5.protocol;
-		memcpy(nirdm->tuple.flow_ip, original->tuple.tuples.tuple_5.src_ip, sizeof(uint32_t) * 4);
-		memcpy(nirdm->tuple.return_ip, original->tuple.tuples.tuple_5.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(nirdm->tuple.flow_ip, original->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(nirdm->tuple.return_ip, original->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 		nirdm->tuple.flow_ident = ntohs(original->tuple.tuples.tuple_5.l4_src_ident);
 		nirdm->tuple.return_ident = ntohs(original->tuple.tuples.tuple_5.l4_dest_ident);
 	}
@@ -421,7 +421,7 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v6_create_tuple_info(struc
 
 	tuple_type = original->tuple.tuple_type;
 	org_rules = original->rule_info.rule_valid_flags;
-	reply_rules = original->rule_info.rule_valid_flags;
+	reply_rules = reply->rule_info.rule_valid_flags;
 
 	netfn_flowmgr_trace("org_rules = 0x%x\n", org_rules);
 	netfn_flowmgr_trace("reply_rules = 0x%x\n", reply_rules);
@@ -464,10 +464,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v6_create_tuple_info(struc
 		/*
 		 * Non-xlate IPs
 		 */
-		memcpy(org_src_ip, original->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
-		memcpy(org_dst_ip, original->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_src_ip, reply->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(org_src_ip, original->tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(org_dst_ip, original->tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_src_ip, reply->tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 
 		/*
 		 * There are two cases
@@ -520,10 +520,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v6_create_tuple_info(struc
 		/*
 		 * Non-xlate IPs
 		 */
-		memcpy(org_src_ip, original->tuple.tuples.tuple_4.src_ip, sizeof(uint32_t) * 4);
-		memcpy(org_dst_ip, original->tuple.tuples.tuple_4.dest_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_src_ip, reply->tuple.tuples.tuple_4.src_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_4.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(org_src_ip, original->tuple.tuples.tuple_4.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(org_dst_ip, original->tuple.tuples.tuple_4.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_src_ip, reply->tuple.tuples.tuple_4.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_4.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 
 		/*
 		 * Ports
@@ -617,10 +617,10 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v6_create_tuple_info(struc
 		/*
 		 * Non-xlate IPs
 		 */
-		memcpy(org_src_ip, original->tuple.tuples.tuple_5.src_ip, sizeof(uint32_t) * 4);
-		memcpy(org_dst_ip, original->tuple.tuples.tuple_5.dest_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_src_ip, reply->tuple.tuples.tuple_5.src_ip, sizeof(uint32_t) * 4);
-		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_5.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(org_src_ip, original->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(org_dst_ip, original->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_src_ip, reply->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(reply_dst_ip, reply->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 
 		/*
 		 * Ports
@@ -726,6 +726,86 @@ static netfn_flowmgr_ret_t netfn_flowmgr_sfe_validate_v6_create_tuple_info(struc
 }
 
 /*
+ * netfn_flowmgr_sfe_fill_br_vlan_filter_v6_rule
+ *	Fills br_vlan_filter_rule
+ */
+void netfn_flowmgr_sfe_fill_br_vlan_filter_v6_rule(struct netfn_flowmgr_create_rule *original, struct netfn_flowmgr_create_rule *reply,
+						struct sfe_ipv6_rule_create_msg *nircm)
+{
+	nircm->flow_vlan_filter_rule.ingress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+	nircm->flow_vlan_filter_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+	nircm->return_vlan_filter_rule.ingress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+	nircm->return_vlan_filter_rule.egress_vlan_tag = SFE_VLAN_ID_NOT_CONFIGURED;
+
+	if (original->rule_info.rule_valid_flags & NETFN_FLOWMGR_VALID_RULE_FLAG_VLAN_FILTER) {
+		nircm->flow_vlan_filter_rule.ingress_vlan_tag = ((original->rule_info.vlan_filter_rule.vlan_tpid << 16) | original->rule_info.vlan_filter_rule.vlan_info.ingress_vlan_tag);
+		nircm->flow_vlan_filter_rule.egress_vlan_tag = ((original->rule_info.vlan_filter_rule.vlan_tpid << 16) | original->rule_info.vlan_filter_rule.vlan_info.egress_vlan_tag);
+		nircm->flow_vlan_filter_rule.ingress_flags = SFE_VLAN_FILTER_FLAG_VALID | original->rule_info.vlan_filter_rule.flags;
+		nircm->flow_vlan_filter_rule.egress_flags = SFE_VLAN_FILTER_FLAG_VALID | original->rule_info.vlan_filter_rule.flags;
+	}
+	if (reply->rule_info.rule_valid_flags & NETFN_FLOWMGR_VALID_RULE_FLAG_VLAN_FILTER) {
+		nircm->return_vlan_filter_rule.ingress_vlan_tag = ((reply->rule_info.vlan_filter_rule.vlan_tpid << 16) | reply->rule_info.vlan_filter_rule.vlan_info.ingress_vlan_tag);
+		nircm->return_vlan_filter_rule.egress_vlan_tag = ((reply->rule_info.vlan_filter_rule.vlan_tpid << 16) | reply->rule_info.vlan_filter_rule.vlan_info.egress_vlan_tag);
+		nircm->return_vlan_filter_rule.ingress_flags = SFE_VLAN_FILTER_FLAG_VALID | reply->rule_info.vlan_filter_rule.flags;
+		nircm->return_vlan_filter_rule.egress_flags = SFE_VLAN_FILTER_FLAG_VALID | reply->rule_info.vlan_filter_rule.flags;
+	}
+	nircm->valid_flags |= SFE_RULE_CREATE_VLAN_FILTER_VALID;
+}
+
+/*
+ * netfn_flowmgr_sfe_fill_qdisc_v6_rule
+ *	Fills qdisc_rule
+ */
+void netfn_flowmgr_sfe_fill_qdisc_v6_rule(struct netfn_flowmgr_create_rule *original, struct netfn_flowmgr_create_rule *reply,
+						struct sfe_ipv6_rule_create_msg *nircm)
+{
+	if (original->rule_info.rule_valid_flags & NETFN_FLOWMGR_VALID_RULE_FLAG_QDISC) {
+		nircm->qdisc_rule.flow_qdisc_interface = -1;
+		if (original->rule_info.qdisc_rule.valid_flags & NETFN_FLOWMGR_QDISC_RULE_VALID) {
+			nircm->qdisc_rule.valid_flags = SFE_QDISC_RULE_FLOW_VALID | SFE_QDISC_RULE_FLOW_PPE_QDISC_FAST_XMIT;
+			nircm->qdisc_rule.flow_qdisc_interface = original->rule_info.qdisc_rule.qdisc_dev->ifindex;
+			nircm->valid_flags |= SFE_RULE_CREATE_QDISC_RULE_VALID;
+			if (!(reply->rule_info.qdisc_rule.valid_flags & NETFN_FLOWMGR_QDISC_RULE_PPE_QDISC_FAST_XMIT)) {
+				nircm->rule_flags &= ~SFE_RULE_CREATE_FLAG_FLOW_TRANSMIT_FAST;
+				nircm->qdisc_rule.valid_flags &= ~SFE_QDISC_RULE_FLOW_PPE_QDISC_FAST_XMIT;
+			}
+		/*
+		 * If flow valid flag isn't set, there must be multiple ifaces in iface hierarchy,
+		 * use top iface and disable l2 forwarding
+		 */
+		} else {
+			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_FLOW_L2_DISABLE;
+			nircm->rule_flags &= ~SFE_RULE_CREATE_FLAG_FLOW_TRANSMIT_FAST;
+			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_FLOW_BOTTOM_INTERFACE;
+		}
+	}
+
+	if (reply->rule_info.rule_valid_flags & NETFN_FLOWMGR_VALID_RULE_FLAG_QDISC) {
+		nircm->qdisc_rule.return_qdisc_interface = -1;
+		/*
+		 * Set the Qdisc rule valid flag if qdisc is present in any direction.
+		 */
+		if (reply->rule_info.qdisc_rule.valid_flags & NETFN_FLOWMGR_QDISC_RULE_VALID) {
+			nircm->qdisc_rule.valid_flags = SFE_QDISC_RULE_FLOW_VALID | SFE_QDISC_RULE_FLOW_PPE_QDISC_FAST_XMIT;
+			nircm->qdisc_rule.return_qdisc_interface = reply->rule_info.qdisc_rule.qdisc_dev->ifindex;
+			nircm->valid_flags |= SFE_RULE_CREATE_QDISC_RULE_VALID;
+			if (!(reply->rule_info.qdisc_rule.valid_flags & NETFN_FLOWMGR_QDISC_RULE_PPE_QDISC_FAST_XMIT)) {
+				nircm->rule_flags &= ~SFE_RULE_CREATE_FLAG_RETURN_TRANSMIT_FAST;
+				nircm->qdisc_rule.valid_flags &= ~SFE_QDISC_RULE_RETURN_PPE_QDISC_FAST_XMIT;
+			}
+		/*
+		 * If return valid flag isn't, there must be multiple ifaces in iface hierarchy,
+		 * use top iface and disable l2 forwarding
+		 */
+		} else {
+			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_RETURN_L2_DISABLE;
+			nircm->rule_flags &= ~SFE_RULE_CREATE_FLAG_RETURN_TRANSMIT_FAST;
+			nircm->rule_flags |= SFE_RULE_CREATE_FLAG_USE_RETURN_BOTTOM_INTERFACE;
+		}
+	}
+}
+
+/*
  * netfn_flowmgr_sfe_create_v6_rule()
  *	accels flow in sfe
  */
@@ -780,17 +860,17 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_create_v6_rule(struct netfn_flowmgr_create
 	 * Fill local variables
 	 */
 	org_rules = original->rule_info.rule_valid_flags;
-	reply_rules = original->rule_info.rule_valid_flags;
+	reply_rules = reply->rule_info.rule_valid_flags;
 	tuple_type = original->tuple.tuple_type;
 
 	if (tuple_type == NETFN_TUPLE_3TUPLE) {
 		nircm->tuple.protocol = original->tuple.tuples.tuple_3.protocol;
-		memcpy(nircm->tuple.flow_ip, original->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
-		memcpy(nircm->tuple.return_ip,original->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(nircm->tuple.flow_ip, original->tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(nircm->tuple.return_ip,original->tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 	} else if (tuple_type == NETFN_TUPLE_4TUPLE) {
 		nircm->tuple.protocol = original->tuple.tuples.tuple_4.protocol;
-		memcpy(nircm->tuple.flow_ip, original->tuple.tuples.tuple_4.src_ip, sizeof(uint32_t) * 4);
-		memcpy(nircm->tuple.return_ip, original->tuple.tuples.tuple_4.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(nircm->tuple.flow_ip, original->tuple.tuples.tuple_4.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(nircm->tuple.return_ip, original->tuple.tuples.tuple_4.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 		if (original->tuple.tuples.tuple_4.ident_type == NETFN_4TUPLE_VALID_SRC_PORT) {
 			nircm->tuple.flow_ident = original->tuple.tuples.tuple_4.l4_ident;
 		} else {
@@ -799,8 +879,8 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_create_v6_rule(struct netfn_flowmgr_create
 		}
 	} else {
 		nircm->tuple.protocol = original->tuple.tuples.tuple_5.protocol;
-		memcpy(nircm->tuple.flow_ip, original->tuple.tuples.tuple_5.src_ip, sizeof(uint32_t) * 4);
-		memcpy(nircm->tuple.return_ip, original->tuple.tuples.tuple_5.dest_ip, sizeof(uint32_t) * 4);
+		memcpy(nircm->tuple.flow_ip, original->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(nircm->tuple.return_ip, original->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
 		nircm->tuple.flow_ident = original->tuple.tuples.tuple_5.l4_src_ident;
 		nircm->tuple.return_ident = original->tuple.tuples.tuple_5.l4_dest_ident;
 	}
@@ -916,6 +996,41 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_create_v6_rule(struct netfn_flowmgr_create
 		memcpy(nircm->pppoe_rule.return_pppoe_remote_mac, reply->rule_info.pppoe_rule.server_mac, ETH_ALEN);
 		nircm->valid_flags |= SFE_RULE_CREATE_PPPOE_ENCAP_VALID;
 	}
+
+	/*
+	 * Bridge Vlan Filter Rule
+	 */
+	netfn_flowmgr_sfe_fill_br_vlan_filter_v6_rule(original, reply, nircm);
+
+	/*
+	 * SAWF rule
+	 */
+	if (org_rules & NETFN_FLOWMGR_VALID_RULE_FLAG_SAWF) {
+		nircm->sawf_rule.flow_mark = original->rule_info.sawf_rule.mark;
+		nircm->sawf_rule.flow_svc_id = original->rule_info.sawf_rule.svc_id;
+	}
+	if (reply_rules & NETFN_FLOWMGR_VALID_RULE_FLAG_SAWF) {
+		nircm->sawf_rule.return_mark = reply->rule_info.sawf_rule.mark;
+		nircm->sawf_rule.return_svc_id = reply->rule_info.sawf_rule.svc_id;
+	}
+
+	/*
+	 * SKB Mark Rule
+	 */
+	if (org_rules & NETFN_FLOWMGR_VALID_RULE_FLAG_SKB_MARK) {
+		nircm->mark_rule.flow_mark = original->rule_info.mark_rule.skb_mark;
+		nircm->valid_flags |= SFE_RULE_CREATE_MARK_VALID;
+	}
+
+	if (reply_rules & NETFN_FLOWMGR_VALID_RULE_FLAG_SKB_MARK) {
+		nircm->mark_rule.return_mark = original->rule_info.mark_rule.skb_mark;
+		nircm->valid_flags |= SFE_RULE_CREATE_MARK_VALID;
+	}
+
+	/*
+	 * QDISC Rule
+	 */
+	netfn_flowmgr_sfe_fill_qdisc_v6_rule(original, reply, nircm);
 
 	/*
 	 * Dump the information passed to SFE acceleration engine

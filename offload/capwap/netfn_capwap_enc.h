@@ -23,13 +23,21 @@
 #define NETFN_CAPWAP_ENC_STATS_STRLEN 20
 #define NETFN_CAPWAP_ENC_STATS_WIDTH 82
 
+struct netfn_capwap_tun;
+
 /*
  * netfn_capwap_enc_hdr
  *	Encapsulation header
  */
 struct netfn_capwap_enc_hdr {
-	__be32 src_ip[4];		/* Source IP for tunnel. */
-	__be32 dest_ip[4];		/* Destination IP for tunnel. */
+	union {
+		struct in_addr ip4;	/**< Source IPv4 address */
+		struct in6_addr ip6;	/**< Source IPv6 address */
+	} src_ip;
+	union {
+		struct in_addr ip4;	/**< Dest IPv4 address */
+		struct in6_addr ip6;	/**< Dest IPv6 address */
+	} dest_ip;
 	__be16 src_port;		/* Source port */
 	__be16 dest_port;		/* Destination port */
 	__u8 proto_next_hdr;		/* L4 proto. */
@@ -58,6 +66,7 @@ struct netfn_capwap_enc {
 	uint8_t snap_hdr[NETFN_CAPWAP_SNAP_HDR_LEN];
 					/* Custom snap header. */
 	uint8_t bssid;			/* Basic service set ID. */
+	uint8_t flags;			/* Check if VLAN or PPPOE is enabled. */
 };
 /*
  * netfn_capwap_enc_stats_read()
@@ -69,7 +78,7 @@ void netfn_capwap_enc_stats_read(struct netfn_capwap_enc *enc, struct netfn_capw
  * netfn_capwap_enc_init()
  *	Encapsulation initialization.
  */
-bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc_cfg *cfg, struct dentry *dentry);
+bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc_cfg *cfg, struct netfn_tuple *tuple, struct netfn_capwap_tun *nct);
 
 /*
  * netfn_capwap_enc()
@@ -82,5 +91,17 @@ bool netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct 
  *	Update encap mtu
  */
 void netfn_capwap_enc_mtu_update(struct netfn_capwap_enc *enc, unsigned int mtu);
+
+/*
+ * netfn_capwap_enc_get_err_stats()
+ *	Accumulates encapsulation error stats and return sum
+ */
+uint64_t netfn_capwap_enc_get_err_stats(struct netfn_capwap_enc *enc);
+
+/*
+ * netfn_capwap_enc_get_drop_stats()
+ *	Accumulates encapsulation drop stats and return sum
+ */
+uint64_t netfn_capwap_enc_get_drop_stats(struct netfn_capwap_enc *enc);
 
 #endif /* __NETFN_CAPWAP_ENC_H */

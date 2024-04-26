@@ -25,8 +25,11 @@
 #define __NSS_CAPWAPMGR_LEGACY_H
 
 #include <linux/rtnetlink.h>
+#include <linux/types.h>
 
+#include <ppe_drv_iface.h>
 #include <netfn_capwapmgr.h>
+#include <netfn_capwap_types.h>
 
 #define NSS_CAPWAPMGR_MAX_TUNNELS		32
 					/** Maximum number of tunnels currently supported. */
@@ -35,11 +38,11 @@
 /*
  * Maxmimum values for rule configuration parameters.
  */
-#define NSS_CAPWAP_MAX_MTU			9000
+#define NSS_CAPWAP_MAX_MTU		NETFN_CAPWAP_MAX_BUF_SZ
 				/**< Maximum MTU supported by NSS FW. */
-#define NSS_CAPWAP_MAX_BUFFER_SIZE		9000
+#define NSS_CAPWAP_MAX_BUFFER_SIZE	NETFN_CAPWAP_MAX_BUF_SZ
 				/**< Maximum buffer-size supported by NSS FW. */
-#define NSS_CAPWAP_MAX_FRAGMENTS		10
+#define NSS_CAPWAP_MAX_FRAGMENTS	NETFN_CAPWAP_MAX_FRAGS
 				/**< Maximum fragments for reassembly. */
 
 /*
@@ -65,10 +68,83 @@
 #define NSS_CAPWAP_ENCAP_UDPLITE_HDR_CSUM	0x4
 				/**< Generate only UDP-Lite header checksum. Otherwise whole UDP-Lite payload. */
 
-#define NSS_CAPWAPMGR_FEATURE_DTLS_ENABLED              0x00000001      /* Tunnel enabled DTLS. */
-#define NSS_CAPWAPMGR_FEATURE_INNER_TRUSTSEC_ENABLED    0x00000002      /* Tunnel enabled inner trustsec. */
-#define NSS_CAPWAPMGR_FEATURE_OUTER_TRUSTSEC_ENABLED    0x00000004      /* Tunnel enabled outer trustsec. */
-#define NSS_CAPWAPMGR_FEATURE_WIRELESS_QOS_ENABLED      0x00000008      /* Tunnel enabled wireless QoS. */
+#define NSS_CAPWAPMGR_FEATURE_DTLS_ENABLED              NETFN_CAPWAP_FEATURES_DTLS      /* Tunnel enabled DTLS. */
+#define NSS_CAPWAPMGR_FEATURE_INNER_TRUSTSEC_ENABLED    NETFN_CAPWAP_FEATURES_INNER_SGT      /* Tunnel enabled inner trustsec. */
+#define NSS_CAPWAPMGR_FEATURE_OUTER_TRUSTSEC_ENABLED    NETFN_CAPWAP_FEATURES_OUTER_SGT      /* Tunnel enabled outer trustsec. */
+#define NSS_CAPWAPMGR_FEATURE_WIRELESS_QOS_ENABLED      NETFN_CAPWAP_FEATURES_WLAN_QOS      /* Tunnel enabled wireless QoS. */
+
+/*
+ * CAPWAP version
+ */
+#define NSS_CAPWAP_VERSION_V1		NETFN_CAPWAP_VERSION_V1
+				/**< RFC CAPWAP version. */
+#define NSS_CAPWAP_VERSION_V2		NETFN_CAPWAP_VERSION_V2
+				/**< Initial CAPWAP version for a customer. */
+
+/*
+ * Type of packet. These are mutually exclusive fields.
+ */
+#define NSS_CAPWAP_PKT_TYPE_UNKNOWN	0x0000
+				/**< Don't know the type of CAPWAP packet. */
+#define NSS_CAPWAP_PKT_TYPE_CONTROL	NETFN_CAPWAP_PKT_TYPE_CTRL
+				/** It's a control CAPWAP packet src_port=5247. */
+#define NSS_CAPWAP_PKT_TYPE_DATA	NETFN_CAPWAP_PKT_TYPE_DATA
+				/**< It's a data CAPWAP packet src_port=5246. */
+
+/*
+ * Addtional fields for identifying what's there in the packet.
+ */
+#define NSS_CAPWAP_PKT_TYPE_WIRELESS_INFO	NETFN_CAPWAP_PKT_TYPE_WINFO
+				/**< W=1, wireless info present. */
+#define NSS_CAPWAP_PKT_TYPE_802_11		NETFN_CAPWAP_PKT_TYPE_80211
+				/**< T=1, then set wbid=1. */
+#define NSS_CAPWAP_PKT_TYPE_802_3		NETFN_CAPWAP_PKT_TYPE_8023
+				/**< Data is in 802.3 format. */
+#define NSS_CAPWAP_PKT_TYPE_SCS_ID_VALID	NETFN_CAPWAP_PKT_TYPE_SCS_ID_VALID
+				/**< Inner SCS ID valid. */
+#define NSS_CAPWAP_PKT_TYPE_SDWF_ID_VALID	NETFN_CAPWAP_PKT_TYPE_SDWF_ID_VALID
+				/**< Inner SDWF ID valid. */
+
+#define NSS_CAPWAP_WINFO_SZ NETFN_CAPWAP_WIRELESS_INFO_LEN
+				/**< Size of Wireless Info. */
+
+/**
+ *
+ * NOTE: The following structure is a shallow copy of the netfn_capwap_prehdr
+ * structure in netfn_capwap_types.h file.
+ * When making changes to this structure, we need to make sure that the
+ * netfn_capwap_prehdr is also updated.
+ *
+ * nss_capwap_metaheader
+ *	CAPWAP metaheader per-packet for both encap (TX) and decap (RX).
+ */
+struct nss_capwap_metaheader {
+	uint8_t version;	/**< CAPWAP version. */
+	uint8_t rid;		/**< Radio ID. */
+	uint16_t tunnel_id;	/**< Tunnel-ID. */
+	uint8_t dscp;		/**< DSCP value. */
+	uint8_t vlan_pcp;	/**< VLAN priority .P marking. */
+	uint16_t type;		/**< Type of CAPWAP packet & What was there in CAPWAP header. */
+	uint16_t nwireless;	/**< Number of wireless info sections in CAPWAP header. */
+	uint16_t wireless_qos;	/**< 802.11e qos info. */
+	uint16_t outer_sgt;	/**< Security Group Tag value in the TrustSec header. */
+	uint16_t inner_sgt;	/**< Security Group Tag value in the TrustSec header. */
+	uint32_t flow_id;	/**< Flow identification. */
+	union {
+		struct {
+			uint16_t vapid;		/**< VAP ID info. */
+			uint16_t reserved;	/**< Reserved for backwards comparibility. */
+		};
+
+		uint32_t scs_sdwf_id;		/**< SCS/SDWF ID. */
+	};
+
+	/*
+	 * Put the wl_info at last so we don't have to do copy if 802.11 to 802.3 conversion did not happen.
+	 */
+	uint8_t wl_info[NSS_CAPWAP_WINFO_SZ];	/**< Wireless info preserved from the original packet. */
+} __packed __aligned(4);
+
 
 /**
  * nss_ipv4_create
@@ -350,17 +426,35 @@ typedef enum {
 	NSS_CAPWAPMGR_ERROR_NULL_TOP_NDEV,		/**< NULL top net device */
 	NSS_CAPWAPMGR_ERROR_UNSUPPORTED_TUPLE_TYPE,	/**< Unsupported tuple type */
 	NSS_CAPWAPMGR_ERROR_UNSUPPORTED_L4_PROTO,	/**< Unsupported l4 protocol */
-	NSS_CAPWAPMGR_ERROR_TUN_ALLOC,		/**< Memory allocation for tunnel ctx failed */
+	NSS_CAPWAPMGR_ERROR_TUN_ALLOC,			/**< Memory allocation for tunnel ctx failed */
 	NSS_CAPWAPMGR_ERROR_TUN_FREE,			/**< Tunnel free failed in offload engine */
 	NSS_CAPWAPMGR_ERROR_FLOW_RULE_CREATE,		/**< Flow rule create failed */
-	NSS_CAPWAPMGR_ERROR_FLOW_RULE_DESTROY,	/**< Flow rule destroy failed */
-	NSS_CAPWAPMGR_ERROR_TUNID_ADD,		/**< Add tunnel under tunid dev */
-	NSS_CAPWAPMGR_ERROR_TUNID_DEL,		/**< Delete tunnel under tunid dev */
-	NSS_CAPWAPMGR_ERROR_TUNNEL_CONTEXT_GET,	/**< Failed to get tunnel context */
-	NSS_CAPWAPMGR_ERROR_TUNID_FREE,		/**< Failed to free tunid capwap dev */
-	NSS_CAPWAPMGR_ERROR_DTLS_ALLOC,		/**< Failed to allocated DTLS tunnel */
-	NSS_CAPWAPMGR_ERROR_DTLS_BIND,		/**< Failed to Bind DTLS Net Device to capwap Net Device */
-	NSS_CAPWAPMGR_ERROR_MAX,		/**< Failed to Bind DTLS Net Device to capwap Net Device */
+	NSS_CAPWAPMGR_ERROR_FLOW_RULE_DESTROY,		/**< Flow rule destroy failed */
+	NSS_CAPWAPMGR_ERROR_TUNID_ADD,			/**< Add tunnel under tunid dev */
+	NSS_CAPWAPMGR_ERROR_TUNID_DEL,			/**< Delete tunnel under tunid dev */
+	NSS_CAPWAPMGR_ERROR_TUNNEL_CONTEXT_GET,		/**< Failed to get tunnel context */
+	NSS_CAPWAPMGR_ERROR_TUNID_FREE,			/**< Failed to free tunid capwap dev */
+	NSS_CAPWAPMGR_ERROR_DTLS_ALLOC,			/**< Failed to allocated DTLS tunnel */
+	NSS_CAPWAPMGR_ERROR_DTLS_BIND,			/**< Failed to Bind DTLS Net Device to capwap Net Device */
+	NSS_CAPWAPMGR_ERROR_STATS_GET,	 		/**< Failed to get tunnel stats */
+	NSS_CAPWAPMGR_ERROR_INVALID_CFG, 		/**< Invalid tunnel create configuration */			
+	NSS_CAPWAPMGR_ERROR_TUN_ENABLED,	 	/**< Updating tunnel config when tunnel is enabled */
+	NSS_CAPWAPMGR_ERROR_TUN_DEINIT,			/**< Failed to Deinitialize the tunnel */
+	NSS_CAPWAPMGR_ERROR_TUN_INIT,			/**< Failed to Initialize the tunnel */
+	NSS_CAPWAPMGR_ERROR_DTLS_CFG, 			/**< Invalid DTLS configuration */
+	NSS_CAPWAPMGR_ERROR_DTLS_SESSION_SWITCH,	/**< DTLS Session Switch failed */
+	NSS_CAPWAPMGR_ERROR_DTLS_DECAP_SESSION_ADD,	/**< DTLS Encap Session Add Failed */
+	NSS_CAPWAPMGR_ERROR_DTLS_ENCAP_SESSION_ADD,	/**< DTLS Decap session Add Failed */
+	NSS_CAPWAPMGR_ERROR_DTLS_TUN_NOT_CONFIGURED,	 /**< DTLS Tunnel is not configured */
+	NSS_CAPWAPMGR_ERROR_DTLS_ENABLED, 		/**< DTLS Tunnel enabled */
+	NSS_CAPWAPMGR_ERROR_TUNID_INACTIVE, 		/**< Tunnel ID inactive */
+	NSS_CAPWAPMGR_ERROR_TUNID_OUT_OF_RANGE,		/**< Tunnel ID out of range */
+	NSS_CAPWAPMGR_ERROR_TUNID_ACTIVE,		/**< Tunnel Id Active */
+	NSS_CAPWAPMGR_ERROR_FLOW_COOKIE_DB_ALLOC,	/**< Failed to instantiate the Flow Cookie DataBase */
+	NSS_CAPWAPMGR_ERROR_FLOW_COOKIE_ADD, 		/**< Failed to add the Flow Cookie in Flow Cookie DataBase */
+	NSS_CAPWAPMGR_ERROR_FLOW_COOKIE_DEL,		/**< Failed to delete the Flow Cookie from Flow Cookie DataBase */
+	NSS_CAPWAPMGR_ERROR_CAPWAP_CFG,			/**< Invalid CAPWAP config. */
+	NSS_CAPWAPMGR_ERROR_MAX,
 } nss_capwapmgr_status_t;
 
 /**
@@ -371,9 +465,11 @@ struct nss_capwap_pn_stats {
 	uint64_t rx_packets;		/**< Number of packets received. */
 	uint64_t rx_bytes;		/**< Number of bytes received. */
 	uint64_t rx_dropped;		/**< Number of dropped Rx packets. */
+	uint64_t rx_errors;             /**< Total rx error. */
 	uint64_t tx_packets;		/**< Number of packets transmitted. */
 	uint64_t tx_bytes;		/**< Number of bytes transmitted. */
 	uint64_t tx_dropped;		/**< Number of dropped Tx packets. */
+	uint64_t tx_errors;             /**< Total tx error. */
 };
 
 /**
@@ -450,8 +546,6 @@ struct nss_capwap_tunnel_stats {
 			/**< Exceeds max fragments allowed (10). */
 	uint64_t rx_drop_missing_frags;
 			/**< Re-assembly failure because of missing fragments. */
-	uint64_t rx_drop_linearize_fail;
-			/**< Drop because of linearization failure. */
 	uint64_t tx_keepalive_pkts;
 			/**< Keep alive packets received by offload engine. */
 };
@@ -459,9 +553,9 @@ struct nss_capwap_tunnel_stats {
 /**
  * NSS DTLS manager flags
  */
-#define NSS_DTLSMGR_HDR_IPV6		0x00000001	/**< L3 header is v6 or v4 */
-#define NSS_DTLSMGR_HDR_UDPLITE		0x00000002	/**< L4 header is UDP-Lite or UDP */
-#define NSS_DTLSMGR_HDR_CAPWAP		0x00000004	/**< CAPWAP-DTLS or DTLS header */
+#define NSS_DTLSMGR_HDR_IPV6		NETFN_DTLS_FLAG_IPV6	/**< L3 header is v6 or v4 */
+#define NSS_DTLSMGR_HDR_UDPLITE		NETFN_DTLS_FLAG_UDPLITE	/**< L4 header is UDP-Lite or UDP */
+#define NSS_DTLSMGR_HDR_CAPWAP		NETFN_DTLS_FLAG_CAPWAP	/**< CAPWAP-DTLS or DTLS header */
 
 /**
  * DTLS protocol version
@@ -547,6 +641,18 @@ struct nss_dtlsmgr_config_update {
 };
 
 /*
+ * netfn_capwapmgr_legacy2crypto
+ *	API to convert legacy crypto config to netfn crypto.
+ */
+extern netfn_capwapmgr_ret_t netfn_capwapmgr_legacy2crypto(struct netfn_dtls_crypto *netfn_crypto, struct nss_dtlsmgr_crypto *legacy_crypto);
+
+/*
+ * netfn_capwapgr_legacy2dtls.
+ *	API to convert legacy DTLS config to netfn config.
+ */
+extern netfn_capwapmgr_ret_t netfn_capwapmgr_legacy2dtls(struct nss_dtlsmgr_config *dtls_data, struct netfn_dtls_cfg *enc, struct netfn_dtls_cfg *dec);
+
+/*
  * netfn_capwapmgr_legacy_rule2tun_cfg()
  *	API to convert legacy rules to netfn rules.
  */
@@ -577,13 +683,8 @@ extern nss_capwapmgr_status_t netfn_capwapmgr_status2legacy_status(netfn_capwapm
 static inline struct net_device *nss_capwapmgr_netdev_create(void)
 {
 	struct net_device *dev = NULL;
-	int got_lock;
 
-	got_lock = rtnl_trylock();
 	dev =  netfn_capwapmgr_tunid_dev_alloc();
-	if (got_lock) {
-		rtnl_unlock();
-	}
 
 	return dev;
 }
@@ -686,13 +787,8 @@ static inline nss_capwapmgr_status_t nss_capwapmgr_ipv6_tunnel_create(struct net
 static inline nss_capwapmgr_status_t nss_capwapmgr_enable_tunnel(struct net_device *dev, uint8_t tunnel_id)
 {
 	netfn_capwapmgr_ret_t netfn_ret = NETFN_CAPWAPMGR_SUCCESS;
-	int got_lock;
 
-	got_lock = rtnl_trylock();
 	netfn_ret = netfn_capwapmgr_tunid_toggle_state(dev, tunnel_id, true);
-	if (got_lock) {
-		rtnl_unlock();
-	}
 
 	return netfn_capwapmgr_status2legacy_status(netfn_ret);
 }
@@ -713,13 +809,8 @@ static inline nss_capwapmgr_status_t nss_capwapmgr_enable_tunnel(struct net_devi
 static inline nss_capwapmgr_status_t nss_capwapmgr_disable_tunnel(struct net_device *dev, uint8_t tunnel_id)
 {
 	netfn_capwapmgr_ret_t netfn_ret = NETFN_CAPWAPMGR_SUCCESS;
-	int got_lock;
 
-	got_lock = rtnl_trylock();
 	netfn_ret = netfn_capwapmgr_tunid_toggle_state(dev, tunnel_id, false);
-	if (got_lock) {
-		rtnl_unlock();
-	}
 
 	return netfn_capwapmgr_status2legacy_status(netfn_ret);
 }
@@ -740,7 +831,15 @@ static inline nss_capwapmgr_status_t nss_capwapmgr_disable_tunnel(struct net_dev
  */
 static inline nss_capwapmgr_status_t nss_capwapmgr_update_path_mtu(struct net_device *dev, uint8_t tunnel_id, uint32_t mtu)
 {
-	BUG_ON(1);
+	netfn_capwapmgr_ret_t netfn_ret = NETFN_CAPWAPMGR_SUCCESS;
+	struct netfn_capwapmgr_tun_update cfg = {0};
+
+	cfg.type = NETFN_CAPWAPMGR_UPDATE_MTU;
+	cfg.update_cfg.mtu = mtu;
+
+	netfn_ret = netfn_capwapmgr_tunid_update(dev, tunnel_id, &cfg);
+
+	return netfn_capwapmgr_status2legacy_status(netfn_ret);
 }
 
 /**
@@ -759,7 +858,15 @@ static inline nss_capwapmgr_status_t nss_capwapmgr_update_path_mtu(struct net_de
  */
 static inline nss_capwapmgr_status_t nss_capwapmgr_update_dest_mac_addr(struct net_device *dev, uint8_t tunnel_id, uint8_t *mac_addr)
 {
-	BUG_ON(1);
+	netfn_capwapmgr_ret_t netfn_ret = NETFN_CAPWAPMGR_SUCCESS;
+	struct netfn_capwapmgr_tun_update cfg = {0};
+
+	cfg.type = NETFN_CAPWAPMGR_UPDATE_DEST_MAC;
+	memcpy(cfg.update_cfg.dest_mac, mac_addr, ETH_ALEN);
+
+	netfn_ret = netfn_capwapmgr_tunid_update(dev, tunnel_id, &cfg);
+
+	return netfn_capwapmgr_status2legacy_status(netfn_ret);
 }
 
 /**
@@ -778,7 +885,15 @@ static inline nss_capwapmgr_status_t nss_capwapmgr_update_dest_mac_addr(struct n
  */
 static inline nss_capwapmgr_status_t nss_capwapmgr_update_src_interface(struct net_device *dev, uint8_t tunnel_id, int32_t src_interface_num)
 {
-	BUG_ON(1);
+	netfn_capwapmgr_ret_t netfn_ret = NETFN_CAPWAPMGR_SUCCESS;
+	struct netfn_capwapmgr_tun_update cfg = {0};
+
+	cfg.type = NETFN_CAPWAPMGR_UPDATE_SRC_INTERFACE;
+	cfg.update_cfg.dev = ppe_drv_dev_get_by_iface_idx(src_interface_num);
+
+	netfn_ret = netfn_capwapmgr_tunid_update(dev, tunnel_id, &cfg);
+
+	return netfn_capwapmgr_status2legacy_status(netfn_ret);
 }
 
 /**
@@ -797,7 +912,7 @@ static inline nss_capwapmgr_status_t nss_capwapmgr_update_src_interface(struct n
  */
 static inline nss_capwapmgr_status_t nss_capwapmgr_change_version(struct net_device *dev, uint8_t tunnel_id, uint8_t ver)
 {
-	BUG_ON(1);
+	return NSS_CAPWAPMGR_SUCCESS;
 }
 
 /**
@@ -844,13 +959,8 @@ static inline nss_capwapmgr_status_t nss_capwapmgr_tunnel_destroy(struct net_dev
 static inline nss_capwapmgr_status_t nss_capwapmgr_netdev_destroy(struct net_device *netdev)
 {
 	netfn_capwapmgr_ret_t netfn_ret = NETFN_CAPWAPMGR_SUCCESS;
-	int got_lock;
 
-	got_lock = rtnl_trylock();
 	netfn_ret = netfn_capwapmgr_tunid_dev_free(netdev);
-	if (got_lock) {
-		rtnl_unlock();
-	}
 
 	return netfn_capwapmgr_status2legacy_status(netfn_ret);
 }
@@ -920,7 +1030,19 @@ static inline struct net_device *nss_capwapmgr_get_dtls_netdev(struct net_device
 static inline nss_capwapmgr_status_t nss_capwapmgr_configure_dtls(struct net_device *dev, uint8_t tunnel_id,
 		uint8_t enable_dtls, struct nss_dtlsmgr_config *in_data)
 {
-	BUG_ON(1);
+	netfn_capwapmgr_ret_t netfn_ret = NETFN_CAPWAPMGR_SUCCESS;
+	struct netfn_capwapmgr_tun_update cfg = {0};
+
+	if (enable_dtls) {
+		cfg.type = NETFN_CAPWAPMGR_UPDATE_DTLS_ENABLE;
+		netfn_capwapmgr_legacy2dtls(in_data, &cfg.update_cfg.dtls.enc, &cfg.update_cfg.dtls.dec);
+	} else {
+		cfg.type = NETFN_CAPWAPMGR_UPDATE_DTLS_DISABLE;
+	}
+
+	netfn_ret = netfn_capwapmgr_tunid_update(dev, tunnel_id, &cfg);
+
+	return netfn_capwapmgr_status2legacy_status(netfn_ret);
 }
 
 /**
@@ -941,7 +1063,18 @@ static inline nss_capwapmgr_status_t nss_capwapmgr_configure_dtls(struct net_dev
 static inline nss_capwapmgr_status_t nss_capwapmgr_dtls_rekey_rx_cipher_update(struct net_device *dev, uint8_t tunnel_id,
 		struct nss_dtlsmgr_config_update *udata)
 {
-	BUG_ON(1);
+	netfn_capwapmgr_ret_t netfn_ret = NETFN_CAPWAPMGR_SUCCESS;
+	struct netfn_capwapmgr_tun_update cfg = {0};
+
+	cfg.type = NETFN_CAPWAPMGR_UPDATE_DTLS_DECAP_SESSION;
+	netfn_capwapmgr_legacy2crypto(&cfg.update_cfg.dtls.dec.base, &udata->crypto);
+
+	cfg.update_cfg.dtls.dec.epoch = udata->epoch;
+	cfg.update_cfg.dtls.dec.replay_win = udata->window_size;
+
+	netfn_ret = netfn_capwapmgr_tunid_update(dev, tunnel_id, &cfg);
+
+	return netfn_capwapmgr_status2legacy_status(netfn_ret);
 }
 
 /**
@@ -962,7 +1095,17 @@ static inline nss_capwapmgr_status_t nss_capwapmgr_dtls_rekey_rx_cipher_update(s
 static inline nss_capwapmgr_status_t nss_capwapmgr_dtls_rekey_tx_cipher_update(struct net_device *dev, uint8_t tunnel_id,
 		struct nss_dtlsmgr_config_update *udata)
 {
-	BUG_ON(1);
+	netfn_capwapmgr_ret_t netfn_ret = NETFN_CAPWAPMGR_SUCCESS;
+	struct netfn_capwapmgr_tun_update cfg = {0};
+
+	cfg.type = NETFN_CAPWAPMGR_UPDATE_DTLS_ENCAP_SESSION;
+	netfn_capwapmgr_legacy2crypto(&cfg.update_cfg.dtls.enc.base, &udata->crypto);
+
+	cfg.update_cfg.dtls.enc.epoch = udata->epoch;
+
+	netfn_ret = netfn_capwapmgr_tunid_update(dev, tunnel_id, &cfg);
+
+	return netfn_capwapmgr_status2legacy_status(netfn_ret);
 }
 
 /**
@@ -980,7 +1123,14 @@ static inline nss_capwapmgr_status_t nss_capwapmgr_dtls_rekey_tx_cipher_update(s
  */
 static inline nss_capwapmgr_status_t nss_capwapmgr_dtls_rekey_rx_cipher_switch(struct net_device *dev, uint8_t tunnel_id)
 {
-	BUG_ON(1);
+	netfn_capwapmgr_ret_t netfn_ret = NETFN_CAPWAPMGR_SUCCESS;
+	struct netfn_capwapmgr_tun_update cfg = {0};
+
+	cfg.type = NETFN_CAPWAPMGR_DTLS_DECAP_SESSION_SWITCH;
+
+	netfn_ret = netfn_capwapmgr_tunid_update(dev, tunnel_id, &cfg);
+
+	return netfn_capwapmgr_status2legacy_status(netfn_ret);
 }
 
 /**
@@ -998,8 +1148,170 @@ static inline nss_capwapmgr_status_t nss_capwapmgr_dtls_rekey_rx_cipher_switch(s
  */
 static inline nss_capwapmgr_status_t nss_capwapmgr_dtls_rekey_tx_cipher_switch(struct net_device *dev, uint8_t tunnel_id)
 {
-	BUG_ON(1);
+	netfn_capwapmgr_ret_t netfn_ret = NETFN_CAPWAPMGR_SUCCESS;
+	struct netfn_capwapmgr_tun_update cfg = {0};
+
+	cfg.type = NETFN_CAPWAPMGR_DTLS_ENCAP_SESSION_SWITCH;
+
+	netfn_ret = netfn_capwapmgr_tunid_update(dev, tunnel_id, &cfg);
+
+	return netfn_capwapmgr_status2legacy_status(netfn_ret);
 }
+
+/*
+ * Flow rule add types. Mutually exclusive fields.
+ * This indicates whether SCS or SDWF ID is configured for inner packet lookup.
+ */
+#define NSS_CAPWAP_FLOW_ATTR_SCS_VALID NETFN_CAPWAP_PKT_TYPE_SCS_ID_VALID
+			/**< SCS Identification valid in flow attributes. */
+#define NSS_CAPWAP_FLOW_ATTR_SDWF_VALID NETFN_CAPWAP_PKT_TYPE_SDWF_ID_VALID
+			/**< SDWF Identification valid in flow attributes. */
+
+/**
+ * nss_capwap_flow_attr
+ *	Inner Flow attributes.
+ */
+struct nss_capwap_flow_attr {
+	uint8_t type;			/**< Type to indicate if SCS is valid or SAWF is valid. */
+	uint32_t flow_id;		/**< Flow Identification. */
+	uint32_t scs_sdwf_id;		/**< SCS or SDWF Identification. */
+};
+
+/**
+ * nss_capwapmgr_flow_info
+ *	Inner flow information.
+ */
+struct nss_capwapmgr_flow_info {
+	uint16_t ip_version;	/**< IP version. */
+	uint16_t protocol;	/**< Protocol. */
+	uint32_t src_ip[4];	/**< Source IP address. */
+	uint32_t dst_ip[4];	/**< Destination IP address. */
+	uint16_t src_port;	/**< Source port. */
+	uint16_t dst_port;	/**< Destination port. */
+	struct nss_capwap_flow_attr flow_attr;
+				/**< Flow attributes. */
+};
+
+/**
+ * nss_capwapmgr_add_flow_rule
+ *	Send a flow rule add message to NSS.
+ *
+ * @datatypes
+ * net_device
+ *
+ * @param[in] netdevice	CAPWAP netdevice.
+ * @param[in] tunnel_id	Tunnel ID of the tunnel.
+ * @param[in] flow_info	Flow information.
+ *
+ * @return
+ * nss_capwapmgr_status_t
+ */
+static inline nss_capwapmgr_status_t nss_capwapmgr_add_flow_rule(struct net_device *dev, uint8_t tunnel_id, struct nss_capwapmgr_flow_info *flow_info)
+{
+	netfn_capwapmgr_ret_t netfn_ret = NETFN_CAPWAPMGR_SUCCESS;
+	struct netfn_capwapmgr_tun_update cfg = {0};
+	netfn_tuple_t *tuple;
+	struct netfn_flow_cookie *nfc;
+
+	cfg.type = NETFN_CAPWAPMGR_ADD_NETFN_FLOW_COOKIE;
+
+	tuple = &cfg.update_cfg.fci.tuple;
+	tuple->tuple_type = NETFN_TUPLE_5TUPLE;
+
+	if (flow_info->ip_version == NETFN_FLOWMGR_TUPLE_IP_VERSION_V4) {
+		tuple->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V4;
+		tuple->tuples.tuple_5.src_ip.ip4.s_addr = htonl(flow_info->src_ip[0]);
+		tuple->tuples.tuple_5.dest_ip.ip4.s_addr = htonl(flow_info->dst_ip[0]);
+		tuple->tuples.tuple_5.l4_src_ident = htons(flow_info->src_port);
+		tuple->tuples.tuple_5.l4_dest_ident = htons(flow_info->dst_port);
+		tuple->tuples.tuple_5.protocol = (uint8_t)flow_info->protocol;
+	} else {
+		tuple->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V6;
+
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[0] = htonl(flow_info->src_ip[0]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[1] = htonl(flow_info->src_ip[1]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[2] = htonl(flow_info->src_ip[2]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[3] = htonl(flow_info->src_ip[3]);
+		tuple->tuples.tuple_5.l4_src_ident = htons(flow_info->src_port);
+
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[0] = htonl(flow_info->dst_ip[0]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[1] = htonl(flow_info->dst_ip[1]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[2] = htonl(flow_info->dst_ip[2]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[3] = htonl(flow_info->dst_ip[3]);
+		tuple->tuples.tuple_5.l4_dest_ident = htons(flow_info->dst_port);
+
+		tuple->tuples.tuple_5.protocol = (uint8_t)flow_info->protocol;
+	}
+
+	nfc = &cfg.update_cfg.fci.nfc;
+	nfc->valid_flag = flow_info->flow_attr.type;
+	nfc->flow_id = flow_info->flow_attr.flow_id;
+	nfc->scs_id = flow_info->flow_attr.scs_sdwf_id;
+	rtnl_lock();
+	netfn_ret = netfn_capwapmgr_tunid_update(dev, tunnel_id, &cfg);
+	rtnl_unlock();
+
+	return netfn_capwapmgr_status2legacy_status(netfn_ret);
+}
+
+/**
+ * nss_capwapmgr_del_flow_rule
+ *	Send a flow rule delete message to NSS.
+ *
+ * @datatypes
+ * net_device
+ *
+ * @param[in] netdevice	CAPWAP netdevice.
+ * @param[in] tunnel_id	Tunnel ID of the tunnel.
+ * @param[in] flow_info Flow information.
+ *
+ * @return
+ * nss_capwapmgr_status_t
+ */
+static inline nss_capwapmgr_status_t nss_capwapmgr_del_flow_rule(struct net_device *dev, uint8_t tunnel_id, struct nss_capwapmgr_flow_info *flow_info)
+{
+	netfn_capwapmgr_ret_t netfn_ret = NETFN_CAPWAPMGR_SUCCESS;
+	struct netfn_capwapmgr_tun_update cfg = {0};
+	netfn_tuple_t *tuple;
+
+	cfg.type = NETFN_CAPWAPMGR_DEL_NETFN_FLOW_COOKIE;
+
+	tuple = &cfg.update_cfg.fci.tuple;
+	tuple->tuple_type = NETFN_TUPLE_5TUPLE;
+
+	if (flow_info->ip_version == NETFN_FLOWMGR_TUPLE_IP_VERSION_V4) {
+		tuple->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V4;
+		tuple->tuples.tuple_5.src_ip.ip4.s_addr = htonl(flow_info->src_ip[0]);
+		tuple->tuples.tuple_5.dest_ip.ip4.s_addr = htonl(flow_info->dst_ip[0]);
+		tuple->tuples.tuple_5.l4_src_ident = htons(flow_info->src_port);
+		tuple->tuples.tuple_5.l4_dest_ident = htons(flow_info->dst_port);
+		tuple->tuples.tuple_5.protocol = (uint8_t)flow_info->protocol;
+	} else {
+		tuple->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V6;
+
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[0] = htonl(flow_info->src_ip[0]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[1] = htonl(flow_info->src_ip[1]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[2] = htonl(flow_info->src_ip[2]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[3] = htonl(flow_info->src_ip[3]);
+		tuple->tuples.tuple_5.l4_src_ident = htons(flow_info->src_port);
+
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[0] = htonl(flow_info->dst_ip[0]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[1] = htonl(flow_info->dst_ip[1]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[2] = htonl(flow_info->dst_ip[2]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[3] = htonl(flow_info->dst_ip[3]);
+		tuple->tuples.tuple_5.l4_dest_ident = htons(flow_info->dst_port);
+
+		tuple->tuples.tuple_5.protocol = (uint8_t)flow_info->protocol;
+	}
+
+	rtnl_lock();
+	netfn_ret = netfn_capwapmgr_tunid_update(dev, tunnel_id, &cfg);
+	rtnl_unlock();
+
+	return netfn_capwapmgr_status2legacy_status(netfn_ret);
+}
+
+
 
 #if defined(NETFN_CAPWAPMGR_ONE_NETDEV)
 /**

@@ -30,7 +30,6 @@
 		*((uint64_t *)sptr) += value; \
 		})
 
-
 /*
  * netfn_capwap_tun
  * 	CAPWAP tunnel structure
@@ -40,6 +39,7 @@ struct netfn_capwap_tun {
 	struct net_device *dev;			/* Pointer to tunnel dev. */
 	struct net_device *next_dev;		/* Pointer to nexthop dev. */
 	struct net_device *vp_dev;		/* Pointer to VP dev. */
+	uint32_t features;			/* Features enabled for tunnel. */
 
 	struct netfn_capwap_pkt_stats stats;	/* Tunnel stats. */
 	struct netfn_capwap_enc enc;	/* Tunnel encap object. */
@@ -49,6 +49,7 @@ struct netfn_capwap_tun {
 	struct netfn_pkt_steer tx_steer;	/* Tx packet steering handle. */
 	struct netfn_pkt_steer rx_steer;	/* Rx Packet steering handle. */
 	uint32_t flags;				/* Flags for this tunnel. */
+	uint16_t id;				/* Tunnel identifier. */
 	uint8_t pvt[] __attribute__((aligned (sizeof(uint32_t))));
 						/* User private area pointer. */
 };

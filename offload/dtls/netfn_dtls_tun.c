@@ -26,6 +26,7 @@
 #include <linux/ip.h>
 #include <linux/ipv6.h>
 #include <linux/udp.h>
+#include <linux/if_vlan.h>
 #include <linux/mutex.h>
 
 #include <ppe_vp_public.h>
@@ -96,6 +97,7 @@ static ssize_t netfn_dtls_tun_print_stats(struct file *fp, char __user *ubuf, si
 	len = snprintf(buf, max_len, "Session Added: %llu\n", stats.session_alloc);
 	len += snprintf(buf + len, max_len - len, "session Removed: %llu\n", stats.session_free);
 	len += snprintf(buf + len, max_len - len, "encap switch: %llu\n", stats.encap_switch);
+	len += snprintf(buf + len, max_len - len, "Decap switch: %llu\n", stats.decap_switch);
 	len += snprintf(buf + len, max_len - len, "Device Encapsulation Statistics:\n");
 	len += snprintf(buf + len, max_len - len, "\tTx packets: %llu\n", stats.tx_pkts);
 	len += snprintf(buf + len, max_len - len, "\tTx bytes: %llu\n", stats.tx_bytes);
@@ -197,13 +199,14 @@ static int netfn_dtls_tun_mtu(struct net_device *dev, int mtu)
  * netfn_dtls_tun_vp_err()
  *	VP callback for outer exception.
  */
-bool netfn_dtls_tun_vp_err(struct ppe_vp_cb_info *info, void *cb_data)
+static bool netfn_dtls_tun_vp_err(struct ppe_vp_cb_info *info, void *cb_data)
 {
 	struct netfn_dtls_tun_stats *tun_stats;
 	struct netfn_dtls_tun *tun = cb_data;
 
 	tun_stats = this_cpu_ptr(tun->stats_pcpu);
 	tun_stats->tx_fail++;
+	tun_stats->tx_vp_exp++;
 	consume_skb(info->skb);
 	return true;
 }
@@ -212,36 +215,31 @@ bool netfn_dtls_tun_vp_err(struct ppe_vp_cb_info *info, void *cb_data)
  * netfn_dtls_tun_rcv()
  *	Handle UDP/UDPlite encapsulated DTLS+CAPWAP packets.
  */
-bool netfn_dtls_tun_rcv(struct ppe_vp_cb_info *info, void *cb_data)
+static void netfn_dtls_tun_rcv(struct sk_buff *skb, struct netfn_dtls_tun *tun)
 {
 	struct netfn_dtls_tun_stats *tun_stats;
-	struct netfn_dtls_tun *tun = cb_data;
-	struct sk_buff *skb = info->skb;
 	struct netfn_dtls_session *ses;
 	struct eip_dtls_hdr *dtls_hdr;
-	size_t hdr_len, dtls_offst;
+	size_t dtls_offst;
 
 	tun_stats = this_cpu_ptr(tun->stats_pcpu);
 
 	/*
-	 * In case of non-linear SKB, Linearize if the first segment cannot hold headers.
-	 * TODO: Non-CAPWAP mode?
+	 * In case of non-linear SKB, Linearize it. For CAPWAP, Ideally this not performance path.
 	 */
-	hdr_len = (skb->protocol == htons(ETH_P_IP)) ? sizeof(struct iphdr) : sizeof(struct ipv6hdr);
-	hdr_len += sizeof(struct udphdr);
-	hdr_len += sizeof(struct eip_capwap_hdr);
-	hdr_len += sizeof(struct eip_dtls_hdr);
-	if (skb_is_nonlinear(skb) && (skb_headlen(skb) < hdr_len)) {
+	if (unlikely(skb_is_nonlinear(skb))) {
 		if (skb_linearize(skb)) {
 			tun_stats->rx_fail_linearize++;
 			goto drop;
 		}
 	}
 
-	skb_reset_network_header(skb);
-	dtls_offst = hdr_len -  sizeof(struct eip_dtls_hdr);
-	dtls_hdr = (struct eip_dtls_hdr *)(skb->data +  dtls_offst);
+	dtls_offst = (skb->protocol == htons(ETH_P_IP)) ? sizeof(struct iphdr) : sizeof(struct ipv6hdr);
+	dtls_offst += sizeof(struct udphdr);
+	dtls_offst += sizeof(struct eip_capwap_hdr);
 
+	skb_reset_network_header(skb);
+	dtls_hdr = (struct eip_dtls_hdr *)(skb->data +  dtls_offst);
 	if (unlikely(dtls_hdr->type != EIP_DTLS_TYPE_APP_DATA)) {
 		/*
 		 * TODO: CC: Just Exchange pending & Active pointer and free older active state.
@@ -269,11 +267,52 @@ bool netfn_dtls_tun_rcv(struct ppe_vp_cb_info *info, void *cb_data)
 	netfn_dtls_dec(ses, skb);
 
 	rcu_read_unlock_bh();
-	return true;
+	return;
 
 drop:
 	tun_stats->rx_fail++;
 	dev_kfree_skb_any(skb);
+	return;
+}
+
+/*
+ * netfn_dtls_tun_vp_rcv()
+ *	Single SKB handler for VP.
+ */
+static bool netfn_dtls_tun_vp_rcv(struct ppe_vp_cb_info *info, void *cb_data)
+{
+	netfn_dtls_tun_rcv(info->skb, cb_data);
+	return true;
+}
+
+/*
+ * netfn_dtls_tun_vp_rcv_list()
+ */
+static bool netfn_dtls_tun_vp_rcv_list(struct net_device *dev, struct sk_buff_head *skb_list, void *cb_data)
+{
+	struct sk_buff *skb = NULL;
+
+	while ((skb = __skb_dequeue(skb_list)) != NULL) {
+		/*
+		 * PPE VP doesn't remove this information in List path.
+		 */
+		struct ethhdr *ethh = (struct ethhdr *)skb->data;
+		skb->protocol = ethh->h_proto;
+		__skb_pull(skb, (sizeof(struct ethhdr)));
+
+		/*
+		 * Parse VLAN if any and save priority information in SKB.
+		 */
+		if (eth_type_vlan(skb->protocol)) {
+			struct vlan_hdr *vhdr = (struct vlan_hdr *)skb->data;
+			__vlan_hwaccel_put_tag(skb, skb->protocol, vhdr->h_vlan_TCI);
+			skb->protocol = vhdr->h_vlan_encapsulated_proto;
+			__skb_pull(skb, VLAN_HLEN);
+		}
+
+		netfn_dtls_tun_rcv(skb, cb_data);
+	};
+
 	return true;
 }
 
@@ -290,7 +329,8 @@ static struct net_device *netfn_dtls_tun_alloc_vp(struct net_device *dev)
 	 * Allocate new VP
 	 */
 	vpai.type = PPE_VP_TYPE_SW_L3;
-	vpai.dst_cb = netfn_dtls_tun_rcv;
+	vpai.dst_cb = netfn_dtls_tun_vp_rcv;
+	vpai.dst_list_cb = netfn_dtls_tun_vp_rcv_list;
 	vpai.dst_cb_data = netdev_priv(dev);
 	vpai.src_cb = netfn_dtls_tun_vp_err;
 	vpai.src_cb_data = netdev_priv(dev);
@@ -430,7 +470,7 @@ static void netfn_dtls_tun_setup(struct net_device *dev)
 	 */
 	dev->needed_headroom = NETFN_DTLS_TUN_MAX_HEADROOM;
 	dev->needed_tailroom = NETFN_DTLS_TUN_MAX_TAILROOM;
-	dev->type = ARPHRD_TUNNEL;
+	dev->type = ARPHRD_VOID;
 	dev->ethtool_ops = NULL; /* TODO:  Can we use ethtool interface for device statistics */
 	dev->header_ops = NULL;
 	dev->netdev_ops = &dtls_tun_ops;
@@ -500,10 +540,10 @@ done:
 EXPORT_SYMBOL(netfn_dtls_tun_session_del);
 
 /*
- * netfn_dtls_tun_session_encap_switch()
+ * netfn_dtls_tun_session_switch()
  *	Switch pending state into active state. Free active state if any.
  */
-void netfn_dtls_tun_session_encap_switch(struct net_device *dev)
+void netfn_dtls_tun_session_switch(struct net_device *dev, bool encap)
 {
 	struct netfn_dtls_tun *tun = netdev_priv(dev);
 	struct netfn_dtls_tun_stats *tun_stats;
@@ -512,7 +552,13 @@ void netfn_dtls_tun_session_encap_switch(struct net_device *dev)
 	struct netfn_dtls_session *active;
 
 	tun_stats = this_cpu_ptr(tun->stats_pcpu);
-	state = &tun->enc;
+	if (encap) {
+		tun_stats->encap_switch++;
+		state = &tun->enc;
+	} else {
+		tun_stats->decap_switch++;
+		state = &tun->dec;
+	}
 
 	/*
 	 * Switch Pending into Active
@@ -529,7 +575,6 @@ void netfn_dtls_tun_session_encap_switch(struct net_device *dev)
 	/*
 	 * If there was any active state, Free it.
 	 */
-	tun_stats->encap_switch++;
 	if (!active) {
 		return;
 	}
@@ -543,7 +588,7 @@ void netfn_dtls_tun_session_encap_switch(struct net_device *dev)
 	netfn_dtls_session_free(active);
 	tun_stats->session_free++;
 }
-EXPORT_SYMBOL(netfn_dtls_tun_session_encap_switch);
+EXPORT_SYMBOL(netfn_dtls_tun_session_switch);
 
 /*
  * netfn_dtls_tun_session_add()
@@ -557,7 +602,7 @@ int netfn_dtls_tun_session_add(struct net_device *dev, struct netfn_dtls_cfg *cf
 	struct netfn_dtls_session *pending;
 	struct netfn_dtls_session *active;
 	struct netfn_dtls_tun_state *state;
-	__be16 epoch = htons(cfg->epoch);
+	__be16 epoch = cfg->epoch;
 	struct netfn_dtls_session *ses;
 	bool encap;
 
@@ -769,3 +814,43 @@ struct net_device *netfn_dtls_tun_alloc(ssize_t pvt_sz)
 	return dev;
 }
 EXPORT_SYMBOL(netfn_dtls_tun_alloc);
+
+/*
+ * netfn_dtls_unregister_data_cb()
+ */
+void netfn_dtls_unregister_data_cb(struct net_device *dev)
+{
+	struct netfn_dtls_tun *tun = netdev_priv(dev);
+
+	mutex_lock(&tun->lock);
+	RCU_INIT_POINTER(tun->cb, NULL);
+
+	/*
+	 * Wait for reader already fetched CB.
+	 */
+	synchronize_rcu();
+	RCU_INIT_POINTER(tun->cb_data, NULL);
+	mutex_unlock(&tun->lock);
+}
+EXPORT_SYMBOL(netfn_dtls_unregister_data_cb);
+
+/*
+ * netfn_dtls_register_data_cb()
+ */
+bool netfn_dtls_register_data_cb(struct net_device *dev, netfn_dtls_rx_handler_t cb, void *cb_data)
+{
+	struct netfn_dtls_tun *tun = netdev_priv(dev);
+	bool status = false;
+
+	mutex_lock(&tun->lock);
+
+	if (!rcu_dereference_protected(tun->cb, 1)) {
+		rcu_assign_pointer(tun->cb_data, cb_data);
+		rcu_assign_pointer(tun->cb, cb);
+		status = true;
+	}
+
+	mutex_unlock(&tun->lock);
+	return status;
+}
+EXPORT_SYMBOL(netfn_dtls_register_data_cb);

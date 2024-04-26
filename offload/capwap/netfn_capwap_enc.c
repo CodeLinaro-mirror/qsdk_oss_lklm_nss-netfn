@@ -20,6 +20,7 @@
 #include <linux/skbuff.h>
 #include <linux/debugfs.h>
 #include <linux/ipv6.h>
+#include <linux/if_pppox.h>
 
 #include <net/udp.h>
 
@@ -29,30 +30,34 @@
 #include "netfn_capwap_tun.h"
 #include "netfn_capwap_enc.h"
 
+#define NETFN_CAPWAP_MAX_STRLEN 25
 #define NETFN_CAPWAP_ENC_STATS_MAX (sizeof(struct netfn_capwap_enc_stats) / sizeof(uint64_t))
 
 /*
  * Encap statistics strings
  */
 static int8_t *g_enc_stats_str[] = {
-	"num_pkts",
+	"pkts_rcvd",
 	"num_frags",
 	"keepalive_pkts",
-	"drop_queue_full",
 	"drop_mem_alloc",
-	"drop_ver_mismatch",
-	"drop_insufficient_hroom",
-	"drop_direct_dtls",
-	"drop_nwireless_len",
+	"drop_queue_full",
+	"err_dev_tx",
+	"err_ver_mis",
+	"err_direct_dtls",
+	"err_nwireless_len",
+	"err_insufficient_hroom",
+	"res1",
+	"res2",
 };
 
 /*
  * netfn_capwap_enc_winfo()
  *	Encapsulate with winfo
  */
-static inline void netfn_capwap_enc_winfo(struct netfn_capwap_tun_enc *enc, struct sk_buff *skb, struct netfn_capwap_enc_mdata *mdata)
+static inline void netfn_capwap_enc_winfo(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct netfn_capwap_enc_mdata *mdata)
 {
-	struct netfn_capwap_winfo *winfo = (struct netfn_capwap_winfo *)mdata->phdr.winfo;
+	struct netfn_capwap_winfo *winfo = (struct netfn_capwap_winfo *)mdata->phdr.wl_info;
 
 	/*
 	 * Add winfo only if set in winfo.
@@ -77,9 +82,10 @@ static void netfn_capwap_enc_capwap(struct netfn_capwap_enc *enc, struct sk_buff
 	/*
 	 * Check if this packet has wireless info.
 	 */
-	if (mdata->first_frag && (phdr->type & NETFN_CAPWAP_PKT_TYPE_WINFO)) {
-		hlen += (phdr->nwireless * NETFN_CAPWAP_WIRELESS_INFO_LEN);
-		info.fields.wbit = 1;
+	if (phdr->type & NETFN_CAPWAP_PKT_TYPE_WINFO) {
+		bool is_winfo = !!(mdata->first_frag || !mdata->frag);
+		hlen += (is_winfo * phdr->nwireless * NETFN_CAPWAP_WIRELESS_INFO_LEN);
+		info.fields.wbit = is_winfo;
 	}
 
 	/*
@@ -108,7 +114,7 @@ static void netfn_capwap_enc_capwap(struct netfn_capwap_enc *enc, struct sk_buff
  * netfn_capwap_enc_l4()
  *	Encapsulate the UDP/UDPLite header
  */
-static void netfn_capwap_enc_l4(struct netfn_capwap_enc *enc, struct sk_buff *skb)
+static void netfn_capwap_enc_l4(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct netfn_capwap_enc_mdata *mdata)
 {
 	struct udphdr *udph = (struct udphdr *)__skb_push(skb, sizeof(*udph));
 	struct netfn_capwap_enc_hdr *hdr = &enc->hdr;
@@ -135,7 +141,7 @@ static void netfn_capwap_enc_l4(struct netfn_capwap_enc *enc, struct sk_buff *sk
  * netfn_capwap_enc_l3()
  *	Encapsulate the IP header
  */
-static void netfn_capwap_enc_l3(struct netfn_capwap_enc *enc, struct sk_buff *skb)
+static void netfn_capwap_enc_l3(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct netfn_capwap_enc_mdata *mdata)
 {
 	struct netfn_capwap_enc_hdr *hdr = &enc->hdr;
 	struct ipv6hdr *ip6h;
@@ -150,15 +156,15 @@ static void netfn_capwap_enc_l3(struct netfn_capwap_enc *enc, struct sk_buff *sk
 
 		iph->version = 4;
 		iph->ihl = sizeof(*iph) >> 2;
-		iph->tos = hdr->tos;
+		iph->tos = (mdata->phdr.dscp << 2);
 		iph->tot_len = htons(skb->len);
 		iph->id = htons(enc->ipv4_id++);
 		iph->frag_off = 0;
 		iph->ttl = hdr->ttl;
 		iph->frag_off = htons(IP_DF);
 		iph->protocol = hdr->proto_next_hdr;
-		iph->saddr = hdr->src_ip[0];
-		iph->daddr = hdr->dest_ip[0];
+		memcpy(&iph->saddr, &hdr->src_ip.ip4, sizeof(iph->saddr));
+		memcpy(&iph->daddr, &hdr->dest_ip.ip4, sizeof(iph->daddr));
 		return;
 	}
 
@@ -169,15 +175,12 @@ static void netfn_capwap_enc_l3(struct netfn_capwap_enc *enc, struct sk_buff *sk
 	skb->protocol = htons(ETH_P_IPV6);
 
 	ip6h->version = 6;
-	ip6_flow_hdr(ip6h, hdr->tos, 0);	/* Sets dscp and flow label. */
+	ip6_flow_hdr(ip6h, (mdata->phdr.dscp << 2), 0);	/* Sets dscp and flow label. */
 	ip6h->nexthdr = hdr->proto_next_hdr;
 	ip6h->payload_len = htons(skb->len - sizeof(*ip6h));
 	ip6h->hop_limit = hdr->ttl;
-	/*
-	 * TODO: Convert to in6_addr
-	 */
-	memcpy(ip6h->saddr.s6_addr32, hdr->src_ip, sizeof(ip6h->saddr.s6_addr32));
-	memcpy(ip6h->daddr.s6_addr32, hdr->dest_ip, sizeof(ip6h->daddr.s6_addr32));
+	memcpy(ip6h->saddr.s6_addr32, &hdr->src_ip.ip6, sizeof(ip6h->saddr.s6_addr32));
+	memcpy(ip6h->daddr.s6_addr32, &hdr->dest_ip.ip6, sizeof(ip6h->daddr.s6_addr32));
 }
 
 /*
@@ -238,10 +241,10 @@ static void netfn_capwap_enc_80211(struct netfn_capwap_enc *enc, struct sk_buff 
 	 * Insert QoS header.
 	 */
 	if (enc->features & NETFN_CAPWAP_FEATURES_WLAN_QOS) {
-		uint16_t *qos = (uint16_t *)__skb_push(skb, sizeof(phdr->wlan_qos));
+		uint16_t *qos = (uint16_t *)__skb_push(skb, sizeof(phdr->wireless_qos));
 
 		fc |= IEEE80211_STYPE_QOS_DATA;
-		*qos = phdr->wlan_qos;
+		*qos = phdr->wireless_qos;
 	}
 
 	/*
@@ -316,7 +319,7 @@ static bool netfn_capwap_enc_frag(struct netfn_capwap_enc *enc, struct sk_buff *
 
 		skb = dev_alloc_skb(skb_size);
 		if (!skb) {
-			pr_debug("%px: Unable to allocate memory for fragment len(%ld).\n", enc, skb_size);
+			pr_warn_ratelimited("%px: Unable to allocate memory for fragment len(%ld).\n", enc, skb_size);
 			NETFN_CAPWAP_TUN_STATS_INC(&stats->drop_mem_alloc);
 			return false;
 		}
@@ -342,7 +345,6 @@ static ssize_t netfn_capwap_enc_stats_show(struct file *fp, char __user *ubuf, s
 	size_t enc_stats_sz, stats_sz;
 	ssize_t bytes_read = 0;
 	size_t size_wr = 0;
-	char *strings;
 	char *buf;
 	int i;
 
@@ -359,16 +361,16 @@ static ssize_t netfn_capwap_enc_stats_show(struct file *fp, char __user *ubuf, s
 	 * Print encap stats.
 	 */
 	BUILD_BUG_ON(ARRAY_SIZE(g_enc_stats_str) != NETFN_CAPWAP_ENC_STATS_MAX);
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "\n------------[encap stats start]----------\n");
+	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "\n---------------[encap stats start]-------------\n");
 
-	for (i = 0, strings = g_enc_stats_str[0]; i < ARRAY_SIZE(g_enc_stats_str); i++, stats++, strings++) {
+	for (i = 0; i < ARRAY_SIZE(g_enc_stats_str); i++, stats++) {
 		size_t len = stats_sz - size_wr;
 		char *start = buf + size_wr;
 
-		size_wr += scnprintf(start, len, "%s\t\t = %llu\n", strings, READ_ONCE(*stats));
+		size_wr += scnprintf(start, len, "%-*s\t\t = %llu\n", NETFN_CAPWAP_MAX_STRLEN, g_enc_stats_str[i], READ_ONCE(*stats));
 	}
 
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "------------[encap stats end]-----------\n");
+	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "---------------[encap stats end]--------------\n");
 
 	bytes_read = simple_read_from_buffer(ubuf, sz, ppos, buf, size_wr);
 	vfree(buf);
@@ -411,7 +413,7 @@ bool netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, st
 	struct sk_buff *skb;
 	bool is_frag;
 
-	NETFN_CAPWAP_TUN_STATS_INC(&enc->stats.num_pkts);
+	NETFN_CAPWAP_TUN_STATS_INC(&enc->stats.pkts_rcvd);
 
 	/*
 	 * Pull the meta header.
@@ -431,7 +433,7 @@ bool netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, st
 	 * Fragment the skb if needed.
 	 */
 	if (unlikely(!netfn_capwap_enc_frag(enc, orig_skb, q_frag))) {
-		pr_debug("%px: Fragmentation failed\n", enc);
+		pr_warn_ratelimited("%px: Fragmentation failed\n", enc);
 		dev_kfree_skb_list_fast(q_frag);
 		return false;
 	}
@@ -472,14 +474,15 @@ bool netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, st
 		/*
 		 * We don't encapsulate with UDP and IP if dtls is enabled.
 		 * DTLS adds these for us.
+		 * SKB Priority used to store TOS.
 		 */
 		if (enc->features & NETFN_CAPWAP_FEATURES_DTLS) {
-			skb->priority = enc->hdr.tos;
+			skb->priority = mdata.phdr.dscp << 2;
 			continue;
 		}
 
-		netfn_capwap_enc_l4(enc, skb);	/* UDP or UDPLite */
-		netfn_capwap_enc_l3(enc, skb);
+		netfn_capwap_enc_l4(enc, skb, &mdata);	/* UDP or UDPLite */
+		netfn_capwap_enc_l3(enc, skb, &mdata);
 	}
 
 	return true;
@@ -489,33 +492,37 @@ bool netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, st
  * netfn_capwap_enc_init()
  *	Encapsulation initialization.
  */
-bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc_cfg *cfg, struct dentry *parent)
+bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc_cfg *cfg, struct netfn_tuple *ntuple, struct netfn_capwap_tun *nct)
 {
-	struct netfn_tuple_5tuple *tuple = &cfg->tuple.tuples.tuple_5;
+	struct netfn_tuple_5tuple *tuple = &ntuple->tuples.tuple_5;
 	struct netfn_capwap_enc_hdr *hdr = &enc->hdr;
 
 	ether_addr_copy(&enc->bssid, cfg->bssid);
 	enc->outer_hdr_len = ETH_HLEN;
-	enc->features = cfg->features;
+	enc->features = nct->features;
 
 	/*
-	 * TODO: Add vlan and pppoe.
+	 * Add vlan and pppoe overhead.
 	 */
+	if (enc->flags & NETFN_CAPWAP_ENC_FLAG_VLAN) {
+		enc->outer_hdr_len += sizeof(struct vlan_hdr);
+	}
 
-	if (cfg->tuple.ip_version == IPVERSION) {
-		hdr->ip_version = cfg->tuple.ip_version;
-		hdr->src_ip[0] = tuple->src_ip[0];
-		hdr->dest_ip[0] = tuple->dest_ip[0];
+	if (enc->flags & NETFN_CAPWAP_ENC_FLAG_PPPOE) {
+		enc->outer_hdr_len += sizeof(struct pppoe_hdr);
+	}
+
+	if (ntuple->ip_version == IPVERSION) {
+		hdr->ip_version = ntuple->ip_version;
+		hdr->src_ip.ip4 = tuple->src_ip.ip4;
+		hdr->dest_ip.ip4 = tuple->dest_ip.ip4;
 
 		enc->outer_hdr_len += sizeof(struct iphdr);
 	} else {
-		hdr->ip_version = cfg->tuple.ip_version;
+		hdr->ip_version = ntuple->ip_version;
 
-		/*
-		 * TODO: Change to direct assignment once switched to in6_addr
-		 */
-		memcpy(hdr->src_ip, tuple->src_ip, sizeof(uint32_t) * 4);
-		memcpy(hdr->dest_ip, tuple->dest_ip, sizeof(uint32_t) * 4);
+		hdr->src_ip.ip6 = tuple->src_ip.ip6;
+		hdr->dest_ip.ip6 = tuple->dest_ip.ip6;
 
 		enc->outer_hdr_len += sizeof(struct ipv6hdr);
 	}
@@ -543,7 +550,7 @@ bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc
 	/*
 	 * Allocate debugfs entry.
 	 */
-	if (!debugfs_create_file("encap", S_IRUGO, parent, enc, &file_ops)) {
+	if (!debugfs_create_file("encap", S_IRUGO, nct->dentry, enc, &file_ops)) {
 		pr_warn("%p: Failed to create encap debug entry.\n", enc);
 		return false;
 	}
@@ -558,4 +565,37 @@ bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc
 void netfn_capwap_enc_mtu_update(struct netfn_capwap_enc *enc, unsigned int mtu)
 {
 	enc->mtu = ((mtu - enc->outer_hdr_len) & ~(sizeof(uint64_t) - 1));
+}
+
+/*
+ * netfn_capwap_enc_get_err_stats()
+ *     Accumulates encapsulation error stats and return sum
+ */
+uint64_t netfn_capwap_enc_get_err_stats(struct netfn_capwap_enc *enc)
+{
+	struct netfn_capwap_enc_stats *stats = &enc->stats;
+	uint64_t err_stats = 0;
+
+	err_stats += stats->err_ver_mis;
+	err_stats += stats->err_direct_dtls;
+	err_stats += stats->err_nwireless_len;
+	err_stats += stats->err_insufficient_hroom;
+	err_stats += stats->err_dev_tx;
+
+	return 0;
+}
+
+/*
+ * netfn_capwap_enc_get_drop_stats()
+ *	Accumulates encapsulation drop stats and return sum
+ */
+uint64_t netfn_capwap_enc_get_drop_stats(struct netfn_capwap_enc *enc)
+{
+	struct netfn_capwap_enc_stats *stats = &enc->stats;
+	uint64_t drop_stats = 0;
+
+	drop_stats += stats->drop_mem_alloc;
+	drop_stats += stats->drop_queue_full;
+
+	return drop_stats;
 }

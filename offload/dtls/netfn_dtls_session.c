@@ -93,7 +93,7 @@ static ssize_t netfn_dtls_session_read(struct file *fp, char __user *ubuf, size_
 		format = "%s Session%u (src:%pI6 dst:%pI6 epoch:0x%X sport:%u dport:%u proto:%u version:0x%X flags:0x%X):\n";
 
 	len += snprintf(buf + len, max_len - len, format,
-				hdr, ++i, t->src_ip, t->dest_ip, ntohs(ses->epoch), ntohs(t->l4_src_ident),
+				hdr, ++i, &t->src_ip, &t->dest_ip, ntohs(ses->epoch), ntohs(t->l4_src_ident),
 				ntohs(t->l4_dest_ident), t->protocol, ip_version, ses->flags);
 
 	len += snprintf(buf + len, max_len - len, "\tTx packets: %llu\n", stats.tx_pkts);
@@ -145,7 +145,7 @@ static void netfn_dtls_session_fill_tr(struct netfn_dtls_cfg *cfg, netfn_tuple_t
 	dtls->flags |= (flags & NETFN_DTLS_FLAG_CP_DF) ? EIP_TR_DTLS_FLAG_CP_DF : 0;
 	dtls->ip_ttl = cfg->hop_limit;
 	dtls->ip_df = (flags & NETFN_DTLS_FLAG_CP_DF) ? 0 : cfg->df;
-	dtls->ip_dscp = (flags & NETFN_DTLS_FLAG_CP_TOS) ? 0 : cfg->dscp;
+	dtls->ip_dscp = (flags & NETFN_DTLS_FLAG_CP_TOS) ? 0 : cfg->tos;
 
 	switch (cfg->replay_win) {
 	case 0:
@@ -162,25 +162,25 @@ static void netfn_dtls_session_fill_tr(struct netfn_dtls_cfg *cfg, netfn_tuple_t
 		break;
 	}
 
-	dtls->version = cfg->version;	/* Version is stored in host format */
-	dtls->epoch = htons(cfg->epoch);
+	dtls->version = ntohs(cfg->version);	/* Version is stored in host format */
+	dtls->epoch = cfg->epoch;
 	dtls->src_port = t5->l4_src_ident;
 	dtls->dst_port = t5->l4_dest_ident;
 
 	if (t->ip_version == IPVERSION) {
 		dtls->ip_ver = IPVERSION;
-		dtls->src_ip[0] = t5->src_ip[0];
-		dtls->dst_ip[0] = t5->dest_ip[0];
+		dtls->src_ip[0] = t5->src_ip.ip4.s_addr;
+		dtls->dst_ip[0] = t5->dest_ip.ip4.s_addr;
 	} else {
 		dtls->ip_ver = 6;
-		dtls->src_ip[0] = t5->src_ip[0];
-		dtls->src_ip[1] = t5->src_ip[1];
-		dtls->src_ip[2] = t5->src_ip[2];
-		dtls->src_ip[3] = t5->src_ip[3];
-		dtls->dst_ip[0] = t5->dest_ip[0];
-		dtls->dst_ip[1] = t5->dest_ip[1];
-		dtls->dst_ip[2] = t5->dest_ip[2];
-		dtls->dst_ip[3] = t5->dest_ip[3];
+		dtls->src_ip[0] = t5->src_ip.ip6.s6_addr32[0];
+		dtls->src_ip[1] = t5->src_ip.ip6.s6_addr32[1];
+		dtls->src_ip[2] = t5->src_ip.ip6.s6_addr32[2];
+		dtls->src_ip[3] = t5->src_ip.ip6.s6_addr32[3];
+		dtls->dst_ip[0] = t5->dest_ip.ip6.s6_addr32[0];
+		dtls->dst_ip[1] = t5->dest_ip.ip6.s6_addr32[1];
+		dtls->dst_ip[2] = t5->dest_ip.ip6.s6_addr32[2];
+		dtls->dst_ip[3] = t5->dest_ip.ip6.s6_addr32[3];
 	}
 }
 
@@ -237,16 +237,16 @@ struct netfn_dtls_session *netfn_dtls_session_alloc(struct netfn_dtls_cfg *cfg, 
 	capwap = (cfg->flags & NETFN_DTLS_FLAG_CAPWAP);
 	udplite = (cfg->flags & NETFN_DTLS_FLAG_UDPLITE);
 
-	pr_debug("%p: algo_name %s, flags %u replay_win %u df %u dscp %u hop_limit %u\n",
+	pr_debug("%p: algo_name %s, flags %u replay_win %u df %u tos %u hop_limit %u\n",
 		dev, cfg->base.algo_name, cfg->flags, cfg->replay_win, cfg->df,
-		cfg->dscp, cfg->hop_limit);
+		cfg->tos, cfg->hop_limit);
 
 	if (t->ip_version == IPVERSION) {
 		pr_debug("%p: src:%pI4n dst:%pI4n epoch:0x%X sport:%u dport:%u proto:%u\n",
-				dev, t5->src_ip, t5->dest_ip, cfg->epoch, ntohs(t5->l4_src_ident), ntohs(t5->l4_dest_ident), t5->protocol);
+				dev, &t5->src_ip.ip4.s_addr, &t5->dest_ip.ip4.s_addr, ntohs(cfg->epoch), ntohs(t5->l4_src_ident), ntohs(t5->l4_dest_ident), t5->protocol);
 	} else {
 		pr_debug("%p: src:%pI6 dst:%pI6 epoch:0x%X sport:%u dport:%u proto:%u\n",
-				dev, t5->src_ip, t5->dest_ip, cfg->epoch, ntohs(t5->l4_src_ident), ntohs(t5->l4_dest_ident), t5->protocol);
+				dev, t5->src_ip.ip6.s6_addr32, t5->dest_ip.ip6.s6_addr32, ntohs(cfg->epoch), ntohs(t5->l4_src_ident), ntohs(t5->l4_dest_ident), t5->protocol);
 	}
 
 	/*
@@ -283,11 +283,12 @@ struct netfn_dtls_session *netfn_dtls_session_alloc(struct netfn_dtls_cfg *cfg, 
 	dev_hold(dev);
 	ses->tun = tun;
 	ses->tuple = *t;
+	ses->flags = cfg->flags;
 
 	/*
 	 * Cache part of tuple used in datapath in network order.
 	 */
-	ses->epoch = htons(cfg->epoch);
+	ses->epoch = cfg->epoch;
 	netfn_dtls_session_fill_tr(cfg, t, &tr_info);
 
 	/*
@@ -295,10 +296,10 @@ struct netfn_dtls_session *netfn_dtls_session_alloc(struct netfn_dtls_cfg *cfg, 
 	 */
 	if (encap) {
 		netfn_dtls_enc_init(ses, &tr_info);
-		snprintf(name, sizeof(name), "enc%u", cfg->epoch);
+		snprintf(name, sizeof(name), "enc%u", ntohs(cfg->epoch));
 	} else {
 		netfn_dtls_dec_init(ses, &tr_info);
-		snprintf(name, sizeof(name), "dec%u", cfg->epoch);
+		snprintf(name, sizeof(name), "dec%u", ntohs(cfg->epoch));
 	}
 
 	ses->tr = eip_tr_alloc(drv->ctx, &tr_info);

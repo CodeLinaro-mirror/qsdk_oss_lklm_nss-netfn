@@ -22,7 +22,8 @@
 
 #include <netfn_flowmgr.h>
 #include <netfn_capwap.h>
-#include <netfn_dtls.h>
+#include <netfn_dtls_types.h>
+#include <netfn_flow_cookie.h>
 
 #define NETFN_CAPWAPMGR_EXT_VALID_VLAN 0x0001		/**< VLAN rule valid */
 #define NETFN_CAPWAPMGR_EXT_VALID_PPPOE 0x0002		/**< PPPoE rule valid */
@@ -76,7 +77,24 @@ typedef enum {
 						/**< Update DTLS encap session */
 	NETFN_CAPWAPMGR_UPDATE_DTLS_DECAP_SESSION,
 						/**< Update DTLS deecap session */
+	NETFN_CAPWAPMGR_ADD_NETFN_FLOW_COOKIE,
+                                                /**< Add Netfn Flow Cookie */
+	NETFN_CAPWAPMGR_DEL_NETFN_FLOW_COOKIE,
+						/**< Delete Netfn Flow Cookie */
+	NETFN_CAPWAPMGR_DTLS_ENCAP_SESSION_SWITCH,
+						/**< Switch DTLS encap session */
+	NETFN_CAPWAPMGR_DTLS_DECAP_SESSION_SWITCH,
+						/**< Switch DTLS decap session */
 } netfn_capwapmgr_tun_update_t;
+
+/**
+ * netfn_capwapmgr_fc_info
+ *      Flow Cookie Config Information.
+ */
+struct netfn_capwapmgr_fc_info {
+	netfn_tuple_t tuple;		/**< Tuple Information */
+	struct netfn_flow_cookie nfc;	/**< Flow Cookie */
+};
 
 /**
  * netfn_capwapmgr_tun_update
@@ -92,6 +110,8 @@ struct netfn_capwapmgr_tun_update {
 					/**< DTLS decap session */
 		} dtls;
 
+		struct netfn_capwapmgr_fc_info fci;
+					/**< Flow Cookie Config Info */
 		struct net_device *dev;
 					/**< Source interface */
 		uint32_t mtu;		/**< Path MTU */
@@ -149,7 +169,26 @@ typedef enum {
        NETFN_CAPWAPMGR_ERROR_TUNID_FREE = 12,			/**< Failed to free tunid capwap dev */
        NETFN_CAPWAPMGR_ERROR_DTLS_ALLOC = 13,			/**< Failed to allocated DTLS tunnel */
        NETFN_CAPWAPMGR_ERROR_DTLS_BIND = 14,			/**< Failed to Bind DTLS Net Device to capwap Net Device */
+       NETFN_CAPWAPMGR_ERROR_STATS_GET = 15,			/**< Failed to get tunnel stats */
+       NETFN_CAPWAPMGR_ERROR_INVALID_CFG = 16,			/**< Invalid tunnel create configuration */			
+       NETFN_CAPWAPMGR_ERROR_TUN_ENABLED = 17,			/**< Updating tunnel config when tunnel is enabled */
+       NETFN_CAPWAPMGR_ERROR_TUN_DEINIT = 18,			/**< Failed to Deinitialize the tunnel */
+       NETFN_CAPWAPMGR_ERROR_TUN_INIT = 19,			/**< Failed to Initialize the tunnel */
+       NETFN_CAPWAPMGR_ERROR_DTLS_CFG = 20,			/**< Invalid DTLS configuration */
+       NETFN_CAPWAPMGR_ERROR_DTLS_SESSION_SWITCH = 21,		/**< DTLS Session Switch failed */
+       NETFN_CAPWAPMGR_ERROR_DTLS_DECAP_SESSION_ADD = 22,	/**< DTLS Encap Session Add Failed */
+       NETFN_CAPWAPMGR_ERROR_DTLS_ENCAP_SESSION_ADD = 23,	/**< DTLS Decap session Add Failed */
+       NETFN_CAPWAPMGR_ERROR_DTLS_TUN_NOT_CONFIGURED = 24,	/**< DTLS Tunnel is not configured */
+       NETFN_CAPWAPMGR_ERROR_DTLS_ENABLED = 25,			/**< DTLS Tunnel enabled */
+       NETFN_CAPWAPMGR_ERROR_TUNID_INACTIVE = 26,		/**< Tunnel ID inactive */
+       NETFN_CAPWAPMGR_ERROR_TUNID_OUT_OF_RANGE = 27,		/**< Tunnel ID out of range */
+       NETFN_CAPWAPMGR_ERROR_TUNID_ACTIVE = 28,			/**< Tunnel Id Active */
+       NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_DB_ALLOC = 29,		/**< Failed to instantiate the Flow Cookie DataBase */
+       NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_ADD = 30,		/**< Failed to add the Flow Cookie in Flow Cookie DataBase */
+       NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_DEL = 31,		/**< Failed to delete the Flow Cookie from Flow Cookie DataBase */
+       NETFN_CAPWAPMGR_ERROR_CAPWAP_CFG = 32,			/**< Invalid CAPWAP config */
        NETFN_CAPWAPMGR_ERROR_MAX
+
 } netfn_capwapmgr_ret_t;
 
 

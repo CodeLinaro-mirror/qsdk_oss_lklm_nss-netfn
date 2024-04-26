@@ -27,20 +27,14 @@
 #include <linux/if_ether.h>
 #include <linux/netdevice.h>
 #include <linux/if_pppox.h>
+#include <linux/udp.h>
 
 #include <ppe_drv_iface.h>
 #include <netfn_capwapmgr.h>
 #include <netfn_capwapmgr_legacy.h>
-#include <netfn_capwapmgr_metaheader.h>
 #include "netfn_capwapmgr_priv.h"
 #include "netfn_capwapmgr_tun.h"
 #include "netfn_capwapmgr_tunid.h"
-
-
-/*
- * Netfn dtls flags are left shifted by 1.
- */
-#define NETFN_CAPWAPMGR_DTLS_FLAG_SHIFT_TO_NETFN 1
 
 /*
  * NETFN dtls offload only supports 32bit nounce value
@@ -79,7 +73,7 @@ uint8_t netfn_capwapmgr_snap[NETFN_CAPWAP_SNAP_HDR_LEN];
  * netfn_capwapmgr_dtls_version_enum_to_netfn.
  *	Legacy Enum to netfn config.
  */
-static const uint16_t netfn_capwapmgr_dtls_version_enum_to_netfn[2] = {0xFEFF, 0xFEFD};
+static const uint16_t netfn_capwapmgr_dtls_version_enum_to_netfn[2] = {0xFFFE, 0xFDFE};
 
 #if defined(NETFN_CAPWAPMGR_ONE_NETDEV)
 struct net_device *netfn_capwapmgr_dev;
@@ -146,7 +140,7 @@ done:
  * netfn_capwapmgr_legacy2crypto
  *	API to convert legacy crypto config to netfn crypto.
  */
-static netfn_capwapmgr_ret_t netfn_capwapmgr_legacy2crypto(struct netfn_dtls_crypto *netfn_crypto, struct nss_dtlsmgr_crypto *legacy_crypto)
+netfn_capwapmgr_ret_t netfn_capwapmgr_legacy2crypto(struct netfn_dtls_crypto *netfn_crypto, struct nss_dtlsmgr_crypto *legacy_crypto)
 {
 	const uint8_t *legacy_keys;
 	uint16_t keylen;
@@ -181,6 +175,85 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_legacy2crypto(struct netfn_dtls_cry
 
 	return NETFN_CAPWAPMGR_SUCCESS;
 }
+EXPORT_SYMBOL(netfn_capwapmgr_legacy2crypto);
+
+/*
+ * netfn_capwapgr_legacy2dtls
+ *	API to convert legacy DTLS config to netfn config.
+ */
+netfn_capwapmgr_ret_t netfn_capwapmgr_legacy2dtls(struct nss_dtlsmgr_config *dtls_data, struct netfn_dtls_cfg *enc, struct netfn_dtls_cfg *dec)
+{
+	netfn_capwapmgr_ret_t status;
+	struct netfn_dtls_cfg *netfn_dtls_cfg = NULL;
+	struct nss_dtlsmgr_crypto *legacy_crypto = NULL;
+	struct netfn_dtls_crypto *netfn_crypto = NULL;
+
+	/*
+	 * Encap Specific configuration.
+	 */
+	netfn_dtls_cfg = enc;
+	legacy_crypto = &dtls_data->encap.crypto;
+	netfn_crypto = &netfn_dtls_cfg->base;
+
+	status = netfn_capwapmgr_legacy2crypto(netfn_crypto, legacy_crypto);
+	if (status != NETFN_CAPWAPMGR_SUCCESS) {
+		return status;
+	}
+
+	netfn_dtls_cfg->flags = dtls_data->flags | NETFN_DTLS_FLAG_CAPWAP;
+	netfn_dtls_cfg->version = netfn_capwapmgr_dtls_version_enum_to_netfn[dtls_data->encap.ver];
+	netfn_dtls_cfg->epoch = htons(dtls_data->encap.epoch);
+
+	/*
+	 * If DSCP copy from skb is enabled, update the corresponding field
+	 * in the netfn configuration. Else update the default dscp value.
+	 */
+	if (dtls_data->encap.dscp_copy) {
+		netfn_dtls_cfg->flags |= NETFN_DTLS_FLAG_CP_TOS;
+	} else {
+		netfn_dtls_cfg->tos = dtls_data->encap.dscp << 2;
+	}
+
+	/*
+	 * Copy over the default IP DF and TTL values.
+	 */
+	netfn_dtls_cfg->df = dtls_data->encap.df;
+	netfn_dtls_cfg->hop_limit = dtls_data->encap.ip_ttl;
+
+	/*
+	 * Update config specifying this is encap session configuration.
+	 */
+	netfn_dtls_cfg->flags |= NETFN_DTLS_FLAG_ENC;
+
+	/*
+	 * Decap Specific configuration.
+	 */
+	netfn_dtls_cfg = dec;
+	legacy_crypto = &dtls_data->decap.crypto;
+	netfn_crypto = &netfn_dtls_cfg->base;
+
+	status = netfn_capwapmgr_legacy2crypto(netfn_crypto, legacy_crypto);
+	if (status != NETFN_CAPWAPMGR_SUCCESS) {
+		return status;
+	}
+
+	/*
+	 * TODO:Once netfn DTLS config structure is updated. Make sure this is still needed.
+	 * Currently the netfn dtls config takes encap and deacp specific parameters for a
+	 * decap session as well as for an encap session.
+	 */
+	netfn_dtls_cfg->flags = dtls_data->flags | NETFN_DTLS_FLAG_CAPWAP;
+	netfn_dtls_cfg->version = netfn_capwapmgr_dtls_version_enum_to_netfn[dtls_data->encap.ver];
+	netfn_dtls_cfg->epoch = htons(dtls_data->encap.epoch);
+	netfn_dtls_cfg->replay_win = dtls_data->decap.window_size;
+
+	/*
+	 * Update config specifying this is decap session configuration.
+	 */
+	netfn_dtls_cfg->flags &= ~NETFN_DTLS_FLAG_ENC;
+	return status;
+}
+EXPORT_SYMBOL(netfn_capwapmgr_legacy2dtls);
 
 /*
  * netfn_capwapmgr_legacy_rule2tun_cfg
@@ -193,6 +266,8 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 	netfn_capwapmgr_ret_t status = NETFN_CAPWAPMGR_SUCCESS;
         bool dtls_enabled = !!(capwap_rule->enabled_features & NSS_CAPWAPMGR_FEATURE_DTLS_ENABLED);
 	netfn_tuple_t *tuple;
+
+	BUILD_BUG_ON(sizeof(struct nss_capwap_metaheader) != sizeof(struct netfn_capwap_prehdr));
 
 	if (!v4 && !v6) {
 		netfn_capwapmgr_warn("Invalid ip create rule for tunnel: %d\n", tunnel_id);
@@ -221,27 +296,31 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		return NETFN_CAPWAPMGR_ERROR_MAX;
 	}
 
+	/*
+	 * netfn tuple is for UL direction whereas the legacy tuple is passed for the DL direction.
+	 */
 	tuple = &cfg->tuple;
 	if (v4) {
 
 		/*
 		 * Convert flow rule.
+		 * Flow rule will be for UL direction similer to the tuple direction.
 		 */
-		cfg->flow.in_dev = ppe_drv_dev_get_by_iface_idx(v4->src_interface_num);
+		cfg->flow.out_dev = ppe_drv_dev_get_by_iface_idx(v4->src_interface_num);
 		cfg->flow.flow_mtu = v4->from_mtu;
-		memcpy(cfg->flow.flow_src_mac, v4->src_mac, ETH_ALEN);
-		memcpy(cfg->flow.flow_dest_mac, v4->dest_mac, ETH_ALEN);
-		cfg->flow.top_indev = v4->top_ndev;
+		memcpy(cfg->flow.flow_dest_mac, v4->src_mac, ETH_ALEN);
+		memcpy(cfg->flow.flow_src_mac, v4->dest_mac, ETH_ALEN);
+		cfg->flow.top_outdev = v4->top_ndev;
 
 		/*
 		 * Convert vlan rule.
 		 */
 		if ((v4->in_vlan_tag[0] & 0xFFF) != 0xFFF) {
 			cfg->ext_cfg.ext_valid_flags |= NETFN_CAPWAPMGR_EXT_VALID_VLAN;
-			cfg->ext_cfg.vlan.outer.ingress_vlan_tag = v4->in_vlan_tag[0];
-			if ((v4->in_vlan_tag[1] & 0xFFF) != 0xFFF) {
-				cfg->ext_cfg.vlan.inner.ingress_vlan_tag = v4->in_vlan_tag[1];
-			}
+			cfg->ext_cfg.vlan.inner.egress_vlan_tag = v4->in_vlan_tag[0];
+			cfg->ext_cfg.vlan.inner.ingress_vlan_tag = 0xFFF;
+			cfg->ext_cfg.vlan.outer.egress_vlan_tag = v4->in_vlan_tag[1];
+			cfg->ext_cfg.vlan.outer.ingress_vlan_tag = 0xFFF;
 		}
 
 		/*
@@ -261,14 +340,11 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 
 		/*
 		 * Copy over the 5 tuple.
-		 *
-		 * FIXME: Flowmanager, expects IP address to be passed in network order
-		 * whereas the port information in host order.
 		 */
 		tuple->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V4;
 		tuple->tuple_type = NETFN_TUPLE_5TUPLE;
-		tuple->tuples.tuple_5.src_ip[0] = htonl(v4->dest_ip);
-		tuple->tuples.tuple_5.dest_ip[0] = htonl(v4->src_ip);
+		tuple->tuples.tuple_5.src_ip.ip4.s_addr = htonl(v4->dest_ip);
+		tuple->tuples.tuple_5.dest_ip.ip4.s_addr = htonl(v4->src_ip);
 		tuple->tuples.tuple_5.l4_src_ident = htons((uint16_t)v4->dest_port);
 		tuple->tuples.tuple_5.l4_dest_ident = htons((uint16_t)v4->src_port);
 		tuple->tuples.tuple_5.protocol = (uint8_t)v4->protocol;
@@ -277,18 +353,18 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		/*
 		 * Convert flow rule.
 		 */
-		cfg->flow.in_dev = ppe_drv_dev_get_by_iface_idx(v6->src_interface_num);
+		cfg->flow.out_dev = ppe_drv_dev_get_by_iface_idx(v6->src_interface_num);
 		cfg->flow.flow_mtu = v6->from_mtu;
-		memcpy(cfg->flow.flow_src_mac, v6->src_mac, ETH_ALEN);
-		memcpy(cfg->flow.flow_dest_mac, v6->dest_mac, ETH_ALEN);
-		cfg->flow.top_indev = v6->top_ndev;
+		memcpy(cfg->flow.flow_dest_mac, v6->src_mac, ETH_ALEN);
+		memcpy(cfg->flow.flow_src_mac, v6->dest_mac, ETH_ALEN);
+		cfg->flow.top_outdev = v6->top_ndev;
 
 		if ((v6->in_vlan_tag[0] & 0xFFF) != 0xFFF) {
 			cfg->ext_cfg.ext_valid_flags |= NETFN_CAPWAPMGR_EXT_VALID_VLAN;
-			cfg->ext_cfg.vlan.outer.ingress_vlan_tag = v6->in_vlan_tag[0];
-			if ((v6->in_vlan_tag[1] & 0xFFF) != 0xFFF) {
-				cfg->ext_cfg.vlan.inner.ingress_vlan_tag = v6->in_vlan_tag[1];
-			}
+			cfg->ext_cfg.vlan.inner.egress_vlan_tag = v6->in_vlan_tag[0];
+			cfg->ext_cfg.vlan.inner.ingress_vlan_tag = 0xFFF;
+			cfg->ext_cfg.vlan.outer.egress_vlan_tag = v6->in_vlan_tag[1];
+			cfg->ext_cfg.vlan.outer.ingress_vlan_tag = 0xFFF;
 		}
 
 		/*
@@ -312,16 +388,16 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		tuple->tuples.tuple_5.protocol = (uint8_t)v6->protocol;
 		tuple->ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V6;
 		tuple->tuple_type = NETFN_TUPLE_5TUPLE;
-		tuple->tuples.tuple_5.src_ip[0] = ntohl(v6->dest_ip[0]);
-		tuple->tuples.tuple_5.src_ip[1] = ntohl(v6->dest_ip[1]);
-		tuple->tuples.tuple_5.src_ip[2] = ntohl(v6->dest_ip[2]);
-		tuple->tuples.tuple_5.src_ip[3] = ntohl(v6->dest_ip[3]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[0] = htonl(v6->dest_ip[0]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[1] = htonl(v6->dest_ip[1]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[2] = htonl(v6->dest_ip[2]);
+		tuple->tuples.tuple_5.src_ip.ip6.s6_addr32[3] = htonl(v6->dest_ip[3]);
 		tuple->tuples.tuple_5.l4_src_ident = htons((uint16_t)v6->dest_port);
 
-		tuple->tuples.tuple_5.dest_ip[0] = ntohl(v6->src_ip[0]);
-		tuple->tuples.tuple_5.dest_ip[1] = ntohl(v6->src_ip[1]);
-		tuple->tuples.tuple_5.dest_ip[2] = ntohl(v6->src_ip[2]);
-		tuple->tuples.tuple_5.dest_ip[3] = ntohl(v6->src_ip[3]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[0] = htonl(v6->src_ip[0]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[1] = htonl(v6->src_ip[1]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[2] = htonl(v6->src_ip[2]);
+		tuple->tuples.tuple_5.dest_ip.ip6.s6_addr32[3] = htonl(v6->src_ip[3]);
 		tuple->tuples.tuple_5.l4_dest_ident = htons((uint16_t)v6->src_port);
 	}
 
@@ -343,6 +419,14 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 	cfg->capwap.enc.tos = capwap_rule->encap.tos;
 	cfg->capwap.enc.mtu = cfg->flow.flow_mtu;
 
+	/*
+	 * If protocol is UDPLite checksum coverage is set to size of udphdr.
+	 * In non-legacy mode it should be passed from user.
+	 */
+	if (tuple->tuples.tuple_5.protocol == IPPROTO_UDPLITE) {
+		cfg->capwap.enc.csum_cov = sizeof(struct udphdr);
+	}
+
 	cfg->capwap.dec.max_frags = capwap_rule->decap.max_fragments;
 	cfg->capwap.dec.max_payload_sz = capwap_rule->decap.max_buffer_size;
 
@@ -350,79 +434,12 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 	 * If DTLS is enabled, convert the dtls rule as well.
 	 */
 	if (dtls_enabled) {
-		struct netfn_dtls_cfg *netfn_dtls_cfg = NULL;
-		struct nss_dtlsmgr_crypto *legacy_crypto = NULL;
-		struct netfn_dtls_crypto *netfn_crypto = NULL;
-
 		/*
 		 * Update DTLS enable flag;
 		 */
 		cfg->ext_cfg.ext_valid_flags |= NETFN_CAPWAPMGR_EXT_VALID_DTLS_ENC | NETFN_CAPWAPMGR_EXT_VALID_DTLS_DEC;
 
-		/*
-		 * Encap Specific configuration.
-		 */
-		netfn_dtls_cfg = &cfg->ext_cfg.enc;
-		legacy_crypto = &dtls_data->encap.crypto;
-		netfn_crypto = &netfn_dtls_cfg->base;
-
-		status = netfn_capwapmgr_legacy2crypto(netfn_crypto, legacy_crypto);
-		if (status != NETFN_CAPWAPMGR_SUCCESS) {
-			return status;
-		}
-
-		netfn_dtls_cfg->flags = dtls_data->flags << NETFN_CAPWAPMGR_DTLS_FLAG_SHIFT_TO_NETFN;
-		netfn_dtls_cfg->version = netfn_capwapmgr_dtls_version_enum_to_netfn[dtls_data->encap.ver];
-		netfn_dtls_cfg->epoch = dtls_data->encap.epoch;
-
-		/*
-		 * If DSCP copy from skb is enabled, update the corresponding field
-		 * in the netfn configuration. Else update the default dscp value.
-		 */
-		if (dtls_data->encap.dscp_copy) {
-			netfn_dtls_cfg->flags |= 1 << NETFN_DTLS_FLAG_CP_TOS;
-		} else {
-			netfn_dtls_cfg->dscp = dtls_data->encap.dscp;
-		}
-
-		/*
-		 * Copy over the default IP DF and TTL values.
-		 */
-		netfn_dtls_cfg->df = dtls_data->encap.df;
-		netfn_dtls_cfg->hop_limit = dtls_data->encap.ip_ttl;
-
-		/*
-		 * Update config specifying this is encap session configuration.
-		 */
-		netfn_dtls_cfg->flags = NETFN_DTLS_FLAG_ENC | NETFN_DTLS_FLAG_CAPWAP;
-
-		/*
-		 * Decap Specific configuration.
-		 */
-		netfn_dtls_cfg = &cfg->ext_cfg.dec;
-		legacy_crypto = &dtls_data->decap.crypto;
-		netfn_crypto = &netfn_dtls_cfg->base;
-
-		status = netfn_capwapmgr_legacy2crypto(netfn_crypto, legacy_crypto);
-		if (status != NETFN_CAPWAPMGR_SUCCESS) {
-			return status;
-		}
-
-		/*
-		 * TODO:Once netfn DTLS config structure is updated. Make sure this is still needed.
-		 * Currently the netfn dtls config takes encap and deacp specific parameters for a
-		 * decap session as well as for an encap session.
-		 */
-		netfn_dtls_cfg->version = netfn_capwapmgr_dtls_version_enum_to_netfn[dtls_data->encap.ver];
-
-		netfn_dtls_cfg->epoch = dtls_data->encap.epoch;
-
-		netfn_dtls_cfg->replay_win = dtls_data->decap.window_size;
-
-		/*
-		 * Update config specifying this is decap session configuration.
-		 */
-		netfn_dtls_cfg->flags = NETFN_DTLS_FLAG_CAPWAP;
+		status = netfn_capwapmgr_legacy2dtls(dtls_data, &cfg->ext_cfg.enc, &cfg->ext_cfg.dec);
 	}
 
 	return status;
@@ -443,32 +460,29 @@ void netfn_capwapmgr_stats2legacy_stats(struct netfn_capwap_tun_stats *netfn_sta
       /*
        * Convert decap stats.
        */
-	legacy_stats->rx_segments = netfn_stats->dec.num_frags;
+	legacy_stats->rx_segments = netfn_stats->dec.pkts_rcvd;
 	legacy_stats->rx_control_pkts = netfn_stats->dec.control_pkts;
 	legacy_stats->rx_keepalive_pkts = netfn_stats->dec.keepalive_pkts;
 	legacy_stats->rx_fast_reasm = netfn_stats->dec.fast_reasm;
 	legacy_stats->rx_slow_reasm = netfn_stats->dec.slow_reasm;
-	legacy_stats->rx_dup_frag = netfn_stats->dec.drop_dup_frags;
-	legacy_stats->rx_drop_dec_failure = netfn_stats->dec.drop_dec_failure;
-	legacy_stats->rx_drop_max_frags = netfn_stats->dec.drop_max_frags;
+	legacy_stats->rx_drop_dec_failure = netfn_stats->dec.err_dec_failure;
+	legacy_stats->rx_drop_max_frags = netfn_stats->dec.err_max_frags;
 	legacy_stats->rx_drop_missing_frags = netfn_stats->dec.drop_missing_frags;
-	legacy_stats->rx_oversize_drops = netfn_stats->dec.drop_large_frags;
-	legacy_stats->rx_csum_drops = netfn_stats->dec.drop_csum_fail;
-	legacy_stats->rx_malformed = netfn_stats->dec.drop_malformed;
-	legacy_stats->rx_drop_linearize_fail = netfn_stats->dec.drop_linearize_fail;
-	legacy_stats->rx_frag_gap_drops = netfn_stats->dec.drop_reasm_window;
+	legacy_stats->rx_oversize_drops = netfn_stats->dec.err_large_frags;
+	legacy_stats->rx_csum_drops = netfn_stats->dec.err_csum_fail;
+	legacy_stats->rx_malformed = netfn_stats->dec.err_malformed;
 
 	/*
 	 * Convert encap stats.
 	 */
-	legacy_stats->tx_segments = netfn_stats->enc.num_frags;
+	legacy_stats->tx_segments = netfn_stats->enc.pkts_rcvd;
 	legacy_stats->tx_keepalive_pkts = netfn_stats->enc.keepalive_pkts;
 	legacy_stats->tx_queue_full_drops = netfn_stats->enc.drop_queue_full;
 	legacy_stats->tx_mem_failure_drops = netfn_stats->enc.drop_mem_alloc;
-	legacy_stats->tx_dropped_ver_mis = netfn_stats->enc.drop_ver_mis;
-	legacy_stats->tx_dropped_hroom = netfn_stats->enc.drop_insufficient_hroom;
-	legacy_stats->tx_dropped_dtls = netfn_stats->enc.drop_direct_dtls;
-	legacy_stats->tx_dropped_nwireless = netfn_stats->enc.drop_nwireless_len;
+	legacy_stats->tx_dropped_ver_mis = netfn_stats->enc.err_ver_mis;
+	legacy_stats->tx_dropped_hroom = netfn_stats->enc.err_insufficient_hroom;
+	legacy_stats->tx_dropped_dtls = netfn_stats->enc.err_direct_dtls;
+	legacy_stats->tx_dropped_nwireless = netfn_stats->enc.err_nwireless_len;
 }
 EXPORT_SYMBOL(netfn_capwapmgr_stats2legacy_stats);
 

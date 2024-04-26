@@ -34,40 +34,51 @@
 #include "netfn_capwap_tun.h"
 #include "netfn_capwap_dec.h"
 
+#define NETFN_CAPWAP_MAX_STRLEN 25
 #define NETFN_CAPWAP_DEC_STATS_MAX (sizeof(struct netfn_capwap_dec_stats) / sizeof(uint64_t))
 
 /*
  * Decap statistics strings
  */
 static int8_t *g_dec_stats_str[] = {
-	"num_frags",
+	"pkts_rcvd",
+	"dtls_pkts",
 	"control_pkts",
 	"keepalive_pkts",
 	"fast_reasm",
 	"slow_reasm",
-	"drop_dup_frags",
-	"drop_dec_failure",
-	"drop_max_frags",
+	"flow_cookie_no_db",
 	"drop_missing_frags",
-	"drop_large_frags",
-	"drop_csum_fail",
-	"drop_malformed",
-	"drop_linearize_fail",
-	"drop_reasm_window",
+	"drop_queue_full",
+	"err_dec_failure",
+	"err_max_frags",
+	"err_large_frags",
+	"err_csum_fail",
+	"err_malformed",
+	"err_excess_len",
+	"err_nwireless_len",
+	"res1",
+	"res2",
 };
 
 /*
  * netfn_capwap_dec_convert()
  *	Converts 802.11 to 802.3 pkt and adds meta header
  */
-static bool netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buff *skb)
+static void netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buff *skb)
 {
+	bool flow_id_lookup_needed = dec->features & NETFN_CAPWAP_FEATURES_FLOW_COOKIE;
+	struct netfn_capwap_dec_stats *stats = &dec->stats;
+	netfn_flow_cookie_status_t nfc_status;
 	struct ieee80211_hdr_3addr *wlan_hdr;
 	struct netfn_capwap_hdr_mdata *mdata;
+	struct netfn_flow_cookie nfc = {0};
 	struct netfn_capwap_prehdr *phdr;
+	struct netfn_flow_cookie_db *d;
 	uint8_t *start, *next_hdr;
 	uint8_t smac[ETH_ALEN];
 	uint8_t dmac[ETH_ALEN];
+	uint32_t offset = 0;
 	struct ethhdr *eth;
 	__le16 frame_ctrl;
 	uint16_t protocol;
@@ -77,11 +88,22 @@ static bool netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buf
 	phdr = &mdata->phdr;
 
 	/*
+	 * For exception packets we don't need conversion.
+	 */
+	if (unlikely(mdata->exception)) {
+		return;
+	}
+
+	/*
 	 * Check if it needs conversion, else add meta header and exit.
 	 */
 	if (!mdata->type_80211) {
+		eth = (struct ethhdr *)next_hdr;
+		skb->protocol = eth->h_proto;
 		goto add_prehdr;
 	}
+
+	phdr->type |= NETFN_CAPWAP_PKT_TYPE_80211;
 
 	/*
 	 * We only convert 802.11 DATA frame. In case of non-data packets
@@ -89,15 +111,17 @@ static bool netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buf
 	 */
 	wlan_hdr = (struct ieee80211_hdr_3addr *)next_hdr;
 	frame_ctrl = ntohs(wlan_hdr->frame_control);
+
 	if (!unlikely(ieee80211_is_data(frame_ctrl))) {
+		flow_id_lookup_needed = false;
 		goto add_prehdr;
 	}
 
 	/*
 	 * Save mac addresses for constructing 802.3 frame.
 	 */
-	ether_addr_copy((u8 *)smac, (u8 *)wlan_hdr->addr1);
-	ether_addr_copy((u8 *)dmac, (u8 *)wlan_hdr->addr3);
+	ether_addr_copy((u8 *)smac, (u8 *)wlan_hdr->addr3);
+	ether_addr_copy((u8 *)dmac, (u8 *)wlan_hdr->addr1);
 
 	next_hdr += sizeof(*wlan_hdr);
 
@@ -105,8 +129,8 @@ static bool netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buf
 	 * Strip the Qos header (802.11e)
 	 */
 	if (likely(ieee80211_is_data_qos(frame_ctrl))) {
-		phdr->wlan_qos = *(uint16_t *)next_hdr;
-		next_hdr += sizeof(phdr->wlan_qos);
+		phdr->wireless_qos = *(uint16_t *)next_hdr;
+		next_hdr += sizeof(phdr->wireless_qos);
 	}
 
 	next_hdr += NETFN_CAPWAP_SNAP_HDR_LEN;
@@ -130,11 +154,40 @@ add_prehdr:
 	 * Add preheader.
 	 */
 	next_hdr -= sizeof(*phdr);
+
 	phdr = (struct netfn_capwap_prehdr *)next_hdr;
 	*phdr = mdata->phdr;
 
 	__skb_push(skb, start - next_hdr);
-	return true;
+
+	if (!flow_id_lookup_needed) {
+		return;
+	}
+
+	d = netfn_capwap_get_db_handle();
+	if (!d) {
+		NETFN_CAPWAP_TUN_STATS_INC(&stats->flow_cookie_no_db);
+		return;
+	}
+
+	/*
+	 * Fill the right offset here.
+	 */
+	offset = sizeof(*eth) + sizeof(*phdr);
+
+	/*
+	 * We append the valid Flow ID as retrieved
+	 * from the Netfn Flow Cookie DB
+	 * to the Meta Data Header here.
+	 */
+	nfc_status = netfn_flow_cookie_db_entry_get_flow_cookie_using_skb(d, skb, offset, &nfc);
+	if (nfc_status != NETFN_FLOW_COOKIE_STATUS_SUCCESS) {
+		return;
+	}
+
+	phdr->flow_id = nfc.flow_id;
+	phdr->scs_sdwf_id = nfc.scs_id;
+	phdr->type |= (nfc.valid_flag & NETFN_CAPWAP_DEC_PHDR_TYPE_MASK);
 }
 
 /*
@@ -142,7 +195,7 @@ add_prehdr:
  *	Verify if given 2 skbs can be reassembled.
  */
 static struct sk_buff *netfn_capwap_dec_fast_reasm(struct netfn_capwap_dec *dec, struct netfn_capwap_dec_ctx *ctx,
-		struct sk_buff *skb)
+		struct sk_buff *skb, struct sk_buff_head *q_free)
 {
 	struct netfn_capwap_hdr_mdata *info1, *info2;
 	unsigned char *iter, *start, *end;
@@ -194,17 +247,14 @@ static struct sk_buff *netfn_capwap_dec_fast_reasm(struct netfn_capwap_dec *dec,
 	 * Coalesce the 2 skbs.
 	 */
 	__skb_put_data(skb1, skb2->data, skb2->len);
-	dev_kfree_skb(skb2);
+	__skb_queue_head(q_free, skb2);
 
 	ctx->reasm_cache = NULL;
 
 	/*
 	 * Convert to 802.11 if needed and attach meta header.
 	 */
-	if (!netfn_capwap_dec_convert(dec, skb1)) {
-		dev_kfree_skb(skb1);
-		return NULL;
-	}
+	netfn_capwap_dec_convert(dec, skb1);
 
 	NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.fast_reasm);
 	return skb1;
@@ -224,7 +274,7 @@ static struct sk_buff *netfn_capwap_dec_linearize(struct netfn_capwap_frags *fra
 	skb_size = frags->tot_sz + NETFN_CAPWAP_HEADROOM_RESERVE + NETFN_CAPWAP_TAILROOM_RESERVE;
 	skb = dev_alloc_skb(skb_size);
 	if (!skb) {
-		pr_debug("%px: Unable to allocate skb of size(%d)\n", &frags->list, skb_size);
+		pr_warn_ratelimited("%px: Unable to allocate skb of size(%d)\n", &frags->list, skb_size);
 		dev_kfree_skb_list_fast(&frags->list);
 		return NULL;
 	}
@@ -245,8 +295,8 @@ restart:
 			}
 
 			memcpy(skb->data + offset, iter->data, iter->len);
-			__skb_unlink(skb, &frags->list);
-			__skb_queue_tail(&q_tmp, skb);
+			__skb_unlink(iter, &frags->list);
+			__skb_queue_tail(&q_tmp, iter);
 			goto restart;
 		}
 	}
@@ -258,7 +308,7 @@ restart:
 	 * If we have fragments left then fragments were corrupted.
 	 */
 	if (!skb_queue_empty(&frags->list)) {
-		NETFN_CAPWAP_TUN_STATS_INC(&stats->drop_malformed);
+		NETFN_CAPWAP_TUN_STATS_INC(&stats->err_malformed);
 		dev_kfree_skb(skb);
 		skb = NULL;
 	}
@@ -272,7 +322,7 @@ restart:
  *	Reassemble the packets.
  */
 static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec *dec, struct netfn_capwap_dec_ctx *ctx,
-		struct sk_buff *skb)
+		struct sk_buff *skb, struct sk_buff_head *q_free)
 {
 	struct netfn_capwap_dec_stats *stats = &dec->stats;
 	struct netfn_capwap_hdr_mdata *info;
@@ -313,16 +363,27 @@ static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec *dec,
 	 * Check if total payload size exceeds max payload size
 	 */
 	if (unlikely(frags->tot_sz > dec->max_payload_sz)) {
-		NETFN_CAPWAP_TUN_STATS_INC(&stats->drop_large_frags);
+		NETFN_CAPWAP_TUN_STATS_ADD(&stats->err_large_frags, skb_queue_len(frag_list));
 		dev_kfree_skb_list_fast(frag_list);
-		return NULL;
+		goto done;
 	}
 
 	/*
 	 * Check if the number of frags exceeds max limit.
 	 */
 	if (unlikely(skb_queue_len(frag_list) > dec->max_frags)) {
-		NETFN_CAPWAP_TUN_STATS_ADD(&stats->drop_max_frags, skb_queue_len(frag_list));
+		NETFN_CAPWAP_TUN_STATS_ADD(&stats->err_max_frags, skb_queue_len(frag_list));
+		dev_kfree_skb_list_fast(frag_list);
+		goto done;
+	}
+
+	/*
+	 * This is the case where either:
+	 * 1. We have received duplicate fragments.
+	 * 2. Or we have received overlapping fragments.
+	 */
+	if (unlikely(frags->tot_sz && (frags->frag_sz > frags->tot_sz))) {
+		NETFN_CAPWAP_TUN_STATS_ADD(&stats->err_excess_len, skb_queue_len(frag_list));
 		dev_kfree_skb_list_fast(frag_list);
 		goto done;
 	}
@@ -336,16 +397,13 @@ static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec *dec,
 
 	reasm_skb = netfn_capwap_dec_linearize(frags, stats);
 	if (!reasm_skb) {
-		NETFN_CAPWAP_TUN_STATS_INC(&stats->drop_linearize_fail);
+		goto done;
 	}
 
 	/*
 	 * Convert to 802.11 if needed and attach meta header.
 	 */
-	if (!netfn_capwap_dec_convert(dec, reasm_skb)) {
-		dev_kfree_skb(reasm_skb);
-		goto done;
-	}
+	netfn_capwap_dec_convert(dec, reasm_skb);
 
 	NETFN_CAPWAP_TUN_STATS_INC(&stats->slow_reasm);
 done:
@@ -374,6 +432,7 @@ static uint8_t *netfn_capwap_dec_capwap(struct netfn_capwap_dec *dec, struct sk_
 	 */
 	preamble = netfn_capwap_hdr_get_preamble(info);
 	if (unlikely(preamble)) {
+		NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.dtls_pkts);
 		preh->type |= NETFN_CAPWAP_PKT_TYPE_INVALID;
 		return start;
 	}
@@ -391,7 +450,7 @@ static uint8_t *netfn_capwap_dec_capwap(struct netfn_capwap_dec *dec, struct sk_
 	 */
 	next_hdr += sizeof(*nch);
 
-	preh->vers = NETFN_CAPWAP_VERSION;
+	preh->version = NETFN_CAPWAP_VERSION;
 	preh->rid = netfn_capwap_hdr_get_rid(info);
 	cw_hlen = netfn_capwap_hdr_get_hlen(info);
 
@@ -423,12 +482,13 @@ static uint8_t *netfn_capwap_dec_capwap(struct netfn_capwap_dec *dec, struct sk_
 		 */
 		nwireless = cw_hlen - sizeof(*nch);
 		if (unlikely((nwireless / sizeof(*winfo)) > NETFN_CAPWAP_MAX_NWIRELESS)) {
+			NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.err_nwireless_len);
 			return start + next_hdr;
 		}
 
 		BUILD_BUG_ON(NETFN_CAPWAP_MAX_NWIRELESS > sizeof(*winfo));
-		preh->nwireless = nwireless;
-		*((struct netfn_capwap_winfo *)preh->winfo) = *winfo;
+		preh->nwireless = (nwireless / sizeof(*winfo));
+		*((struct netfn_capwap_winfo *)preh->wl_info) = *winfo;
 
 		/*
 		 * Pull the wirelesss information header
@@ -478,17 +538,46 @@ static uint8_t *netfn_capwap_dec_l3(struct netfn_capwap_dec *dec, struct sk_buff
 	if (ntohs(skb->protocol) == ETH_P_IP) {
 		iph = (struct iphdr *)start;
 
-		preh->dscp = ipv4_get_dsfield(iph);
+		preh->dscp = (ipv4_get_dsfield(iph) >> 2);
 		skb->protocol = iph->protocol;
 		return start + sizeof(*iph);
 	}
 
 	ip6h = (struct ipv6hdr *)start;
 
-	preh->dscp = ipv6_get_dsfield(ip6h);
+	preh->dscp = (ipv6_get_dsfield(ip6h) >> 2);
 	skb->protocol = ip6h->nexthdr;
 	return start + sizeof(*ip6h);
 }
+
+/*
+ * netfn_capwap_dec_l2()
+ *     Decapsulate L2 header
+ */
+static uint8_t *netfn_capwap_dec_l2(struct netfn_capwap_dec *dec, struct sk_buff *skb, uint8_t *start, struct netfn_capwap_prehdr *preh)
+{
+       struct ethhdr *ehdr = (struct ethhdr *)start;
+       uint8_t next_hdr = 0;
+       uint16_t proto;
+
+       proto = ehdr->h_proto;
+       next_hdr += ETH_HLEN;
+
+       /*
+        * Outer header has a VLAN
+        */
+       if (eth_type_vlan(proto)) {
+               struct vlan_hdr *vh = (struct vlan_hdr *)(start + ETH_HLEN);
+
+               proto = vh->h_vlan_encapsulated_proto;
+               preh->vlan_pcp = ((ntohs(vh->h_vlan_TCI) & VLAN_PRIO_MASK) >> VLAN_PRIO_SHIFT);
+               next_hdr += sizeof(*vh);
+       }
+
+       skb->protocol = proto;
+       return start + next_hdr;
+}
+
 
 /*
  * netfn_capwap_dec()
@@ -502,6 +591,7 @@ static bool netfn_capwap_dec(struct netfn_capwap_dec *dec, struct sk_buff *skb, 
 	uint8_t *start, *next_hdr;
 	uint8_t exception = 0;
 
+	preh.tunnel_id = dec->id;
 	start = next_hdr = skb->data;
 
 	/*
@@ -518,11 +608,13 @@ static bool netfn_capwap_dec(struct netfn_capwap_dec *dec, struct sk_buff *skb, 
 	 * Its stripped by DTLS.
 	 */
 	if (dec->features & NETFN_CAPWAP_FEATURES_DTLS) {
-		preh.dscp = skb->priority;
+		preh.dscp = (skb->priority >> 2);
 		next_hdr = netfn_capwap_dec_capwap(dec, skb, next_hdr, &preh);
+		preh.vlan_pcp = skb_vlan_tag_get_prio(skb);
 		goto skip_headers;
 	}
 
+	next_hdr = netfn_capwap_dec_l2(dec, skb, next_hdr, &preh);
 	next_hdr = netfn_capwap_dec_l3(dec, skb, next_hdr, &preh);
 	next_hdr = netfn_capwap_dec_l4(dec, skb, next_hdr, &preh);
 	next_hdr = netfn_capwap_dec_capwap(dec, skb, next_hdr, &preh);
@@ -561,7 +653,6 @@ static ssize_t netfn_capwap_dec_stats_show(struct file *fp, char __user *ubuf, s
 	size_t dec_stats_sz, stats_sz;
 	ssize_t bytes_read = 0;
 	size_t size_wr = 0;
-	char *strings;
 	char *buf;
 	int i;
 
@@ -578,16 +669,16 @@ static ssize_t netfn_capwap_dec_stats_show(struct file *fp, char __user *ubuf, s
 	 * Print decap stats.
 	 */
 	BUILD_BUG_ON(ARRAY_SIZE(g_dec_stats_str) != NETFN_CAPWAP_DEC_STATS_MAX);
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "\n------------[decap stats start]----------\n");
+	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "\n---------------[decap stats start]-------------\n");
 
-	for (i = 0, strings = g_dec_stats_str[0]; i < ARRAY_SIZE(g_dec_stats_str); i++, stats++, strings++) {
+	for (i = 0; i < ARRAY_SIZE(g_dec_stats_str); i++, stats++) {
 		size_t len = stats_sz - size_wr;
 		char *start = buf + size_wr;
 
-		size_wr += scnprintf(start, len, "%s\t\t = %llu\n", strings, READ_ONCE(*stats));
+		size_wr += scnprintf(start, len, "%-*s\t\t = %llu\n", NETFN_CAPWAP_MAX_STRLEN, g_dec_stats_str[i], READ_ONCE(*stats));
 	}
 
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "------------[decap stats end]-----------\n");
+	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "---------------[decap stats end]--------------\n");
 
 	bytes_read = simple_read_from_buffer(ubuf, sz, ppos, buf, size_wr);
 	vfree(buf);
@@ -627,6 +718,7 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 	struct netfn_capwap_dec_ctx *ctx;
 	struct sk_buff *skb, *reasm_skb;
 	struct sk_buff_head q_frags;
+	struct sk_buff_head q_free;
 	bool is_frag = false;
 
 	rcu_read_lock_bh();
@@ -637,18 +729,19 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 		return false;
 	}
 
-	__skb_queue_head_init(&q_frags);
+	skb_queue_head_init(&q_frags);
+	skb_queue_head_init(&q_free);
 	while (likely(skb_queue_len(q_head))) {
 		skb = __skb_dequeue(q_head);
 
-		NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.num_frags);
+		NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.pkts_rcvd);
 
 		/*
 		 * Decapsulate the skb.
 		 */
 		if (!netfn_capwap_dec(dec, skb, &is_frag)) {
-			NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.drop_dec_failure);
-			dev_kfree_skb(skb);
+			NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.err_dec_failure);
+			__skb_queue_head(&q_free, skb);
 			continue;
 		}
 
@@ -672,12 +765,13 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 		/*
 		 * Handle reassembly for 2 consecutive fragments.
 		 */
-		reasm_skb = netfn_capwap_dec_fast_reasm(dec, ctx, skb);
+		reasm_skb = netfn_capwap_dec_fast_reasm(dec, ctx, skb, &q_free);
 		if (likely(reasm_skb)) {
 			__skb_queue_tail(&q_frags, reasm_skb);
 			continue;
 		}
 
+reset_cache:
 		/*
 		 * Pull skb out of fast reasm queue and send it for slow reassembly.
 		 */
@@ -689,9 +783,19 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 		 * However, if these are new fragments then automatically park them in
 		 * the fragment list for future reassembly.
 		 */
-		reasm_skb = netfn_capwap_dec_slow_reasm(dec, ctx, skb);
+		reasm_skb = netfn_capwap_dec_slow_reasm(dec, ctx, skb, &q_free);
 		if (reasm_skb) {
 			__skb_queue_tail(&q_frags, reasm_skb);
+		}
+
+		/*
+		 * We don't want to keep anything in reassembly cache until unless its
+		 * 2 fragments reassembly. Since at this point 2 frag reassembly would
+		 * have already been taken care so this is >2 frags reassembly.
+		 */
+		if (ctx->reasm_cache) {
+			skb = NULL;
+			goto reset_cache;
 		}
 	}
 
@@ -700,6 +804,11 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 	 */
 	skb_queue_splice_tail(&q_frags, q_head);
 	rcu_read_unlock_bh();
+
+	/*
+	 * Free the fragments.
+	 */
+	dev_kfree_skb_list_fast(&q_free);
 	return true;
 }
 
@@ -707,11 +816,12 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
  * netfn_capwap_dec_init()
  *	Initializes the decap object.
  */
-bool netfn_capwap_dec_init(struct netfn_capwap_dec *dec, struct netfn_capwap_dec_cfg *cfg, struct dentry *parent)
+bool netfn_capwap_dec_init(struct netfn_capwap_dec *dec, struct netfn_capwap_dec_cfg *cfg, struct netfn_capwap_tun *nct)
 {
 	dec->max_frags = cfg->max_frags;
 	dec->max_payload_sz = cfg->max_payload_sz;
-	dec->features = cfg->features;
+	dec->features = nct->features;
+	dec->id = nct->id;
 
 	/*
 	 * TODO: Remove this once inner sgt is enabled.
@@ -724,10 +834,45 @@ bool netfn_capwap_dec_init(struct netfn_capwap_dec *dec, struct netfn_capwap_dec
 	/*
 	 * Allocate debugfs entry.
 	 */
-	if (!debugfs_create_file("decap", S_IRUGO, parent, dec, &file_ops)) {
+	if (!debugfs_create_file("decap", S_IRUGO, nct->dentry, dec, &file_ops)) {
 		pr_warn("%p: Failed to create encap debug entry.\n", dec);
 		return false;
 	}
 
 	return true;
+}
+
+/*
+ * netfn_capwap_dec_get_err_stats()
+ *	Accumulates decapsulation error stats and return sum
+ */
+uint64_t netfn_capwap_dec_get_err_stats(struct netfn_capwap_dec *dec)
+{
+	struct netfn_capwap_dec_stats *stats = &dec->stats;
+	uint64_t err_stats = 0;
+
+	err_stats += stats->err_dec_failure;
+	err_stats += stats->err_max_frags;
+	err_stats += stats->err_large_frags;
+	err_stats += stats->err_csum_fail;
+	err_stats += stats->err_malformed;
+	err_stats += stats->err_excess_len;
+	err_stats += stats->err_nwireless_len;
+
+	return err_stats;
+}
+
+/*
+ * netfn_capwap_dec_get_drop_stats()
+ *	Accumulates decapsulation drop stats and return sum
+ */
+uint64_t netfn_capwap_dec_get_drop_stats(struct netfn_capwap_dec *dec)
+{
+	struct netfn_capwap_dec_stats *stats = &dec->stats;
+	uint64_t drop_stats = 0;
+
+	drop_stats += stats->drop_missing_frags;
+	drop_stats += stats->drop_queue_full;
+
+	return drop_stats;
 }

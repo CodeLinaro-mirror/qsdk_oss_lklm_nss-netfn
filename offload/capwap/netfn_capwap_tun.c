@@ -29,6 +29,7 @@
 
 #include <ppe_vp_public.h>
 #include <ppe_drv.h>
+#include <netfn_dtls.h>
 
 #include "netfn_capwap.h"
 #include "netfn_capwap_priv.h"
@@ -37,39 +38,52 @@
 #include "netfn_capwap_enc.h"
 #include "netfn_capwap_dec.h"
 
+#define NETFN_CAPWAP_MAX_STRLEN 25
+#define NETFN_CAPWAP_TUN_STATS_MAX (sizeof(struct netfn_capwap_pkt_stats) / sizeof(uint64_t))
+
+/*
+ * Tunnel statistics strings
+ */
+static int8_t *g_tun_stats_str[] = {
+	"tx_pkts",
+	"tx_bytes",
+	"tx_errors",
+	"tx_dropped",
+	"rx_pkts",
+	"rx_bytes",
+	"rx_errors",
+	"rx_dropped",
+	"res1",
+	"res2",
+};
+
 /*
  * netfn_capwap_tun_rx()
  *	Common rx handling for dev rx handler and VP handler.
  */
 static bool netfn_capwap_tun_rx(struct netfn_capwap_tun *nct, struct sk_buff *skb)
 {
+	struct netfn_capwap_dec_stats *stats = &nct->dec.stats;
 	struct sk_buff_head q_head;
-	uint64_t tx_bytes = 0;
+	uint64_t rx_bytes = 0;
 
-	NETFN_CAPWAP_TUN_STATS_INC(&nct->stats.rx_pkts);
-	NETFN_CAPWAP_TUN_STATS_ADD(&nct->stats.rx_bytes, skb->len);
-
-	__skb_queue_head_init(&q_head);
+	skb_queue_head_init(&q_head);
 	__skb_queue_head(&q_head, skb);
 
 	/*
 	 * Decapsulate and reassemble the skb
 	 */
 	if (unlikely(!netfn_capwap_dec_rx_skbs(&nct->dec, &q_head))) {
+		NETFN_CAPWAP_TUN_STATS_ADD(&stats->err_dec_failure, skb_queue_len(&q_head));
 		goto fail;
 	}
 
 	/*
 	 * RPS the packet to forwarding core.
 	 */
-	netfn_pkt_steer_send_list(&nct->rx_steer, &q_head, NETFN_CAPWAP_RPS_CORE, &tx_bytes);
-	if (unlikely(skb_queue_len(&q_head))) {
-		goto fail;
-	}
-
-	return true;
+	netfn_pkt_steer_send_list(&nct->rx_steer, &q_head, NETFN_CAPWAP_RPS_CORE, &rx_bytes);
+	NETFN_CAPWAP_TUN_STATS_ADD(&stats->drop_queue_full, skb_queue_len(&q_head));
 fail:
-	NETFN_CAPWAP_TUN_STATS_ADD(&nct->stats.rx_failures, skb_queue_len(&q_head));
 	dev_kfree_skb_list_fast(&q_head);
 	return true;
 }
@@ -78,16 +92,14 @@ fail:
  * netfn_capwap_tun_rx_handler()
  *	Receive an SKB queueu for processing.
  */
-static rx_handler_result_t netfn_capwap_tun_rx_handler(struct sk_buff **pskb)
+static void netfn_capwap_tun_rx_handler(struct sk_buff *skb, void *data)
 {
+	struct net_device *dev = data;
 	struct netfn_capwap_tun *nct;
-	struct sk_buff *skb = *pskb;
 
-	nct = netdev_priv(rcu_dereference_bh(skb->dev->rx_handler_data));
+	nct = netdev_priv(dev);
 
 	netfn_capwap_tun_rx(nct, skb);
-
-	return RX_HANDLER_CONSUMED;
 }
 
 /*
@@ -98,13 +110,21 @@ static netdev_tx_t netfn_capwap_tun_tx(struct sk_buff *skb, struct net_device *d
 {
 	struct netfn_capwap_tun *nct = netdev_priv(dev);
 	unsigned int needed_hroom, needed_troom;
-	struct netfn_capwap_pkt_stats *stats;
+	struct netfn_capwap_enc_stats *stats;
 	struct netfn_capwap_prehdr *phdr;
 	bool expand_skb;
 
-	stats = &nct->stats;
+	stats = &nct->enc.stats;
 	needed_hroom = dev->needed_headroom;
 	needed_troom = dev->needed_tailroom;
+
+	/*
+	 * In case of non-linear SKB we would like to linearize
+	 * skb_linearize() internally checks if pkt is non-linear.
+	 */
+	if (skb_linearize(skb)) {
+		goto fail;
+	}
 
 	/*
 	 * Check if we have sufficient headroom and tailroom.
@@ -113,6 +133,7 @@ static netdev_tx_t netfn_capwap_tun_tx(struct sk_buff *skb, struct net_device *d
 	if (expand_skb && pskb_expand_head(skb, needed_hroom, needed_troom, GFP_NOWAIT | __GFP_NOWARN)) {
 		pr_warn_ratelimited("%px: Failed to expand SKB with headroom(%u) tailroom(%u)\n",
 				dev, skb_headroom(skb), skb_tailroom(skb));
+		NETFN_CAPWAP_TUN_STATS_INC(&stats->err_insufficient_hroom);
 		goto fail;
 	}
 
@@ -121,9 +142,10 @@ static netdev_tx_t netfn_capwap_tun_tx(struct sk_buff *skb, struct net_device *d
 	/*
 	 * Check for capwap version.
 	 */
-	if (unlikely(phdr->vers != NETFN_CAPWAP_VERSION)) {
+	if (unlikely(phdr->version != NETFN_CAPWAP_VERSION)) {
 		pr_warn_ratelimited("%px: Version mismatch actual:%d, expected: %d.\n", skb,
-				phdr->vers, NETFN_CAPWAP_VERSION);
+				phdr->version, NETFN_CAPWAP_VERSION);
+		NETFN_CAPWAP_TUN_STATS_INC(&stats->err_ver_mis);
 		goto fail;
 	}
 
@@ -132,6 +154,7 @@ static netdev_tx_t netfn_capwap_tun_tx(struct sk_buff *skb, struct net_device *d
 	 */
 	if (unlikely(phdr->type & NETFN_CAPWAP_PKT_TYPE_DTLS)) {
 		pr_warn_ratelimited("%px: We don't support DTLS packets encapsulation.\n", skb);
+		NETFN_CAPWAP_TUN_STATS_INC(&stats->err_direct_dtls);
 		goto fail;
 	}
 
@@ -139,22 +162,25 @@ static netdev_tx_t netfn_capwap_tun_tx(struct sk_buff *skb, struct net_device *d
 	 * Number of wireless sections shouldn't exceed max count.
 	 */
 	if (unlikely(phdr->nwireless > NETFN_CAPWAP_MAX_NWIRELESS)) {
-		pr_warn_ratelimited("%px: Number of wireless sections exceeds max count(%d).\n",
-				phdr, NETFN_CAPWAP_MAX_NWIRELESS);
+		pr_warn_ratelimited("%px: Number of wireless sections %d exceeds max count(%d).\n",
+				phdr, phdr->nwireless, NETFN_CAPWAP_MAX_NWIRELESS);
+		NETFN_CAPWAP_TUN_STATS_INC(&stats->err_nwireless_len);
 		goto fail;
 	}
 
 	/*
 	 * IPI packet to desired core.
 	 */
-	if (netfn_pkt_steer_send(&nct->tx_steer, skb, capwap_core)) {
-		return NETDEV_TX_OK;
+	if (!netfn_pkt_steer_send(&nct->tx_steer, skb, capwap_core)) {
+		NETFN_CAPWAP_TUN_STATS_INC(&stats->drop_queue_full);
+		goto fail;
 	}
+
+	return NETDEV_TX_OK;
 fail:
 	/*
 	 * dev_kfree_skb has a NULL check inside.
 	 */
-	NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_failures);
 	dev_kfree_skb(skb);
 	return NETDEV_TX_OK;
 }
@@ -250,6 +276,23 @@ static int netfn_capwap_tun_stop(struct net_device *dev)
 }
 
 /*
+ * netfn_capwap_tun_stats_update()
+ *	Updates the tunnel statistics
+ */
+static inline void netfn_capwap_tun_stats_update(struct netfn_capwap_tun *nct)
+{
+	struct netfn_capwap_pkt_stats *stats = &nct->stats;
+
+	/*
+	 * Accumulate Rx/Tx errors and Rx/Tx drops.
+	 */
+	stats->rx_errors = netfn_capwap_dec_get_err_stats(&nct->dec);
+	stats->tx_errors = netfn_capwap_enc_get_err_stats(&nct->enc);
+	stats->rx_dropped = netfn_capwap_dec_get_drop_stats(&nct->dec);
+	stats->tx_dropped = netfn_capwap_enc_get_drop_stats(&nct->enc);
+}
+
+/*
  * netfn_capwap_tun_dev_stats64()
  *	Get tunnel statistics
  */
@@ -258,12 +301,19 @@ static void netfn_capwap_tun_get_stats64(struct net_device *dev, struct rtnl_lin
 	struct netfn_capwap_tun *nct = netdev_priv(dev);
 	struct netfn_capwap_pkt_stats *pkt_stats = &nct->stats;
 
+	/*
+	 * Update the tunnel stats with encap and decap
+	 */
+	netfn_capwap_tun_stats_update(nct);
+
 	dev_stats->rx_packets = READ_ONCE(pkt_stats->rx_pkts);
 	dev_stats->rx_bytes = READ_ONCE(pkt_stats->rx_bytes);
 	dev_stats->tx_packets = READ_ONCE(pkt_stats->tx_pkts);
 	dev_stats->tx_bytes = READ_ONCE(pkt_stats->tx_bytes);
-	dev_stats->tx_dropped = READ_ONCE(pkt_stats->tx_failures);
-	dev_stats->rx_dropped = READ_ONCE(pkt_stats->rx_failures);
+	dev_stats->tx_dropped = READ_ONCE(pkt_stats->tx_dropped);
+	dev_stats->rx_dropped = READ_ONCE(pkt_stats->rx_dropped);
+	dev_stats->tx_errors = READ_ONCE(pkt_stats->tx_errors);
+	dev_stats->rx_errors = READ_ONCE(pkt_stats->rx_errors);
 }
 
 /*
@@ -274,9 +324,25 @@ static int netfn_capwap_tun_mtu(struct net_device *dev, int mtu)
 {
 	struct netfn_capwap_tun *nct = netdev_priv(dev);
 	struct net_device *next_dev = nct->next_dev;
+	int next_mtu;
 
+	/*
+	 * Set nexthop MTU.
+	 */
 	__dev_set_mtu(next_dev, mtu);
-	dev->mtu = next_dev->mtu - nct->enc.outer_hdr_len;
+	next_mtu = READ_ONCE(next_dev->mtu);
+
+	/*
+	 * Set maximum fragmenatation length for Encapsulation.
+	 */
+	netfn_capwap_enc_mtu_update(&nct->enc, next_mtu);
+
+	/*
+	 * Set our device MTU.
+	 */
+	WRITE_ONCE(dev->mtu, mtu);
+
+	pr_info("MTU updated with flow mtu(%u)\n", mtu);
 	return 0;
 }
 
@@ -348,11 +414,12 @@ static void netfn_capwap_tun_setup(struct net_device *dev)
 static ssize_t netfn_capwap_tun_stats_show(struct file *fp, char __user *ubuf, size_t sz, loff_t *ppos)
 {
 	struct netfn_capwap_tun *nct = fp->private_data;
-	struct netfn_capwap_pkt_stats *stats = &nct->stats;
+	uint64_t *stats = (uint64_t *)&nct->stats;
 	size_t pkt_stats_sz, stats_sz;
 	ssize_t bytes_read = 0;
 	size_t size_wr = 0;
 	char *buf;
+	int i;
 
 	pkt_stats_sz = sizeof(struct netfn_capwap_pkt_stats) / sizeof(uint64_t) * NETFN_CAPWAP_TUN_STATS_STRLEN;
 	stats_sz = (NETFN_CAPWAP_TUN_STATS_WIDTH * NETFN_CAPWAP_TUN_STATS_STRLEN) + pkt_stats_sz;
@@ -364,16 +431,24 @@ static ssize_t netfn_capwap_tun_stats_show(struct file *fp, char __user *ubuf, s
 	}
 
 	/*
-	 * Print stats.
+	 * Update stats before printing.
 	 */
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "\n------------[pkt stats start]----------\n");
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "rx_pkts", READ_ONCE(stats->rx_pkts));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t = %llu\n", "rx_bytes", READ_ONCE(stats->rx_bytes));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t = %llu\n", "rx_failures", READ_ONCE(stats->rx_failures));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t\t = %llu\n", "tx_pkts", READ_ONCE(stats->tx_pkts));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t = %llu\n", "tx_bytes", READ_ONCE(stats->tx_bytes));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "%s\t = %llu\n", "tx_failures", READ_ONCE(stats->tx_failures));
-	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "------------[pkt stats end]-----------\n");
+	netfn_capwap_tun_stats_update(nct);
+
+	/*
+	 * Print pkt stats.
+	 */
+	BUILD_BUG_ON(ARRAY_SIZE(g_tun_stats_str) != NETFN_CAPWAP_TUN_STATS_MAX);
+	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "\n---------------[pkt stats start]-------------\n");
+
+	for (i = 0; i < ARRAY_SIZE(g_tun_stats_str); i++, stats++) {
+		size_t len = stats_sz - size_wr;
+		char *start = buf + size_wr;
+
+		size_wr += scnprintf(start, len, "%-*s\t\t = %llu\n", NETFN_CAPWAP_MAX_STRLEN, g_tun_stats_str[i], READ_ONCE(*stats));
+	}
+
+	size_wr += scnprintf(buf + size_wr, stats_sz - size_wr, "---------------[pkt stats end]--------------\n");
 
 	bytes_read = simple_read_from_buffer(ubuf, sz, ppos, buf, size_wr);
 	vfree(buf);
@@ -397,8 +472,36 @@ bool netfn_capwap_tun_vp_err(struct ppe_vp_cb_info *info, void *cb_data)
 {
 	struct netfn_capwap_tun *nct = cb_data;
 
-	NETFN_CAPWAP_TUN_STATS_INC(&nct->stats.tx_failures);
+	NETFN_CAPWAP_TUN_STATS_INC(&nct->enc.stats.err_dev_tx);
 	dev_kfree_skb(info->skb);
+	return true;
+}
+
+/*
+ * netfn_capwap_tun_list_rx()
+ *     Common rx handling for dev rx handler and VP handler.
+ */
+static bool netfn_capwap_tun_list_rx(struct netfn_capwap_tun *nct, struct sk_buff_head *q_head)
+{
+	struct netfn_capwap_dec_stats *stats = &nct->dec.stats;
+	uint64_t rx_bytes = 0;
+
+	/*
+	 * Decapsulate and reassemble the skb
+	 */
+	if (unlikely(!netfn_capwap_dec_rx_skbs(&nct->dec, q_head))) {
+		NETFN_CAPWAP_TUN_STATS_ADD(&stats->err_dec_failure, skb_queue_len(q_head));
+		goto fail;
+	}
+
+	/*
+	 * RPS the packet to forwarding core.
+	 */
+	netfn_pkt_steer_send_list(&nct->rx_steer, q_head, NETFN_CAPWAP_RPS_CORE, &rx_bytes);
+	NETFN_CAPWAP_TUN_STATS_ADD(&stats->drop_queue_full, skb_queue_len(q_head));
+
+fail:
+	dev_kfree_skb_list_fast(q_head);
 	return true;
 }
 
@@ -409,6 +512,16 @@ bool netfn_capwap_tun_vp_err(struct ppe_vp_cb_info *info, void *cb_data)
 bool netfn_capwap_tun_vp_rx(struct ppe_vp_cb_info *info, void *cb_data)
 {
 	netfn_capwap_tun_rx(cb_data, info->skb);
+	return true;
+}
+
+/*
+ * netfn_capwap_tun_vp_list_rx()
+ *     VP callback for receiving list of packets.
+ */
+bool netfn_capwap_tun_vp_list_rx(struct net_device *dev, struct sk_buff_head *q_head, void *cb_data)
+{
+	netfn_capwap_tun_list_rx(cb_data, q_head);
 	return true;
 }
 
@@ -426,6 +539,7 @@ static struct net_device *netfn_capwap_tun_vp_attach(struct net_device *dev)
 	 */
 	vpai.type = PPE_VP_TYPE_SW_L3;
 	vpai.dst_cb = netfn_capwap_tun_vp_rx;
+	vpai.dst_list_cb = netfn_capwap_tun_vp_list_rx;
 	vpai.dst_cb_data = netdev_priv(dev);
 	vpai.src_cb = netfn_capwap_tun_vp_err;
 	vpai.src_cb_data = netdev_priv(dev);
@@ -470,10 +584,8 @@ static void netfn_capwap_tun_vp_detach(struct net_device *dev)
 static void netfn_capwap_tun_tx_cb(struct netfn_pkt_steer *tx_steer, struct sk_buff_head *q_head)
 {
 	struct netfn_capwap_tun *nct = container_of(tx_steer, struct netfn_capwap_tun, tx_steer);
-	struct netfn_capwap_pkt_stats *stats;
+	struct netfn_capwap_pkt_stats *stats = &nct->stats;
 	struct sk_buff *skb, *nskb;
-
-	stats = &nct->stats;
 
 	/*
 	 * Encapsulates and transmits out.
@@ -482,14 +594,13 @@ static void netfn_capwap_tun_tx_cb(struct netfn_pkt_steer *tx_steer, struct sk_b
 		struct sk_buff *skb_frag, *tmp;
 		struct sk_buff_head q_frags;
 
-		__skb_queue_head_init(&q_frags);
+		skb_queue_head_init(&q_frags);
 		__skb_unlink(skb, q_head);
 
 		/*
 		 * Encapsulate the packet.
 		 */
 		if (!netfn_capwap_enc(&nct->enc, skb, &q_frags)) {
-			NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_failures);
 			dev_kfree_skb_list_fast(&q_frags);
 			continue;
 		}
@@ -512,7 +623,7 @@ static void netfn_capwap_tun_tx_cb(struct netfn_pkt_steer *tx_steer, struct sk_b
 			 * and don't require unnecessary overhead of dev_queue_xmit()
 			 */
 			if (dev->netdev_ops->ndo_start_xmit(skb_frag, dev) != NETDEV_TX_OK) {
-				NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_failures);
+				NETFN_CAPWAP_TUN_STATS_INC(&nct->enc.stats.err_dev_tx);
 				dev_kfree_skb(skb_frag);
 				continue;
 			}
@@ -539,7 +650,6 @@ static void netfn_capwap_tun_rx_cb(struct netfn_pkt_steer *rx_steer, struct sk_b
 	 */
 	skb_queue_walk_safe(q_head, skb, next_skb) {
 		__skb_unlink(skb, q_head);
-
 		skb_reset_mac_header(skb);
 		skb_reset_transport_header(skb);
 
@@ -553,7 +663,10 @@ static void netfn_capwap_tun_rx_cb(struct netfn_pkt_steer *rx_steer, struct sk_b
 			skb->skb_iif = nct->dev->ifindex;
 		}
 
-		rx_handler = rcu_dereference(dev->rx_handler);
+		NETFN_CAPWAP_TUN_STATS_INC(&nct->stats.rx_pkts);
+		NETFN_CAPWAP_TUN_STATS_ADD(&nct->stats.rx_bytes, skb->len);
+
+		rx_handler = rcu_dereference(skb->dev->rx_handler);
 		if (likely(rx_handler) && (rx_handler(&skb) == RX_HANDLER_CONSUMED)) {
 			continue;
 		}
@@ -566,7 +679,7 @@ static void netfn_capwap_tun_rx_cb(struct netfn_pkt_steer *rx_steer, struct sk_b
  * netfn_capwap_tun_alloc()
  *	Allocates a new tunnel.
  */
-struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, ssize_t pvt_sz)
+struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, struct netfn_tuple *tuple, ssize_t pvt_sz)
 {
 	struct netfn_pkt_steer_info info = {0};
 	struct netfn_capwap *nc = &global_nc;
@@ -590,6 +703,8 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, ssiz
 	 */
 	nct->nc = nc;
 	nct->dev = dev;
+	nct->id = cfg->id;
+	nct->features = cfg->features;
 	memset(&nct->stats, 0, sizeof(nct->stats));
 
 	/*
@@ -633,7 +748,7 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, ssiz
 	/*
 	 * Encap init.
 	 */
-	if (!netfn_capwap_enc_init(&nct->enc, &cfg->enc, nct->dentry)) {
+	if (!netfn_capwap_enc_init(&nct->enc, &cfg->enc, tuple, nct)) {
 		pr_warn("%px: Encapsulation init failed.\n", dev);
 		goto fail;
 	}
@@ -641,7 +756,7 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, ssiz
 	/*
 	 * Decap init.
 	 */
-	if (!netfn_capwap_dec_init(&nct->dec, &cfg->dec, nct->dentry)) {
+	if (!netfn_capwap_dec_init(&nct->dec, &cfg->dec, nct)) {
 		pr_warn("%px: Decapsulation init failed.\n", dev);
 		goto fail;
 	}
@@ -716,9 +831,7 @@ bool netfn_capwap_tun_bind(struct net_device *dev, struct net_device *next)
 	old_next_dev = xchg(&nct->next_dev, next);
 	netfn_capwap_enc_mtu_update(&nct->enc, next->mtu);
 	BUG_ON(old_next_dev != nct->vp_dev);
-	rtnl_lock();
-	netdev_rx_handler_register(next, &netfn_capwap_tun_rx_handler, dev);
-	rtnl_unlock();
+	netfn_dtls_register_data_cb(next, &netfn_capwap_tun_rx_handler, dev);
 
 	pr_info("%px: Successfully binded dev(%s)-->next(%s)\n", nct, dev->name, next->name);
 	return true;
@@ -741,15 +854,40 @@ bool netfn_capwap_tun_unbind(struct net_device *dev)
 	old_next_dev = xchg(&nct->next_dev, nct->vp_dev);
 	BUG_ON(old_next_dev == nct->vp_dev);
 
-	rtnl_lock();
-	netdev_rx_handler_unregister(old_next_dev);
-	rtnl_unlock();
+	netfn_dtls_unregister_data_cb(old_next_dev);
 	dev_put(old_next_dev);
 
 	pr_info("%px: Successfully unbinded(%s)\n", nct, dev->name);
 	return true;
 }
 EXPORT_SYMBOL(netfn_capwap_tun_unbind);
+
+/*
+ * netfn_capwap_tun_flow_cookie_cfg()
+ *	Sets the flag to enable/disable
+ *	the Flow Cookie Lookup functionality.
+ */
+void netfn_capwap_tun_flow_cookie_cfg(struct net_device *dev, bool enable)
+{
+	struct netfn_capwap_tun *nct;
+	struct netfn_capwap_dec *dec;
+
+	BUG_ON(!dev);
+
+	nct = netdev_priv(dev);
+	dec = &nct->dec;
+
+	/*
+	 * Set the relevant flags here.
+	 */
+	if (enable) {
+		dec->features |= NETFN_CAPWAP_FEATURES_FLOW_COOKIE;
+		return;
+	}
+
+	dec->features &= ~NETFN_CAPWAP_FEATURES_FLOW_COOKIE;
+}
+EXPORT_SYMBOL(netfn_capwap_tun_flow_cookie_cfg);
 
 /*
  * netfn_capwap_tun_stats_get()
@@ -766,14 +904,10 @@ int netfn_capwap_tun_stats_get(struct net_device *dev, struct netfn_capwap_tun_s
 	nct = netdev_priv(dev);
 
 	/*
-	 * Read packet stats atomically.
+	 * Update the tunnel stats with encap and decap
 	 */
-	pkt_stats->rx_pkts = READ_ONCE(nct->stats.rx_pkts);
-	pkt_stats->rx_bytes = READ_ONCE(nct->stats.rx_bytes);
-	pkt_stats->tx_pkts = READ_ONCE(nct->stats.tx_pkts);
-	pkt_stats->tx_bytes = READ_ONCE(nct->stats.tx_bytes);
-	pkt_stats->rx_failures = READ_ONCE(nct->stats.rx_failures);
-	pkt_stats->tx_failures = READ_ONCE(nct->stats.tx_failures);
+	netfn_capwap_tun_stats_update(nct);
+	memcpy(pkt_stats, &nct->stats, sizeof(*pkt_stats));
 
 	/*
 	 * Read encap, decap stats.

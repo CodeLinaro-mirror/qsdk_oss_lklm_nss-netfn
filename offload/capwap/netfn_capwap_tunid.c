@@ -54,6 +54,43 @@ static int netfn_capwap_tunid_close(struct net_device *dev)
 }
 
 /*
+ * netfn_capwap_tunid_get_tun_stats()
+ *	Accumulates all child tunnel's error and drop stats.
+ */
+
+static void netfn_capwap_tunid_get_tun_stats(struct netfn_capwap_tunid *ncti)
+{
+	struct netfn_capwap_pkt_stats tunid_stats = {0};
+	struct netfn_capwap_pkt_stats tun_stats = {0};
+	struct netfn_capwap_tun *nct;
+	struct net_device *tun_dev;
+	int id = 0;
+
+	rcu_read_lock_bh();
+	for (id = 0; id < NETFN_CAPWAP_MAX_IDS; id++) {
+		tun_dev = rcu_dereference(ncti->tunnels[id]);
+		if (!tun_dev) {
+			continue;
+		}
+
+		nct = netdev_priv(tun_dev);
+		tun_stats = nct->stats;
+
+		tunid_stats.tx_dropped += tun_stats.tx_dropped;
+		tunid_stats.rx_dropped += tun_stats.rx_dropped;
+		tunid_stats.tx_errors += tun_stats.tx_errors;
+		tunid_stats.rx_errors += tun_stats.rx_errors;
+	}
+
+	rcu_read_unlock_bh();
+
+	ncti->stats.tx_dropped = tunid_stats.tx_dropped;
+	ncti->stats.rx_dropped = tunid_stats.rx_dropped;
+	ncti->stats.tx_errors = tunid_stats.tx_errors;
+	ncti->stats.rx_errors = tunid_stats.rx_errors;
+}
+
+/*
  * netfn_capwap_tunid_stats
  *	Get pdev stats.
  */
@@ -66,8 +103,16 @@ static void netfn_capwap_tunid_stats(struct net_device *dev, struct rtnl_link_st
 	stats->rx_bytes = READ_ONCE(pkt_stats->rx_bytes);
 	stats->tx_packets = READ_ONCE(pkt_stats->tx_pkts);
 	stats->tx_bytes = READ_ONCE(pkt_stats->tx_bytes);
-	stats->tx_dropped = READ_ONCE(pkt_stats->tx_failures);
-	stats->rx_dropped = READ_ONCE(pkt_stats->rx_failures);
+
+	/*
+	 * Accumulate error and drop stats from child tunnels.
+	 */
+	netfn_capwap_tunid_get_tun_stats(ncti);
+
+	stats->tx_dropped = READ_ONCE(pkt_stats->tx_dropped);
+	stats->rx_dropped = READ_ONCE(pkt_stats->rx_dropped);
+	stats->tx_errors = READ_ONCE(pkt_stats->tx_errors);
+	stats->rx_errors = READ_ONCE(pkt_stats->rx_errors);
 }
 
 /*
@@ -78,6 +123,7 @@ static rx_handler_result_t netfn_capwap_tunid_rx_handler(struct sk_buff **pskb)
 {
 	struct netfn_capwap_pkt_stats *stats;
 	struct netfn_capwap_tunid *ncti;
+	rx_handler_func_t *rx_handler;
 	struct sk_buff *skb = *pskb;
 	struct net_device *dev;
 
@@ -88,9 +134,19 @@ static rx_handler_result_t netfn_capwap_tunid_rx_handler(struct sk_buff **pskb)
 	NETFN_CAPWAP_TUN_STATS_INC(&stats->rx_pkts);
 	NETFN_CAPWAP_TUN_STATS_ADD(&stats->rx_bytes, skb->len);
 
-	skb->dev = dev;
-	netif_receive_skb(skb);
+	/*
+	 * Only set the dev if it's not exception packet.
+	 */
+	if (likely(!NETFN_CAPWAP_CB(skb)->exception)) {
+		skb->dev = dev;
+	}
 
+	rx_handler = rcu_dereference(skb->dev->rx_handler);
+	if (likely(rx_handler) && (rx_handler(&skb) == RX_HANDLER_CONSUMED)) {
+		return RX_HANDLER_CONSUMED;
+	}
+
+	netif_receive_skb(skb);
 	return RX_HANDLER_CONSUMED;
 }
 
@@ -103,12 +159,22 @@ static netdev_tx_t netfn_capwap_tunid_tx(struct sk_buff *skb, struct net_device 
 	struct netfn_capwap_prehdr *pre = (struct netfn_capwap_prehdr *)skb->data;
 	struct netfn_capwap_tunid *ncti = netdev_priv(dev);
 	struct netfn_capwap_pkt_stats *stats = &ncti->stats;
+	uint16_t tunid = pre->tunnel_id;
 	struct net_device *tun_dev;
 
+	/*
+	 * Check if tunid is valid.
+	 */
+	if (tunid < 0 || tunid >= NETFN_CAPWAP_MAX_IDS) {
+		pr_warn_ratelimited("%px: Invalid id(%d) allowed(0 to %d)\n", &global_nc, tunid, NETFN_CAPWAP_MAX_IDS - 1);
+		dev_kfree_skb(skb);
+		return NETDEV_TX_OK;
+	}
+
 	rcu_read_lock_bh();
-	tun_dev = rcu_dereference(ncti->tunnels[pre->tun_id]);
+	tun_dev = rcu_dereference(ncti->tunnels[pre->tunnel_id]);
 	if (!tun_dev) {
-		NETFN_CAPWAP_TUN_STATS_INC(stats->tx_failures);
+		pr_warn_ratelimited("%px: No tun dev found corresponding to id(%d)\n", &global_nc, tunid);
 		rcu_read_unlock_bh();
 		dev_kfree_skb(skb);
 		return NETDEV_TX_OK;
@@ -121,7 +187,6 @@ static netdev_tx_t netfn_capwap_tunid_tx(struct sk_buff *skb, struct net_device 
 	 * so no need for dev_queue_xmit/dev_fast_xmit.
 	 */
 	if (tun_dev->netdev_ops->ndo_start_xmit(skb, tun_dev) != NETDEV_TX_OK) {
-		NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_failures);
 		dev_kfree_skb(skb);
 		goto done;
 	}
@@ -214,7 +279,7 @@ EXPORT_SYMBOL(netfn_capwap_tunid_alloc);
  * netfn_capwap_tunid_add()
  *	Adds tunnel with specific tun id.
  */
-struct net_device *netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, struct netfn_capwap_tun_cfg *cfg, ssize_t pvt_sz)
+struct net_device *netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, struct netfn_capwap_tun_cfg *cfg, struct netfn_tuple *tuple, ssize_t pvt_sz)
 {
 	struct netfn_capwap_tunid *ncti;
 	struct net_device *tun_dev;
@@ -225,10 +290,11 @@ struct net_device *netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, st
 	BUG_ON(!dev);
 
 	if (id < 0 || id >= NETFN_CAPWAP_MAX_IDS) {
-		pr_warn("%px: Invalid id(%d) allowed(1 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS);
+		pr_warn("%px: Invalid id(%d) allowed(0 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS - 1);
 		return NULL;
 	}
 
+	cfg->id = id;
 	ncti = netdev_priv(dev);
 
 	/*
@@ -239,7 +305,7 @@ struct net_device *netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, st
 		return NULL;
 	}
 
-	tun_dev = netfn_capwap_tun_alloc(cfg, pvt_sz);
+	tun_dev = netfn_capwap_tun_alloc(cfg, tuple, pvt_sz);
 	if (!tun_dev) {
 		clear_bit(id, ncti->map);
 		pr_warn("%px: Unable to allocate tunnel for id(%d)\n", ncti, id);
@@ -306,7 +372,7 @@ bool netfn_capwap_tunid_del(struct net_device *dev, uint8_t id)
 	BUG_ON(!dev);
 
 	if (id < 0 || id >= NETFN_CAPWAP_MAX_IDS) {
-		pr_warn("%px: Invalid id(%d) allowed(1 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS);
+		pr_warn("%px: Invalid id(%d) allowed(0 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS - 1);
 		return false;
 	}
 
@@ -343,7 +409,7 @@ bool netfn_capwap_tunid_bind(struct net_device *dev, uint8_t id, struct net_devi
 	BUG_ON(!next);
 
 	if (id < 0 || id >= NETFN_CAPWAP_MAX_IDS) {
-		pr_warn("%px: Invalid id(%d) allowed(1 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS);
+		pr_warn("%px: Invalid id(%d) allowed(0 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS - 1);
 		return false;
 	}
 
@@ -385,7 +451,7 @@ int netfn_capwap_tunid_stats_get(struct net_device *dev, uint8_t id, struct netf
 	BUG_ON(!stats);
 
 	if (id < 0 || id >= NETFN_CAPWAP_MAX_IDS) {
-		pr_warn("%px: Invalid id(%d) allowed(1 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS);
+		pr_warn("%px: Invalid id(%d) allowed(0 to %d)\n", &global_nc, id, NETFN_CAPWAP_MAX_IDS - 1);
 		return -EINVAL;
 	}
 

@@ -25,6 +25,7 @@
 #include <linux/if_ether.h>
 #include <linux/kref.h>
 #include <linux/bitmap.h>
+#include <linux/mutex.h>
 
 #include <netfn_capwap.h>
 #include <netfn_flowmgr.h>
@@ -41,6 +42,14 @@
  * Mask to check if dtls is enabled.
  */
 #define NETFN_CAPWAPMGR_EXT_VALID_DTLS (NETFN_CAPWAPMGR_EXT_VALID_DTLS_ENC | NETFN_CAPWAPMGR_EXT_VALID_DTLS_DEC)
+
+/*
+ * We set the desired Hash table size here.
+ * User can choose the size from 1 to 4096.
+ * Any size other than this if configured,
+ * will be set to default.
+ */
+#define NETFN_CAPWAPMGR_FLOW_COOKIE_HASHTABLE_SIZE 4096
 
 /*
  * netfn_capwapmgr_stats
@@ -62,12 +71,14 @@ struct netfn_capwapmgr_stats {
 struct netfn_capwapmgr {
 	struct kref ref;			/* Driver reference */
 	struct completion completion;		/* Completion to wait for freeing the driver */
-	spinlock_t lock;			/* Global lock */
+	struct mutex lock;			/* Mutex to serialize config updates */
 	struct dentry *dentry;			/* Debugfs for driver stats */
 	struct netfn_capwapmgr_stats stats;	/* Stats */
+	struct netfn_flow_cookie_db *d;		/* Store the DB handle here */
 };
 
 extern struct netfn_capwapmgr g_mgr;	/* Global manager object */
+extern uint8_t netfn_capwapmgr_snap[NETFN_CAPWAP_SNAP_HDR_LEN];
 extern void netfn_capwapmgr_final(struct kref *kref);
 
 #if defined(NETFN_CAPWAPMGR_ONE_NETDEV)

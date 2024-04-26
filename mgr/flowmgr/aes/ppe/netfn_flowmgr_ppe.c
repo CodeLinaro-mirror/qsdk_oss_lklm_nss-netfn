@@ -142,14 +142,14 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_v6_get_stats(struct netfn_flowmgr_flow_con
 	}
 
 	ppe_stats.tuple.protocol = stats->tuple.tuples.tuple_3.protocol;
-	memcpy(ppe_stats.tuple.flow_ip, stats->tuple.tuples.tuple_3.src_ip, sizeof(uint32_t) * 4);
-	memcpy(ppe_stats.tuple.return_ip, stats->tuple.tuples.tuple_3.dest_ip, sizeof(uint32_t) * 4);
+	memcpy(ppe_stats.tuple.flow_ip, &stats->tuple.tuples.tuple_3.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+	memcpy(ppe_stats.tuple.return_ip, &stats->tuple.tuples.tuple_3.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
         if (tuple_type == NETFN_TUPLE_5TUPLE) {
                 ppe_stats.tuple.protocol = stats->tuple.tuples.tuple_5.protocol;
-		memcpy(ppe_stats.tuple.flow_ip, stats->tuple.tuples.tuple_5.src_ip, sizeof(uint32_t) * 4);
-		memcpy(ppe_stats.tuple.return_ip, stats->tuple.tuples.tuple_5.dest_ip, sizeof(uint32_t) * 4);
-                ppe_stats.tuple.flow_ident = (uint32_t)stats->tuple.tuples.tuple_5.l4_src_ident;
-                ppe_stats.tuple.return_ident = (uint32_t)stats->tuple.tuples.tuple_5.l4_dest_ident;
+		memcpy(ppe_stats.tuple.flow_ip, &stats->tuple.tuples.tuple_5.src_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+		memcpy(ppe_stats.tuple.return_ip, &stats->tuple.tuples.tuple_5.dest_ip.ip6.s6_addr32, sizeof(uint32_t) * 4);
+                ppe_stats.tuple.flow_ident = (uint32_t)ntohs(stats->tuple.tuples.tuple_5.l4_src_ident);
+                ppe_stats.tuple.return_ident = (uint32_t)ntohs(stats->tuple.tuples.tuple_5.l4_dest_ident);
         }
 
 	/*
@@ -235,14 +235,14 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_v4_get_stats(struct netfn_flowmgr_flow_con
 	}
 
 	ppe_stats.tuple.protocol = stats->tuple.tuples.tuple_3.protocol;
-	ppe_stats.tuple.flow_ip = ntohl(stats->tuple.tuples.tuple_3.src_ip[0]);
-	ppe_stats.tuple.return_ip = ntohl(stats->tuple.tuples.tuple_3.dest_ip[0]);
+	ppe_stats.tuple.flow_ip = (uint32_t)ntohl(stats->tuple.tuples.tuple_3.src_ip.ip4.s_addr);
+	ppe_stats.tuple.return_ip = (uint32_t)ntohl(stats->tuple.tuples.tuple_3.dest_ip.ip4.s_addr);
 	if (tuple_type == NETFN_TUPLE_5TUPLE) {
                 ppe_stats.tuple.protocol = stats->tuple.tuples.tuple_5.protocol;
-                ppe_stats.tuple.flow_ip = ntohl(stats->tuple.tuples.tuple_5.src_ip[0]);
-                ppe_stats.tuple.return_ip = ntohl(stats->tuple.tuples.tuple_5.dest_ip[0]);
-                ppe_stats.tuple.flow_ident = (uint32_t)stats->tuple.tuples.tuple_5.l4_src_ident;
-                ppe_stats.tuple.return_ident = (uint32_t)stats->tuple.tuples.tuple_5.l4_dest_ident;
+                ppe_stats.tuple.flow_ip = (uint32_t)ntohl(stats->tuple.tuples.tuple_5.src_ip.ip4.s_addr);
+                ppe_stats.tuple.return_ip = (uint32_t)ntohl(stats->tuple.tuples.tuple_5.dest_ip.ip4.s_addr);
+                ppe_stats.tuple.flow_ident = (uint32_t)ntohs(stats->tuple.tuples.tuple_5.l4_src_ident);
+                ppe_stats.tuple.return_ident = (uint32_t)ntohs(stats->tuple.tuples.tuple_5.l4_dest_ident);
         }
 
 	ppe_status = ppe_drv_v4_get_conn_stats(&ppe_stats);

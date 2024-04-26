@@ -36,20 +36,34 @@ typedef uint16_t netfn_flowmgr_ret_t;
 /*
  * Rule valid flags
  */
-#define NETFN_FLOWMGR_VALID_RULE_FLAG_VLAN				0x0001  /**< VLAN is valid */
-#define NETFN_FLOWMGR_VALID_RULE_FLAG_PPPOE				0x0002  /**< PPPoE is valid */
-#define NETFN_FLOWMGR_VALID_RULE_FLAG_DSCP_MARKING			0x0004  /**< DSCP is valid */
-#define NETFN_FLOWMGR_VALID_RULE_FLAG_PRIORITY				0x0008  /**< Priority is valid */
-#define NETFN_FLOWMGR_VALID_RULE_FLAG_TRUSTSEC				0x0010  /**< Trustsec is valid */
-#define NETFN_FLOWMGR_VALID_RULE_FLAG_QOS				0x0020  /**< QoS is valid */
-#define NETFN_FLOWMGR_VALID_RULE_FLAG_SAWF				0x0040  /**< SAWF is valid */
-#define NETFN_FLOWMGR_VALID_RULE_FLAG_QDISC				0x0080  /**< Qdisc is valid */
-#define NETFN_FLOWMGR_VALID_RULE_FLAG_VLAN_FILTER			0x0100  /**< Vlan filter is valid */
-#define NETFN_FLOWMGR_VALID_RULE_FLAG_UDP_LITE				0x0400  /**< UDP lite is valid */
-#define NETFN_FLOWMGR_VALID_RULE_FLAG_SRC_NAT				0x0800  /**< Src NAT rule is valid */
-#define NETFN_FLOWMGR_VALID_RULE_FLAG_DST_NAT				0x1000  /**< Dst NAT rule is valid */
-#define NETFN_FLOWMGR_VALID_RULE_FLAG_MAC				0x2000  /**< MAC rule is valid */
-#define NETFN_FLOWMGR_VALID_RULE_FLAG_TCP				0x4000  /**< TCP rule is valid */
+#define NETFN_FLOWMGR_VALID_RULE_FLAG_VLAN				0x00000001  /**< VLAN is valid */
+#define NETFN_FLOWMGR_VALID_RULE_FLAG_PPPOE				0x00000002  /**< PPPoE is valid */
+#define NETFN_FLOWMGR_VALID_RULE_FLAG_DSCP_MARKING			0x00000004  /**< DSCP is valid */
+#define NETFN_FLOWMGR_VALID_RULE_FLAG_PRIORITY				0x00000008  /**< Priority is valid */
+#define NETFN_FLOWMGR_VALID_RULE_FLAG_TRUSTSEC				0x00000010  /**< Trustsec is valid */
+#define NETFN_FLOWMGR_VALID_RULE_FLAG_QOS				0x00000020  /**< QoS is valid */
+#define NETFN_FLOWMGR_VALID_RULE_FLAG_SAWF				0x00000040  /**< SAWF is valid */
+#define NETFN_FLOWMGR_VALID_RULE_FLAG_QDISC				0x00000080  /**< Qdisc is valid */
+#define NETFN_FLOWMGR_VALID_RULE_FLAG_VLAN_FILTER			0x00000100  /**< Vlan filter is valid */
+#define NETFN_FLOWMGR_VALID_RULE_FLAG_UDP_LITE				0x00000400  /**< UDP lite is valid */
+#define NETFN_FLOWMGR_VALID_RULE_FLAG_SRC_NAT				0x00000800  /**< Src NAT rule is valid */
+#define NETFN_FLOWMGR_VALID_RULE_FLAG_DST_NAT				0x00001000  /**< Dst NAT rule is valid */
+#define NETFN_FLOWMGR_VALID_RULE_FLAG_MAC				0x00002000  /**< MAC rule is valid */
+#define NETFN_FLOWMGR_VALID_RULE_FLAG_TCP				0x00004000  /**< TCP rule is valid */
+#define NETFN_FLOWMGR_VALID_RULE_FLAG_NOEDIT_RULE			0x00008000  /**< Noedit rule is valid */
+#define NETFN_FLOWMGR_VALID_RULE_FLAG_SKB_MARK				0x00010000  /**< SKB Mark rule is valid */
+
+/*
+ * Bridge VLAN filter flags; used with netfn_flowmgr_br_vlan_filter_rule structure.
+ */
+#define NETFN_FLOWMGR_VLAN_FILTER_FLAG_INGRESS_PVID			(1<<1)	/**< Add VLAN header at ingress for untagged packets. */
+#define NETFN_FLOWMGR_VLAN_FILTER_FLAG_EGRESS_UNTAGGED			(1<<2)	/**< Strip VLAN header associated with this VID at egress. */
+
+/*
+ * Qdisc interface validity flags; used with the valid_flags field in the netfn_flowmgr_qdisc_rule structure.
+ */
+#define NETFN_FLOWMGR_QDISC_RULE_VALID					0x01  /**< Qdisc interface  is valid. */
+#define NETFN_FLOWMGR_QDISC_RULE_PPE_QDISC_FAST_XMIT			0x02  /**< Fast transmit via PPE Qdisc for the interface is valid. */
 
 /**
  * enum netfn_flowmgr_ret_status
@@ -328,6 +342,14 @@ struct netfn_flowmgr_tcp_rule {
 	uint32_t max_end;	/**< largest seen ack + max(1, win). */
 };
 
+/*
+ * netfn_flowmgr_mark_rule
+ *	Information for SKB Mark rule
+ */
+struct netfn_flowmgr_skb_mark_rule {
+	uint32_t skb_mark;	/**< SKB mark in flow direction */
+};
+
 /**
  * netfn_flowmgr_dscp_priority
  *	Netfn flowmgr dscp priority info
@@ -348,7 +370,7 @@ struct netfn_flowmgr_dscp_priority {
  *	Information for rules valid in a connection.
  */
 struct netfn_flowmgr_rule_info {
-	uint32_t rule_valid_flags;					/**< Bit flags associated with the validity of rule parameters */
+	uint64_t rule_valid_flags;					/**< Bit flags associated with the validity of rule parameters */
 	struct netfn_flowmgr_tcp_rule tcp_rule;				/**< Holds information regarding TCP window sizes for SFE */
 	struct netfn_flowmgr_ip_xlate_rule ip_xlate_rule;		/**< Holds information about the NAT rule */
 	struct netfn_flowmgr_mac_xlate_rule mac_xlate_rule;		/**< Holds information about the MAC rule */
@@ -359,7 +381,8 @@ struct netfn_flowmgr_rule_info {
 	struct netfn_flowmgr_br_vlan_filter_rule vlan_filter_rule;	/**< VLAN filter related acceleration parameters */
 	struct netfn_flowmgr_udp_lite_rule udp_lite_rule;		/**< UDP lite rule parameters */
 	struct netfn_flowmgr_sawf_rule sawf_rule;			/**< SAWF rule related parameters */
-	struct netfn_flowmgr_qdisc_rule qdisc_rule;			/**< QDISCrelated rule parameters */
+	struct netfn_flowmgr_qdisc_rule qdisc_rule;			/**< QDISC related rule parameters */
+	struct netfn_flowmgr_skb_mark_rule mark_rule;			/**< SKB mark related rule parameters */
 };
 
 /**

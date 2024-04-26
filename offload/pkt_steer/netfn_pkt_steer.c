@@ -27,6 +27,37 @@
 #include "netfn_pkt_steer_priv.h"
 
 /*
+ * netfn_pkt_steer_send_ipi()
+ *	trigger IPI only if not in-progress.
+ */
+static inline void netfn_pkt_steer_send_ipi(int cpu, struct netfn_pkt_steer_pcpu *pcpu)
+{
+	int error;
+
+	/*
+	 * Send IPI to remote CPU only if,
+	 *  1. NAPI is not scheduled (This should be true for only initial packets).
+	 *  2. Already IPI has been sent by previous packet on current CPU.
+	 *  3. IPI is in-progress by other CPU for same remote CPU.
+	 *
+	 * IPI send can only fail if remote CPU is not online or invalid.
+	 */
+	if (unlikely(!test_bit(NAPI_STATE_SCHED, &pcpu->napi.state))) {
+		if (atomic_cmpxchg(&pcpu->ipi_pending, 0, 1) == 0) {
+			error = smp_call_function_single_async(cpu, &pcpu->csd);
+			if (error) {
+				WARN_ON_ONCE(error);
+
+				/*
+				 * Clear the ipi_pending in case of error.
+				 */
+				atomic_set(&pcpu->ipi_pending, 0);
+			}
+		}
+	}
+}
+
+/*
  * netfn_pkt_steer_add_stats()
  * 	Add stats from src to dst
  */
@@ -106,7 +137,7 @@ static int netfn_pkt_steer_rcv_poll(struct napi_struct *napi, int budget)
 	uint32_t processed = 0;
 	int cpu;
 
-	__skb_queue_head_init(&skb_head);
+	skb_queue_head_init(&skb_head);
 
 	/*
 	 * TODO: Implement Fair Reap budget.
@@ -138,6 +169,11 @@ static void netfn_pkt_steer_rcv_ipi(void *info)
 	struct netfn_pkt_steer_pcpu *pcpu = info;
 
 	napi_schedule(&pcpu->napi);
+
+	/*
+	 * Mark IPI as completed.
+	 */
+	atomic_set(&pcpu->ipi_pending, 0);
 }
 
 /*
@@ -187,11 +223,7 @@ int netfn_pkt_steer_send_list(struct netfn_pkt_steer *ps, struct sk_buff_head *h
 	}
 
 	atomic64_set(&fifo->prod, prod);
-
-	if (likely(!test_bit(NAPI_STATE_SCHED, &pcpu->napi.state))) {
-		smp_call_function_single_async(cpu, &pcpu->csd);
-	}
-
+	netfn_pkt_steer_send_ipi(cpu, pcpu);
 done:
 	fifo->stats.fifo_enq += processed;
 	fifo->stats.fifo_full += skb_queue_len(head);
@@ -239,10 +271,7 @@ int netfn_pkt_steer_send(struct netfn_pkt_steer *ps, struct sk_buff *skb, int cp
 
 	atomic64_set(&fifo->prod, prod);
 
-	if (likely(!test_bit(NAPI_STATE_SCHED, &pcpu->napi.state))) {
-		smp_call_function_single_async(cpu, &pcpu->csd);
-	}
-
+	netfn_pkt_steer_send_ipi(cpu, pcpu);
 	fifo->stats.fifo_enq++;
 	ret = 1;
 
@@ -311,6 +340,7 @@ bool netfn_pkt_steer_enable(struct netfn_pkt_steer *ps)
 		pcpu->csd.flags = 0;
 		pcpu->csd.info = pcpu;
 		pcpu->csd.func = netfn_pkt_steer_rcv_ipi;
+		atomic_set(&pcpu->ipi_pending, 0);
 
 		netif_napi_add(info->dev, &pcpu->napi, netfn_pkt_steer_rcv_poll, info->budget);
 		napi_enable(&pcpu->napi);

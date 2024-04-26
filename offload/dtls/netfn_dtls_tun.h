@@ -27,6 +27,7 @@ struct netfn_dtls_tun_stats {
 	uint64_t session_alloc;		/* Number of session allcated */
 	uint64_t session_free;		/* Number of session freed */
 	uint64_t encap_switch;		/* Number of Session switch in encap side */
+	uint64_t decap_switch;		/* Number of Session switch in Decap side */
 
 	/*
 	 * Tx is for encapsulation packets.
@@ -64,6 +65,8 @@ struct netfn_dtls_tun_state {
 struct netfn_dtls_tun {
 	struct net_device *dev;	/* Linux netdevice representation for this device */
 	struct net_device *vp_dev;	/* VP netdevice associated with tunnel. */
+	netfn_dtls_rx_handler_t __rcu cb;	/* Data Callback */
+	void __rcu *cb_data;			/* Appdata for callback */
 
 	struct netfn_dtls_tun_state enc;	/* Encap State */
 	struct netfn_dtls_tun_state dec;	/* Decap state */
