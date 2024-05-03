@@ -84,7 +84,7 @@ bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc
  * netfn_capwap_enc()
  *	Encapsulates the packets/s.
  */
-bool netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct sk_buff_head *q_frag);
+void netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct sk_buff_head *q_frag);
 
 /*
  * netfn_capwap_enc_mtu_update()

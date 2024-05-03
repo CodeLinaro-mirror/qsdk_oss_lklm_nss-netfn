@@ -127,6 +127,17 @@ static netdev_tx_t netfn_capwap_tun_tx(struct sk_buff *skb, struct net_device *d
 	}
 
 	/*
+	 * Unshare the SKB as we will be modifying it.
+	 */
+	if (unlikely(skb_shared(skb))) {
+		skb = skb_unshare(skb, GFP_NOWAIT | __GFP_NOWARN);
+		if (!skb) {
+			pr_warn_ratelimited("%px: Failed to unshare\n", dev);
+			goto fail;
+		}
+	}
+
+	/*
 	 * Check if we have sufficient headroom and tailroom.
 	 */
 	expand_skb = (skb_cloned(skb) || (skb_headroom(skb) < needed_hroom) || (skb_tailroom(skb) < needed_troom));
@@ -137,7 +148,9 @@ static netdev_tx_t netfn_capwap_tun_tx(struct sk_buff *skb, struct net_device *d
 		goto fail;
 	}
 
-	phdr = (struct netfn_capwap_prehdr *)skb->data;
+	NETFN_CAPWAP_CB(skb)->phdr = *(struct netfn_capwap_prehdr *)skb->data;
+	phdr = &NETFN_CAPWAP_CB(skb)->phdr;
+	__skb_pull(skb, sizeof(*phdr));
 
 	/*
 	 * Check for capwap version.
@@ -595,52 +608,54 @@ static void netfn_capwap_tun_tx_cb(struct netfn_pkt_steer *tx_steer, struct sk_b
 {
 	struct netfn_capwap_tun *nct = container_of(tx_steer, struct netfn_capwap_tun, tx_steer);
 	struct netfn_capwap_pkt_stats *stats = &nct->stats;
+	struct sk_buff_head q_frags;
 	struct sk_buff *skb, *nskb;
+
+	skb_queue_head_init(&q_frags);
 
 	/*
 	 * Encapsulates and transmits out.
 	 */
 	skb_queue_walk_safe(q_head, skb, nskb) {
-		struct sk_buff *skb_frag, *tmp;
-		struct sk_buff_head q_frags;
-
-		skb_queue_head_init(&q_frags);
 		__skb_unlink(skb, q_head);
+		if (likely(skb_queue_len(q_head))) {
+			uint8_t *ndata = nskb->data;
+			uint32_t mtu = nct->enc.mtu;
+
+			prefetch(ndata);
+			if (likely(nskb->len > mtu)) {
+				prefetch_range(ndata + mtu, nskb->len - mtu);
+			}
+		}
 
 		/*
 		 * Encapsulate the packet.
 		 */
-		if (!netfn_capwap_enc(&nct->enc, skb, &q_frags)) {
-			dev_kfree_skb_list_fast(&q_frags);
+		netfn_capwap_enc(&nct->enc, skb, &q_frags);
+	}
+
+	/*
+	 * Trasmit the packet out.
+	 */
+	skb_queue_walk_safe(&q_frags, skb, nskb) {
+		struct net_device *dev = nct->next_dev;
+		int len = skb->len;
+
+		__skb_unlink(skb, &q_frags);
+		skb->dev = dev;
+
+		/*
+		 * We are either sending it to VP or DTLS netdevice. Which is controlled path,
+		 * and don't require unnecessary overhead of dev_queue_xmit()
+		 */
+		if (dev->netdev_ops->ndo_start_xmit(skb, dev) != NETDEV_TX_OK) {
+			NETFN_CAPWAP_TUN_STATS_INC(&nct->enc.stats.err_dev_tx);
+			dev_kfree_skb(skb);
 			continue;
 		}
 
-		/*
-		 * TODO: optimize this path by merging the fragmentation and send loop into one.
-		 */
-		/*
-		 * Trasmit the packet out.
-		 */
-		skb_queue_walk_safe(&q_frags, skb_frag, tmp) {
-			struct net_device *dev = nct->next_dev;
-			int len = skb_frag->len;
-
-			__skb_unlink(skb_frag, &q_frags);
-			skb_frag->dev = dev;
-
-			/*
-			 * We are either sending it to VP or DTLS netdevice. Which is controlled path,
-			 * and don't require unnecessary overhead of dev_queue_xmit()
-			 */
-			if (dev->netdev_ops->ndo_start_xmit(skb_frag, dev) != NETDEV_TX_OK) {
-				NETFN_CAPWAP_TUN_STATS_INC(&nct->enc.stats.err_dev_tx);
-				dev_kfree_skb(skb_frag);
-				continue;
-			}
-
-			NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_pkts);
-			NETFN_CAPWAP_TUN_STATS_ADD(&stats->tx_bytes, len);
-		}
+		NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_pkts);
+		NETFN_CAPWAP_TUN_STATS_ADD(&stats->tx_bytes, len);
 	}
 }
 
