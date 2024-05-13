@@ -32,7 +32,7 @@ static inline int netfn_auto_capwapmgr_genl_cmd(struct sk_buff *skb, struct genl
 
 int netfn_auto_capwapmgr_rule_add(struct sk_buff *skb, struct genl_info *info);
 int netfn_auto_capwapmgr_rule_delete(struct sk_buff *skb, struct genl_info *info);
-int capwapmgr_rule_get(struct sk_buff *skb, struct genl_info *info);
+int netfn_auto_capwapmgr_rule_get(struct sk_buff *skb, struct genl_info *info);
 int netfn_auto_capwap_legacy_ipv4_tunnle_create(struct sk_buff *skb, struct genl_info *info);
 int netfn_auto_capwap_legacy_enable_tunnel(struct sk_buff *skb, struct genl_info *info);
 int netfn_auto_capwap_legacy_disable_tunnel(struct sk_buff *skb, struct genl_info *info);

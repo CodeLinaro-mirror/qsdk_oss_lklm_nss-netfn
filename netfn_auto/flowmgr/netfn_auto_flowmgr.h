@@ -192,14 +192,14 @@ bool netfn_auto_flowmgr_parse_ip_xlate(struct netfn_flowmgr_create_rule *origina
  */
 bool netfn_auto_flowmgr_parse_vlan(struct netfn_flowmgr_create_rule *original, struct netfn_flowmgr_create_rule *reply, struct nlattr *attr)
 {
-	struct nlattr *vlan_rule = NULL;
-	int rem;
+	struct nlattr *vlan_rule;
 	uint32_t inner, outer;
 	char *_inner, *_outer;
+	uint16_t inner_vlan_tpid, outer_vlan_tpid;
+	int rem;
 
 	netfn_auto_info("VLAN_RULE\n");
 	nla_for_each_nested(vlan_rule, attr, rem) {
-
 		switch(nla_type(vlan_rule)) {
 		case INNER_INGRESS:
 			_inner = nla_data(vlan_rule);
@@ -244,9 +244,19 @@ bool netfn_auto_flowmgr_parse_vlan(struct netfn_flowmgr_create_rule *original, s
 				return false;
 			}
 
-			netfn_auto_info("From Netlink, vlan_rule outer_egress tag: %d\n", outer);
+			netfn_auto_info("From Netlink, vlan_rule outer_egress tag: %x\n", outer);
 			original->rule_info.vlan_rule.outer.egress_vlan_tag = outer;
 			reply->rule_info.vlan_rule.outer.ingress_vlan_tag = outer;
+			break;
+
+		case VLAN_TPID_INNER:
+			inner_vlan_tpid = (uint16_t)nla_get_u32(vlan_rule);
+			original->rule_info.vlan_rule.inner_vlan_tpid = inner_vlan_tpid;
+			break;
+
+		case VLAN_TPID_OUTER:
+			outer_vlan_tpid = (uint16_t)nla_get_u32(vlan_rule);
+			original->rule_info.vlan_rule.outer_vlan_tpid = outer_vlan_tpid;
 			break;
 
 		default:

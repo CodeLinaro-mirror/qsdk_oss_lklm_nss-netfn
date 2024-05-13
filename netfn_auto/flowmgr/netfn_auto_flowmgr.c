@@ -119,6 +119,146 @@ fail:
 }
 
 /*
+ * netfn_auto_flowmgr_dump_tuple_info()
+ * 	Dump tuple info
+ */
+static inline void netfn_auto_flowmgr_dump_tuple_info(struct netfn_tuple *original, struct netfn_tuple *reply)
+{
+	netfn_auto_info("tuple_ip_version: %d\n"
+			"tuple_type: %d\n", original->ip_version, original->tuple_type);
+	switch (original->tuple_type) {
+	case NETFN_AUTO_THREE_TUPLE:
+		netfn_auto_info("tuple protocol<Original> : %d\n", original->tuples.tuple_3.protocol);
+		netfn_auto_info("IPv4 addr<Original src> :%pI4\n", &original->tuples.tuple_3.src_ip.ip4.s_addr);
+		netfn_auto_info("IPv4 addr<Original dest> :%pI4\n", &original->tuples.tuple_3.dest_ip.ip4.s_addr);
+		netfn_auto_info("tuple protocol<REPLY> : %d\n", reply->tuples.tuple_3.protocol);
+		netfn_auto_info("IPv4 addr<Reply src> :%pI4\n", &reply->tuples.tuple_3.src_ip.ip4.s_addr);
+		netfn_auto_info("IPv4 addr<Reply dest> :%pI4\n", &reply->tuples.tuple_3.dest_ip.ip4.s_addr);
+	break;
+
+	case NETFN_AUTO_FOUR_TUPLE:
+		/*
+		 * TODO: get the input from user about port type - source or destination.
+		 */
+		netfn_auto_info("tuple protocol<Original> : %d\n", original->tuples.tuple_4.protocol);
+		netfn_auto_info("IPv4 addr<Original src> :%pI4\n", &original->tuples.tuple_4.src_ip.ip4.s_addr);
+		netfn_auto_info("IPv4 addr<Original dest> :%pI4\n", &original->tuples.tuple_4.dest_ip.ip4.s_addr);
+		netfn_auto_info("tuple port<Original> : %d\n", original->tuples.tuple_4.l4_ident);
+		netfn_auto_info("tuple protocol<REPLY> : %d\n", reply->tuples.tuple_4.protocol);
+		netfn_auto_info("IPv4 addr<Reply src> :%pI4\n", &reply->tuples.tuple_4.src_ip.ip4.s_addr);
+		netfn_auto_info("IPv4 addr<Reply dest> :%pI4\n", &reply->tuples.tuple_4.dest_ip.ip4.s_addr);
+		netfn_auto_info("tuple port<REPLY> : %d\n", reply->tuples.tuple_4.l4_ident);
+	break;
+
+	case NETFN_AUTO_FIVE_TUPLE:
+		netfn_auto_info("tuple protocol<Original> : %d\n", original->tuples.tuple_5.protocol);
+		netfn_auto_info("IPv4 addr<Original src> :%pI4\n", &original->tuples.tuple_5.src_ip.ip4.s_addr);
+		netfn_auto_info("IPv4 addr<Original dest> :%pI4\n", &original->tuples.tuple_5.dest_ip.ip4.s_addr);
+		netfn_auto_info("src port<Original> : %d\n", original->tuples.tuple_5.l4_src_ident);
+		netfn_auto_info("dest port<original> : %d\n", original->tuples.tuple_5.l4_dest_ident);
+		netfn_auto_info("tuple protocol<REPLY> : %d\n", reply->tuples.tuple_5.protocol);
+		netfn_auto_info("IPv4 addr<Reply src> :%pI4\n", &reply->tuples.tuple_5.src_ip.ip4.s_addr);
+		netfn_auto_info("IPv4 addr<Reply dest> :%pI4\n", &reply->tuples.tuple_5.dest_ip.ip4.s_addr);
+		netfn_auto_info("src port<Reply> : %d\n", reply->tuples.tuple_5.l4_src_ident);
+		netfn_auto_info("dest port<Reply> : %d\n", reply->tuples.tuple_5.l4_dest_ident);
+	break;
+	}
+
+}
+/*
+ * netfn_auto_flowmgr_dump_rule_delete()
+ */
+static inline void netfn_auto_flowmgr_dump_rule_delete(struct netfn_flowmgr_destroy_rule *original, struct netfn_flowmgr_destroy_rule *reply, int accel_mode)
+{
+	netfn_auto_info("netfn_auto flowmgr params dump for rule_delete cmd\n");
+	netfn_auto_info("accel_mode: %d\n", accel_mode);
+	netfn_auto_flowmgr_dump_tuple_info(&original->tuple, &reply->tuple);
+}
+
+static inline void netfn_auto_flowmgr_create_rule_param_dump(struct netfn_flowmgr_create_rule *flowmgr_rule)
+{
+	netfn_auto_info("flow_flags: %u\n"
+					"flow_src_mac:%pM\n"
+					"flow_dest_mac:%pM\n"
+					"flow_mtu: %u\n"
+					"rule_valid_flags: 0x%llx\n"
+					"ip_version: %u\n"
+					"src_ip_xlate: %pI4\n"
+					"dest_ip_xlate: %pI4\n"
+					"src_port_xlate: %u\n"
+					"dest_port_xlate: %u\n"
+					"src_mac: %pM\n"
+					"dest_mac: %pM\n"
+					"inner_ingress_vlan_tag: 0x%x\n"
+					"inner_egress_vlan_tag: 0x%x\n"
+					"outer_ingress_vlan_tag: 0x%x\n"
+					"outer_egress_vlan_tag: 0x%x\n"
+					"inner_vlan_tpid: %d\n"
+					"outer_vlan_tpid: %d\n"
+					"dscp_val: %u\n"
+					"qos_tag: %u\n"
+					"priority: %u\n"
+					"pppoe_rule_session_id: %u\n"
+					"pppoe_server_mac: %pM\n"
+					"br_vlan_filter_rule_ingress_vlan_tag: 0x%x\n"
+					"br_vlan_filter_rule_egress_vlan_tag: 0x%x\n"
+					"br_vlan_filter_rule_flags: 0x%x\n"
+					"br_vlan_filter_rule_vlan_tpid: %u\n"
+					"udp_lite_rule_csum_cov: %u\n"
+					"sawf_rule_mark: %u\n"
+					"sawf_rule_svc_id: %u\n"
+					"qdisc_rule_valid_flags: 0x%x\n",
+			flowmgr_rule->flow_flags,
+			flowmgr_rule->flow_info.flow_src_mac,
+			flowmgr_rule->flow_info.flow_dest_mac,
+			flowmgr_rule->flow_info.flow_mtu,
+			flowmgr_rule->rule_info.rule_valid_flags,
+			flowmgr_rule->rule_info.ip_xlate_rule.ip_version,
+			flowmgr_rule->rule_info.ip_xlate_rule.src_ip_xlate,
+			flowmgr_rule->rule_info.ip_xlate_rule.dest_ip_xlate,
+			flowmgr_rule->rule_info.ip_xlate_rule.src_port_xlate,
+			flowmgr_rule->rule_info.ip_xlate_rule.dest_port_xlate,
+			flowmgr_rule->rule_info.mac_xlate_rule.src_mac,
+			flowmgr_rule->rule_info.mac_xlate_rule.dest_mac,
+			flowmgr_rule->rule_info.vlan_rule.inner.ingress_vlan_tag,
+			flowmgr_rule->rule_info.vlan_rule.inner.egress_vlan_tag,
+			flowmgr_rule->rule_info.vlan_rule.outer.ingress_vlan_tag,
+			flowmgr_rule->rule_info.vlan_rule.outer.egress_vlan_tag,
+			flowmgr_rule->rule_info.vlan_rule.inner_vlan_tpid,
+			flowmgr_rule->rule_info.vlan_rule.outer_vlan_tpid,
+			flowmgr_rule->rule_info.dscp_rule.dscp_val,
+			flowmgr_rule->rule_info.qos_rule.qos_tag,
+			flowmgr_rule->rule_info.qos_rule.priority,
+			flowmgr_rule->rule_info.pppoe_rule.session_id,
+			flowmgr_rule->rule_info.pppoe_rule.server_mac,
+			flowmgr_rule->rule_info.vlan_filter_rule.vlan_info.ingress_vlan_tag,
+			flowmgr_rule->rule_info.vlan_filter_rule.vlan_info.egress_vlan_tag,
+			flowmgr_rule->rule_info.vlan_filter_rule.flags,
+			flowmgr_rule->rule_info.vlan_filter_rule.vlan_tpid,
+			flowmgr_rule->rule_info.udp_lite_rule.csum_cov,
+			flowmgr_rule->rule_info.sawf_rule.mark,
+			flowmgr_rule->rule_info.sawf_rule.svc_id,
+			flowmgr_rule->rule_info.qdisc_rule.valid_flags);
+}
+
+/*
+ * netfn_auto_flowmgr_dump_rule_add()
+ * 	Dump params for rule_add cmd
+ */
+static inline void netfn_auto_flowmgr_dump_rule_add(struct netfn_flowmgr_create_rule *original, struct netfn_flowmgr_create_rule *reply, int accel_mode)
+{
+	netfn_auto_info("netfn_auto flowmgr params dump for rule_add cmd\n");
+	netfn_auto_info("accel_mode: %d\n", accel_mode);
+	netfn_auto_flowmgr_dump_tuple_info(&original->tuple, &reply->tuple);
+	netfn_auto_info("\n**********************************************************\n");
+	netfn_auto_info("*** Flow direction ***\n");
+	netfn_auto_flowmgr_create_rule_param_dump(original);
+	netfn_auto_info("\n**********************************************************\n");
+	netfn_auto_info("*** Return direction ***\n");
+	netfn_auto_flowmgr_create_rule_param_dump(reply);
+}
+
+/*
  * netfn_auto_flowmgr_rule_delete()
  * 	flowmgr rule delete handler
  */
@@ -157,12 +297,9 @@ int netfn_auto_flowmgr_rule_delete(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	/*
-	 * TODO: Implement netfn_auto_flowmgr_dump_api()
+	 * Print rule delete parameters
 	 */
-	netfn_auto_info("SRC_IP_ORG: %pI4\n", &original.tuple.tuples.tuple_5.src_ip.ip4.s_addr);
-	netfn_auto_info("DST_IP_ORG: %pI4\n", &original.tuple.tuples.tuple_5.dest_ip.ip4.s_addr);
-	netfn_auto_info("SRC_IP_REPLY: %pI4\n", &reply.tuple.tuples.tuple_5.src_ip.ip4.s_addr);
-	netfn_auto_info("SRC_IP_REPLY: %pI4\n", &reply.tuple.tuples.tuple_5.dest_ip.ip4.s_addr);
+	netfn_auto_flowmgr_dump_rule_delete(&original, &reply, accel_mode);
 
 	/*
 	 * call netfn_flowmgr_rule_decel() api with the parameters
@@ -667,7 +804,15 @@ int netfn_auto_flowmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 						reply.rule_info.vlan_filter_rule.flags = flags;
 						break;
 
-					/*TODO: VLAN_INFO*/
+					case INGRESS_VLAN_TAG:
+						tag = nla_get_u32(vlan_filter_rule);
+						original.rule_info.vlan_filter_rule.vlan_info.ingress_vlan_tag = tag;
+						break;
+
+					case EGRESS_VLAN_TAG:
+						tag = nla_get_u32(vlan_filter_rule);
+						original.rule_info.vlan_filter_rule.vlan_info.egress_vlan_tag = tag;
+						break;
 
 					default:
 						netfn_auto_warn("Unknown type in VLAN_FILTER_RULE\n");
@@ -685,6 +830,11 @@ int netfn_auto_flowmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 		netfn_auto_warn("RULE_INFO parse fail for flowmgr rule add\n");
 		goto fail;
 	}
+
+	/*
+	 * Print rule delete parameters
+	 */
+	netfn_auto_flowmgr_dump_rule_add(&original, &reply, accel_mode);
 
 	/*
 	 * netfn_flowmgr_rule_accel() api
