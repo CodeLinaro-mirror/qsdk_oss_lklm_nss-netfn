@@ -24,6 +24,11 @@
 extern struct netfn_capwap global_nc;
 extern ulong fwd_cores_mask;
 extern ulong capwap_core;
+extern int tx_napi_budget;
+extern int rx_napi_budget;
+
+#define NETFN_CAPWAP_RX_BUDGET 64
+#define NETFN_CAPWAP_TX_BUDGET 32
 
 #define NETFN_CAPWAP_RPS_CORE ((find_first_bit(&fwd_cores_mask, NR_CPUS)) % (NR_CPUS))
 #define NETFN_CAPWAP_TUN_STATS_STRLEN 20	/* Stats string length. */
