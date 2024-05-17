@@ -58,7 +58,9 @@ struct netfn_pkt_steer_pcpu {
 
 	struct napi_struct napi;		/* NAPI object */
 	call_single_data_t csd;			/* IPI descriptor */
-	atomic_t ipi_pending;			/* Previous IPI is not yet completed */
+	atomic_t ipi_queued;			/* Previous IPI is not yet completed */
+	atomic_t ipi_masked;			/* IPI is masked by consumer */
+	atomic_t queued;			/* Packets in CPU's Queue */
 
 	struct netfn_pkt_steer_fifo fifo[NR_CPUS];	/* Cross CPU SKB Queue */
 };
