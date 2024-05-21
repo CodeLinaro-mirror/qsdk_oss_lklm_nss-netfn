@@ -109,6 +109,7 @@ struct netfn_capwap_dec_stats {
 	 */
 	uint64_t drop_missing_frags;		/**< Drop in reassembly window because of missing fragments. */
 	uint64_t drop_queue_full;		/**< Drop in during IPI to other core bcz of queue full. */
+	uint64_t drop_pri_queue_full;		/**< Drop in during IPI to other core bcz of priority queue full. */
 	uint64_t err_dec_failure;		/**< Failed during decapsulation. */
 	uint64_t err_max_frags;			/**< Exceeds max fragments allowed(10). */
 	uint64_t err_large_frags;		/**< Error packet of oversize. */

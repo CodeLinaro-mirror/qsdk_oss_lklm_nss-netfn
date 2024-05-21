@@ -50,6 +50,7 @@ static int8_t *g_dec_stats_str[] = {
 	"flow_cookie_no_db",
 	"drop_missing_frags",
 	"drop_queue_full",
+	"drop_pri_queue_full",
 	"err_dec_failure",
 	"err_max_frags",
 	"err_large_frags",
@@ -60,6 +61,70 @@ static int8_t *g_dec_stats_str[] = {
 	"res1",
 	"res2",
 };
+
+/*
+ * netfn_capwap_dec_is_frag_chain()
+ *	Check if the 2 frags are part of same chain
+ */
+static inline bool netfn_capwap_dec_is_frag_chain(struct sk_buff *skb1, struct sk_buff *skb2)
+{
+	return NETFN_CAPWAP_CB(skb1)->frag_id == NETFN_CAPWAP_CB(skb2)->frag_id;
+}
+
+/*
+ * netfn_capwap_dec_can_fast()
+ *	Check if the skb is parked in fast reassembly cache already.
+ */
+static inline bool netfn_capwap_dec_can_fast(struct netfn_capwap_dec_ctx *ctx, uint16_t frag_id)
+{
+	struct sk_buff *cached_skb = ctx->reasm_cache;
+
+	return cached_skb && (frag_id == NETFN_CAPWAP_CB(cached_skb)->frag_id);
+}
+
+/*
+ * netfn_capwap_dec_can_slow()
+ *	Check if the skb has a corresponding fragment already parked in queue
+ */
+static inline bool netfn_capwap_dec_can_slow(struct netfn_capwap_dec_ctx *ctx, uint16_t frag_id)
+{
+	struct netfn_capwap_frags *frags;
+	uint16_t idx;
+
+	idx = NETFN_CAPWAP_FRAG_IDX(frag_id, NETFN_CAPWAP_TUN_MAX_REASM_WIN);
+	frags = &ctx->reasm_table[idx];
+
+	return frag_id == frags->frag_id;
+}
+
+/*
+ * netfn_capwap_dec_add_slow()
+ *	Add new skb to slow reassembly cache.
+ */
+static void netfn_capwap_dec_add_slow(struct netfn_capwap_dec_ctx *ctx, uint16_t frag_id, struct sk_buff *skb,
+		struct sk_buff_head *q_free)
+{
+	struct netfn_capwap_dec *dec = ctx->dec;
+	struct netfn_capwap_frags *frags;
+	struct sk_buff_head *frag_list;
+	uint16_t idx;
+
+	idx = NETFN_CAPWAP_FRAG_IDX(frag_id, NETFN_CAPWAP_TUN_MAX_REASM_WIN);
+	frags = &ctx->reasm_table[idx];
+	frag_list = &frags->list;
+
+	/*
+	 * If we already have frags in slow reasm queue and frag IDs don't match than
+	 * free previous list and add new skb to list.
+	 */
+	if (!skb_queue_empty(frag_list) && (unlikely(frag_id != frags->frag_id))) {
+		NETFN_CAPWAP_TUN_STATS_ADD(&dec->stats.drop_missing_frags, skb_queue_len(frag_list));
+		skb_queue_splice_tail(q_free, frag_list);
+		netfn_capwap_frags_init(frags);
+	}
+
+	netfn_capwap_frags_add(frags, skb);
+}
 
 /*
  * netfn_capwap_dec_convert()
@@ -194,10 +259,11 @@ add_prehdr:
  * netfn_capwap_dec_fast_reasm()
  *	Verify if given 2 skbs can be reassembled.
  */
-static struct sk_buff *netfn_capwap_dec_fast_reasm(struct netfn_capwap_dec *dec, struct netfn_capwap_dec_ctx *ctx,
-		struct sk_buff *skb, struct sk_buff_head *q_free)
+static struct sk_buff *netfn_capwap_dec_fast_reasm(struct netfn_capwap_dec_ctx *ctx, struct sk_buff *skb,
+		struct sk_buff_head *q_free)
 {
 	struct netfn_capwap_hdr_mdata *info1, *info2;
+	struct netfn_capwap_dec *dec = ctx->dec;
 	unsigned char *iter, *start, *end;
 	struct sk_buff *skb1, *skb2;
 	int err = 0;
@@ -250,11 +316,6 @@ static struct sk_buff *netfn_capwap_dec_fast_reasm(struct netfn_capwap_dec *dec,
 	__skb_queue_head(q_free, skb2);
 
 	ctx->reasm_cache = NULL;
-
-	/*
-	 * Convert to 802.11 if needed and attach meta header.
-	 */
-	netfn_capwap_dec_convert(dec, skb1);
 
 	NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.fast_reasm);
 	return skb1;
@@ -321,43 +382,28 @@ restart:
  * netfn_capwap_dec_slow_reasm()
  *	Reassemble the packets.
  */
-static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec *dec, struct netfn_capwap_dec_ctx *ctx,
-		struct sk_buff *skb, struct sk_buff_head *q_free)
+static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec_ctx *ctx, uint16_t frag_id,
+		struct sk_buff_head *q_free)
 {
-	struct netfn_capwap_dec_stats *stats = &dec->stats;
-	struct netfn_capwap_hdr_mdata *info;
+	struct netfn_capwap_dec *dec = ctx->dec;
+	struct netfn_capwap_dec_stats *stats;
 	struct sk_buff *reasm_skb = NULL;
 	struct netfn_capwap_frags *frags;
 	struct sk_buff_head *frag_list;
 	uint16_t idx;
 
-	info = NETFN_CAPWAP_CB(skb);
-	idx = NETFN_CAPWAP_FRAG_IDX(info->frag_id, NETFN_CAPWAP_TUN_MAX_REASM_WIN);
+	stats = &dec->stats;
+	idx = NETFN_CAPWAP_FRAG_IDX(frag_id, NETFN_CAPWAP_TUN_MAX_REASM_WIN);
 
 	frags = &ctx->reasm_table[idx];
 	frag_list = &frags->list;
 
 	/*
-	 * If slow reassembly queue is empty we park skb in queue and exit.
+	 * If this was first frag added than we return.
 	 */
-	if (skb_queue_empty(frag_list)) {
-		netfn_capwap_frags_add(frags, skb);
+	if (unlikely(skb_queue_len(frag_list) == 1)) {
 		return NULL;
 	}
-
-	/*
-	 * If this is an overlap then we free the previous list.
-	 */
-	if (unlikely(info->frag_id != frags->frag_id)) {
-		NETFN_CAPWAP_TUN_STATS_ADD(&stats->drop_missing_frags, skb_queue_len(frag_list));
-		dev_kfree_skb_list_fast(frag_list);
-		netfn_capwap_frags_init(frags);
-	}
-
-	/*
-	 * Add to reassembly queue
-	 */
-	netfn_capwap_frags_add(frags, skb);
 
 	/*
 	 * Check if total payload size exceeds max payload size
@@ -399,11 +445,6 @@ static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec *dec,
 	if (!reasm_skb) {
 		goto done;
 	}
-
-	/*
-	 * Convert to 802.11 if needed and attach meta header.
-	 */
-	netfn_capwap_dec_convert(dec, reasm_skb);
 
 	NETFN_CAPWAP_TUN_STATS_INC(&stats->slow_reasm);
 done:
@@ -609,8 +650,8 @@ static bool netfn_capwap_dec(struct netfn_capwap_dec *dec, struct sk_buff *skb, 
 	 */
 	if (dec->features & NETFN_CAPWAP_FEATURES_DTLS) {
 		preh.dscp = (skb->priority >> 2);
+		preh.vlan_pcp = ((ntohs(skb_vlan_tag_get(skb)) & VLAN_PRIO_MASK) >> VLAN_PRIO_SHIFT);
 		next_hdr = netfn_capwap_dec_capwap(dec, skb, next_hdr, &preh);
-		preh.vlan_pcp = skb_vlan_tag_get_prio(skb);
 		goto skip_headers;
 	}
 
@@ -715,11 +756,13 @@ void netfn_capwap_dec_stats_read(struct netfn_capwap_dec *dec, struct netfn_capw
  */
 bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head *q_head)
 {
+	struct netfn_capwap_tun *nct = container_of(dec, struct netfn_capwap_tun, dec);
+	struct sk_buff *skb, *reasm_skb, *old;
 	struct netfn_capwap_dec_ctx *ctx;
-	struct sk_buff *skb, *reasm_skb;
 	struct sk_buff_head q_frags;
 	struct sk_buff_head q_free;
 	bool is_frag = false;
+	uint16_t frag_id;
 
 	rcu_read_lock_bh();
 
@@ -746,6 +789,18 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 		}
 
 		/*
+		 * For control packet we don't process further.
+		 */
+		if (unlikely(NETFN_CAPWAP_CB(skb)->exception)) {
+			if (!netfn_pkt_steer_send(&nct->rx_steer_pri, skb, NETFN_CAPWAP_RPS_CORE)) {
+				NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.drop_pri_queue_full);
+				__skb_queue_head(&q_free, skb);
+			}
+
+			continue;
+		}
+
+		/*
 		 * Non-fragmented skb.
 		 */
 		if (!is_frag) {
@@ -754,48 +809,67 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 			continue;
 		}
 
+		frag_id = NETFN_CAPWAP_CB(skb)->frag_id;
+
 		/*
-		 * Fast reassembly queue is empty
+		 * Check if we can fast reassemble the frag.
+		 */
+		if (netfn_capwap_dec_can_fast(ctx, frag_id)) {
+			reasm_skb = netfn_capwap_dec_fast_reasm(ctx, skb, &q_free);
+			if (likely(reasm_skb)) {
+				netfn_capwap_dec_convert(dec, reasm_skb);
+				__skb_queue_tail(&q_frags, reasm_skb);
+				continue;
+			}
+		}
+
+		/*
+		 * Check if corresponding fragments of skb are already parked in slow reasm queue.
+		 * If yes we directly send it for slow reassembly.
+		 */
+		if (netfn_capwap_dec_can_slow(ctx, frag_id)) {
+			netfn_capwap_dec_add_slow(ctx, frag_id, skb, &q_free);
+			goto slow_reasm;
+		}
+
+		/*
+		 * If fast cache is empty, received SKB is a fragment of new chain.
 		 */
 		if (!ctx->reasm_cache) {
-			ctx->reasm_cache = skb;
+			xchg(&ctx->reasm_cache, skb);
 			continue;
 		}
 
 		/*
-		 * Handle reassembly for 2 consecutive fragments.
+		 * Pop the fast reassembly cache
 		 */
-		reasm_skb = netfn_capwap_dec_fast_reasm(dec, ctx, skb, &q_free);
-		if (likely(reasm_skb)) {
-			__skb_queue_tail(&q_frags, reasm_skb);
-			continue;
+		old = xchg(&ctx->reasm_cache, NULL);
+
+		/*
+		 * Check if these are same fragments or different fragments for slow reassemble
+		 */
+		if (netfn_capwap_dec_is_frag_chain(old, skb)) {
+			netfn_capwap_dec_add_slow(ctx, frag_id, old, &q_free);
+			netfn_capwap_dec_add_slow(ctx, frag_id, skb, &q_free);
+			goto slow_reasm;
 		}
 
-reset_cache:
 		/*
-		 * Pull skb out of fast reasm queue and send it for slow reassembly.
+		 * Update the fast reassembly cache and change the frag_id
 		 */
-		skb = xchg(&ctx->reasm_cache, skb);
+		ctx->reasm_cache = skb;
+		frag_id = NETFN_CAPWAP_CB(old)->frag_id;
 
 		/*
-		 * These are either non-consecutive fragments or regular packets,
-		 * In case of fragments search the decap fragment list for reassembly.
-		 * However, if these are new fragments then automatically park them in
-		 * the fragment list for future reassembly.
+		 * Add the old fragment and evict the existing ones from slow reassembly table
 		 */
-		reasm_skb = netfn_capwap_dec_slow_reasm(dec, ctx, skb, &q_free);
+		netfn_capwap_dec_add_slow(ctx, frag_id, old, &q_free);
+
+slow_reasm:
+		reasm_skb = netfn_capwap_dec_slow_reasm(ctx, frag_id, &q_free);
 		if (reasm_skb) {
+			netfn_capwap_dec_convert(dec, reasm_skb);
 			__skb_queue_tail(&q_frags, reasm_skb);
-		}
-
-		/*
-		 * We don't want to keep anything in reassembly cache until unless its
-		 * 2 fragments reassembly. Since at this point 2 frag reassembly would
-		 * have already been taken care so this is >2 frags reassembly.
-		 */
-		if (ctx->reasm_cache) {
-			skb = NULL;
-			goto reset_cache;
 		}
 	}
 
@@ -873,6 +947,7 @@ uint64_t netfn_capwap_dec_get_drop_stats(struct netfn_capwap_dec *dec)
 
 	drop_stats += stats->drop_missing_frags;
 	drop_stats += stats->drop_queue_full;
+	drop_stats += stats->drop_pri_queue_full;
 
 	return drop_stats;
 }
