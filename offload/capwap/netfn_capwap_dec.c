@@ -127,19 +127,84 @@ static void netfn_capwap_dec_add_slow(struct netfn_capwap_dec_ctx *ctx, uint16_t
 }
 
 /*
+ * netfn_capwap_dec_get_flow_cookie
+ *	Fetch the Pointer to Flow Cookie from the Netfn Flow Cookie DB.
+ */
+static struct netfn_flow_cookie *netfn_capwap_dec_get_flow_cookie(struct netfn_flow_cookie_db *db, uint8_t *data)
+{
+	struct iphdr *iph = (struct iphdr *)data;
+	struct netfn_tuple t = {0};
+	uint8_t proto = 0;
+
+	if (iph->version == IPVERSION) {
+		proto = iph->protocol;
+		t.ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V4;
+		t.tuples.tuple_5.src_ip.ip4.s_addr = iph->saddr;
+		t.tuples.tuple_5.dest_ip.ip4.s_addr = iph->daddr;
+	} else {
+		struct ipv6hdr *ip6h = (struct ipv6hdr *)data;
+
+		proto = ip6h->nexthdr;
+		t.ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V6;
+
+		/*
+		 * Source IP
+		 */
+		t.tuples.tuple_5.src_ip.ip6.s6_addr32[0] = ip6h->saddr.s6_addr32[0];
+		t.tuples.tuple_5.src_ip.ip6.s6_addr32[1] = ip6h->saddr.s6_addr32[1];
+		t.tuples.tuple_5.src_ip.ip6.s6_addr32[2] = ip6h->saddr.s6_addr32[2];
+		t.tuples.tuple_5.src_ip.ip6.s6_addr32[3] = ip6h->saddr.s6_addr32[3];
+
+		/*
+		 * Destination IP
+		 */
+		t.tuples.tuple_5.dest_ip.ip6.s6_addr32[0] = ip6h->daddr.s6_addr32[0];
+		t.tuples.tuple_5.dest_ip.ip6.s6_addr32[1] = ip6h->daddr.s6_addr32[1];
+		t.tuples.tuple_5.dest_ip.ip6.s6_addr32[2] = ip6h->daddr.s6_addr32[2];
+		t.tuples.tuple_5.dest_ip.ip6.s6_addr32[3] = ip6h->daddr.s6_addr32[3];
+	}
+
+	t.tuples.tuple_5.protocol = proto;
+
+	/*
+	 * Check if the protocol is TCP/UDP and extract the port numbers
+	 */
+	if (proto == IPPROTO_TCP) {
+		struct tcphdr *tcph = (struct tcphdr *)(data + sizeof(struct iphdr));
+
+		t.tuples.tuple_5.l4_src_ident = tcph->source;
+		t.tuples.tuple_5.l4_dest_ident = tcph->dest;
+		t.tuple_type = NETFN_TUPLE_5TUPLE;
+
+		return netfn_flow_cookie_db_lookup(db, &t);
+	}
+
+	if (proto == IPPROTO_UDP) {
+		struct udphdr *udph = (struct udphdr *)(data + sizeof(struct iphdr));
+
+		t.tuples.tuple_5.l4_src_ident = udph->source;
+		t.tuples.tuple_5.l4_dest_ident = udph->dest;
+		t.tuple_type = NETFN_TUPLE_5TUPLE;
+
+		return netfn_flow_cookie_db_lookup(db, &t);
+	}
+
+	return NULL;
+}
+
+/*
  * netfn_capwap_dec_convert()
  *	Converts 802.11 to 802.3 pkt and adds meta header
  */
 static void netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buff *skb)
 {
-	bool flow_id_lookup_needed = dec->features & NETFN_CAPWAP_FEATURES_FLOW_COOKIE;
-	struct netfn_capwap_dec_stats *stats = &dec->stats;
-	netfn_flow_cookie_status_t nfc_status;
 	struct ieee80211_hdr_3addr *wlan_hdr;
 	struct netfn_capwap_hdr_mdata *mdata;
-	struct netfn_flow_cookie nfc = {0};
 	struct netfn_capwap_prehdr *phdr;
-	struct netfn_flow_cookie_db *d;
+	struct netfn_flow_cookie_db *db;
+	struct netfn_flow_cookie *nfc;
+	struct netfn_capwap_tun *nct;
+	bool is_ctrl_frame = false;
 	uint8_t *start, *next_hdr;
 	uint8_t smac[ETH_ALEN];
 	uint8_t dmac[ETH_ALEN];
@@ -178,7 +243,7 @@ static void netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buf
 	frame_ctrl = ntohs(wlan_hdr->frame_control);
 
 	if (!unlikely(ieee80211_is_data(frame_ctrl))) {
-		flow_id_lookup_needed = false;
+		is_ctrl_frame = true;
 		goto add_prehdr;
 	}
 
@@ -225,34 +290,41 @@ add_prehdr:
 
 	__skb_push(skb, start - next_hdr);
 
-	if (!flow_id_lookup_needed) {
+	if (is_ctrl_frame) {
 		return;
 	}
 
-	d = netfn_capwap_get_db_handle();
-	if (!d) {
-		NETFN_CAPWAP_TUN_STATS_INC(&stats->flow_cookie_no_db);
-		return;
-	}
+	nct = container_of(dec, struct netfn_capwap_tun, dec);
 
 	/*
 	 * Fill the right offset here.
 	 */
 	offset = sizeof(*eth) + sizeof(*phdr);
 
+	phdr->flow_id = 0;
+
 	/*
-	 * We append the valid Flow ID as retrieved
-	 * from the Netfn Flow Cookie DB
-	 * to the Meta Data Header here.
+	 * Optional flow - ID lookup for inner payload
 	 */
-	nfc_status = netfn_flow_cookie_db_entry_get_flow_cookie_using_skb(d, skb, offset, &nfc);
-	if (nfc_status != NETFN_FLOW_COOKIE_STATUS_SUCCESS) {
-		return;
+	rcu_read_lock_bh();
+
+	db = rcu_dereference(nct->db);
+	if (unlikely(db) && ((ntohs(skb->protocol) == ETH_P_IP) || (ntohs(skb->protocol) == ETH_P_IPV6)))  {
+		nfc = netfn_capwap_dec_get_flow_cookie(db, skb->data + offset);
+		if (nfc) {
+
+			/*
+			 * Only fill if we get the cookie
+			 */
+			phdr->flow_id = nfc->flow_id;
+			phdr->scs_sdwf_id = nfc->scs_sdwf_hdl;
+			phdr->type |= (nfc->valid_flag & NETFN_CAPWAP_DEC_PHDR_TYPE_MASK);
+
+		}
 	}
 
-	phdr->flow_id = nfc.flow_id;
-	phdr->scs_sdwf_id = nfc.scs_id;
-	phdr->type |= (nfc.valid_flag & NETFN_CAPWAP_DEC_PHDR_TYPE_MASK);
+	rcu_read_unlock_bh();
+	return;
 }
 
 /*

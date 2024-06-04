@@ -921,31 +921,40 @@ bool netfn_capwap_tun_unbind(struct net_device *dev)
 EXPORT_SYMBOL(netfn_capwap_tun_unbind);
 
 /*
- * netfn_capwap_tun_flow_cookie_cfg()
- *	Sets the flag to enable/disable
- *	the Flow Cookie Lookup functionality.
+ * netfn_capwap_tun_enable_flow_db()
+ *	Set the DB handle for flow-ID lookup
  */
-void netfn_capwap_tun_flow_cookie_cfg(struct net_device *dev, bool enable)
+void netfn_capwap_tun_enable_flow_db(struct net_device *dev, struct netfn_flow_cookie_db *db)
 {
-	struct netfn_capwap_tun *nct;
-	struct netfn_capwap_dec *dec;
-
-	BUG_ON(!dev);
-
-	nct = netdev_priv(dev);
-	dec = &nct->dec;
+	struct netfn_capwap_tun *nct = netdev_priv(dev);
 
 	/*
-	 * Set the relevant flags here.
+	 * Take the DB reference while loading the RCU protected handle
 	 */
-	if (enable) {
-		dec->features |= NETFN_CAPWAP_FEATURES_FLOW_COOKIE;
-		return;
-	}
-
-	dec->features &= ~NETFN_CAPWAP_FEATURES_FLOW_COOKIE;
+	rcu_assign_pointer(nct->db, netfn_flow_cookie_db_ref(db));
 }
-EXPORT_SYMBOL(netfn_capwap_tun_flow_cookie_cfg);
+EXPORT_SYMBOL(netfn_capwap_tun_enable_flow_db);
+
+/*
+ * netfn_capwap_tun_disable_flow_db()
+ *	Clear the DB handle for flow-ID lookup
+ */
+void netfn_capwap_tun_disable_flow_db(struct net_device *dev)
+{
+	struct netfn_capwap_tun *nct = netdev_priv(dev);
+	struct netfn_flow_cookie_db *db;
+
+	/*
+	 * There are open references to
+	 */
+	db = rcu_dereference_protected(nct->db, lockdep_rtnl_is_held());
+	if (db) {
+		RCU_INIT_POINTER(nct->db, NULL);
+		synchronize_net();
+		netfn_flow_cookie_db_deref(db);
+	}
+}
+EXPORT_SYMBOL(netfn_capwap_tun_disable_flow_db);
 
 /*
  * netfn_capwap_tun_stats_get()

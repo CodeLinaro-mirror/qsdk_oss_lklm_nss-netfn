@@ -45,9 +45,8 @@ extern int rx_napi_budget;
  *	Driver level instance
  */
 struct netfn_capwap {
-	struct netfn_flow_cookie_db *d;	/* Store the DB handle here */
-	struct dentry *dentry;		/* Debug entry for driver. */
-	spinlock_t lock;		/* Driver level instance lock. */
+	struct dentry *dentry;			/* Debug entry for driver. */
+	spinlock_t lock;			/* Driver level instance lock. */
 };
 
 /*
@@ -78,10 +77,4 @@ static inline void netfn_capwap_frags_init(struct netfn_capwap_frags *frags)
  */
 void netfn_capwap_frags_add(struct netfn_capwap_frags *frags, struct sk_buff *skb);
 
-/*
- * netfn_capwap_get_db_handle()
- *	API to fetch the DB handle
- *	in the CAPWAP offload module.
- */
-struct netfn_flow_cookie_db * netfn_capwap_get_db_handle(void);
 #endif /* __NETFN_CAPWAP_PRIV_H */
