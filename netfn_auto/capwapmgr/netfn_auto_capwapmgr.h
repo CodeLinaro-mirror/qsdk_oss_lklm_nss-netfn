@@ -254,8 +254,8 @@ int netfn_auto_capwap_legacy_parse_ipv4_create(struct nlattr *ip_rule_info, stru
 			netfn_auto_info(" protocol: %d\n", ip_rule->protocol);
 			break;
 		case FLAGS :
+			flag = 0;
 			nla_for_each_nested(flags, attr, rem_flag) {
-				flag = 0;
 				switch(nla_type(flags)) {
 				case VLAN:
 					flag |= NSS_CAPWAP_RULE_CREATE_VLAN_CONFIGURED;
@@ -633,8 +633,8 @@ int netfn_auto_capwap_legacy_parse_capwap_rule(struct nlattr *capwap_rule_info, 
 			break;
 
 		case TYPE_FLAGS:
+			flag = 0;
 			nla_for_each_nested(flags, attr, rem_flag) {
-				flag = 0;
 				switch(nla_type(flags)) {
 				case VLAN:
 					flag |= NSS_CAPWAP_RULE_CREATE_VLAN_CONFIGURED;
@@ -794,8 +794,8 @@ int netfn_auto_capwap_legacy_parse_dtlsmgr_config(struct nlattr *dtlsmgr_config_
 		netfn_auto_info("DTLS_CONFIG_INFO attr->nla_type: %d\n", nla_type(attr));
 		switch(nla_type(attr)) {
 		case FLAGS:
+			flag = 0;
 			nla_for_each_nested(flags, attr, rem_flag) {
-				flag = 0;
 				switch(nla_type(flags)) {
 				case ENC:
 					flag |= NETFN_DTLS_FLAG_ENC;
@@ -958,8 +958,8 @@ int netfn_auto_capwap_legacy_parse_ipv6_create(struct nlattr *ip_rule_info, stru
 			netfn_auto_info(" protocol: %d\n", ip_rule->protocol);
 			break;
 		case FLAGS :
+			flag = 0;
 			nla_for_each_nested(flags, attr, rem_flag) {
-				flag = 0;
 				switch(nla_type(flags)) {
 				case VLAN:
 					flag |= NSS_CAPWAP_RULE_CREATE_VLAN_CONFIGURED;
