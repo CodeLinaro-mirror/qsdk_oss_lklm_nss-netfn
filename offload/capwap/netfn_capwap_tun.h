@@ -23,8 +23,6 @@
 #include "netfn_capwap_dec.h"
 #include "netfn_capwap_enc.h"
 
-#define NETFN_CAPWAP_TUN_RX_BUDGET 64
-#define NETFN_CAPWAP_TUN_TX_BUDGET 64
 #define NETFN_CAPWAP_TUN_STATS_INC(sptr) ((*(uint64_t *) sptr)++)
 #define NETFN_CAPWAP_TUN_STATS_ADD(sptr, value) ({ \
 		*((uint64_t *)sptr) += value; \

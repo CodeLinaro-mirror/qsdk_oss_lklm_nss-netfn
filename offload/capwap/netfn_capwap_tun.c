@@ -814,7 +814,7 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, stru
 	 * Allocate tx data pkt steering object.
 	 */
 	info.cb = netfn_capwap_tun_tx_cb;
-	info.budget = NETFN_CAPWAP_TUN_TX_BUDGET;
+	info.budget = tx_napi_budget;
 	info.weight = 1;
 	info.dev = dev;
 	netfn_pkt_steer_init(&nct->tx_steer, &info);
@@ -823,7 +823,7 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, stru
 	 * Allocate rx data pkt steering object.
 	 */
 	info.cb = netfn_capwap_tun_rx_cb;
-	info.budget = NETFN_CAPWAP_TUN_RX_BUDGET;
+	info.budget = rx_napi_budget;
 	info.weight = 1;
 	info.dev = dev;
 	netfn_pkt_steer_init(&nct->rx_steer, &info);
@@ -832,7 +832,7 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, stru
 	 * Allocate rx control pkt steering object.
 	 */
 	info.cb = netfn_capwap_tun_rx_pri_cb;
-	info.budget = NETFN_CAPWAP_TUN_RX_BUDGET;
+	info.budget = rx_napi_budget;
 	info.weight = 1;
 	info.dev = dev;
 	netfn_pkt_steer_init(&nct->rx_steer_pri, &info);
