@@ -134,10 +134,12 @@ static struct netfn_flow_cookie *netfn_capwap_dec_get_flow_cookie(struct netfn_f
 {
 	struct iphdr *iph = (struct iphdr *)data;
 	struct netfn_tuple t = {0};
+	uint32_t l4_hdr_offset;
 	uint8_t proto = 0;
 
 	if (iph->version == IPVERSION) {
 		proto = iph->protocol;
+		l4_hdr_offset = sizeof(struct iphdr);
 		t.ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V4;
 		t.tuples.tuple_5.src_ip.ip4.s_addr = iph->saddr;
 		t.tuples.tuple_5.dest_ip.ip4.s_addr = iph->daddr;
@@ -145,6 +147,7 @@ static struct netfn_flow_cookie *netfn_capwap_dec_get_flow_cookie(struct netfn_f
 		struct ipv6hdr *ip6h = (struct ipv6hdr *)data;
 
 		proto = ip6h->nexthdr;
+		l4_hdr_offset = sizeof(struct ipv6hdr);
 		t.ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V6;
 
 		/*
@@ -170,7 +173,7 @@ static struct netfn_flow_cookie *netfn_capwap_dec_get_flow_cookie(struct netfn_f
 	 * Check if the protocol is TCP/UDP and extract the port numbers
 	 */
 	if (proto == IPPROTO_TCP) {
-		struct tcphdr *tcph = (struct tcphdr *)(data + sizeof(struct iphdr));
+		struct tcphdr *tcph = (struct tcphdr *)(data + l4_hdr_offset);
 
 		t.tuples.tuple_5.l4_src_ident = tcph->source;
 		t.tuples.tuple_5.l4_dest_ident = tcph->dest;
@@ -180,7 +183,7 @@ static struct netfn_flow_cookie *netfn_capwap_dec_get_flow_cookie(struct netfn_f
 	}
 
 	if (proto == IPPROTO_UDP) {
-		struct udphdr *udph = (struct udphdr *)(data + sizeof(struct iphdr));
+		struct udphdr *udph = (struct udphdr *)(data + l4_hdr_offset);
 
 		t.tuples.tuple_5.l4_src_ident = udph->source;
 		t.tuples.tuple_5.l4_dest_ident = udph->dest;
