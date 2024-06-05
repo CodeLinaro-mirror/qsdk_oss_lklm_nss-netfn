@@ -42,16 +42,16 @@ static inline void netfn_pkt_steer_send_ipi(int cpu, struct netfn_pkt_steer_pcpu
 	 *
 	 * IPI send can only fail if remote CPU is not online or invalid.
 	 */
-	if (unlikely(!test_bit(NAPI_STATE_SCHED, &pcpu->napi.state))) {
-		if (atomic_cmpxchg(&pcpu->ipi_pending, 0, 1) == 0) {
+	if (unlikely(!atomic_read(&pcpu->ipi_masked)) && atomic_read(&pcpu->queued)) {
+		if (atomic_cmpxchg(&pcpu->ipi_queued, 0, 1) == 0) {
 			error = smp_call_function_single_async(cpu, &pcpu->csd);
 			if (error) {
 				WARN_ON_ONCE(error);
 
 				/*
-				 * Clear the ipi_pending in case of error.
+				 * Clear the ipi_queued in case of error.
 				 */
-				atomic_set(&pcpu->ipi_pending, 0);
+				atomic_set(&pcpu->ipi_queued, 0);
 			}
 		}
 	}
@@ -153,8 +153,21 @@ static int netfn_pkt_steer_rcv_poll(struct napi_struct *napi, int budget)
 	pcpu->cb(pcpu->ps, &skb_head);
 	WARN_ON(skb_queue_len(&skb_head));
 
+	atomic_sub(processed, &pcpu->queued);
 	if (processed < budget) {
+
 		napi_complete(napi);
+		atomic_set(&pcpu->ipi_masked, 0);
+
+		/*
+		 * Reschedule if packet got queued after last Reap.
+		 * Otherwise those would have to wait for next packet interrupt.
+		 */
+		if (atomic_read(&pcpu->queued)) {
+			atomic_set(&pcpu->ipi_masked, 1);
+			napi_reschedule(napi);
+			return processed;
+		}
 	}
 
 	return processed;
@@ -168,12 +181,16 @@ static void netfn_pkt_steer_rcv_ipi(void *info)
 {
 	struct netfn_pkt_steer_pcpu *pcpu = info;
 
+	/*
+	 * Mask the ipi and enable NAPI.
+	 */
+	atomic_set(&pcpu->ipi_masked, 1);
 	napi_schedule(&pcpu->napi);
 
 	/*
 	 * Mark IPI as completed.
 	 */
-	atomic_set(&pcpu->ipi_pending, 0);
+	atomic_set(&pcpu->ipi_queued, 0);
 }
 
 /*
@@ -193,7 +210,8 @@ int netfn_pkt_steer_send_list(struct netfn_pkt_steer *ps, struct sk_buff_head *h
 	rcu_read_lock_bh();
 	ps_pcpu = rcu_dereference(ps->pcpu);
 	if (unlikely(!ps_pcpu)) {
-		goto done;
+		rcu_read_unlock_bh();
+		return 0;
 	}
 
 	pcpu = per_cpu_ptr(ps_pcpu, cpu);
@@ -223,10 +241,11 @@ int netfn_pkt_steer_send_list(struct netfn_pkt_steer *ps, struct sk_buff_head *h
 	}
 
 	atomic64_set(&fifo->prod, prod);
-	netfn_pkt_steer_send_ipi(cpu, pcpu);
-done:
+	atomic_add(processed, &pcpu->queued);
 	fifo->stats.fifo_enq += processed;
+done:
 	fifo->stats.fifo_full += skb_queue_len(head);
+	netfn_pkt_steer_send_ipi(cpu, pcpu);
 
 	rcu_read_unlock_bh();
 	return processed;
@@ -249,7 +268,8 @@ int netfn_pkt_steer_send(struct netfn_pkt_steer *ps, struct sk_buff *skb, int cp
 	rcu_read_lock_bh();
 	ps_pcpu = rcu_dereference(ps->pcpu);
 	if (unlikely(!ps_pcpu)) {
-		goto done;
+		rcu_read_unlock_bh();
+		return 0;
 	}
 
 	pcpu = per_cpu_ptr(ps_pcpu, cpu);
@@ -271,11 +291,12 @@ int netfn_pkt_steer_send(struct netfn_pkt_steer *ps, struct sk_buff *skb, int cp
 
 	atomic64_set(&fifo->prod, prod);
 
-	netfn_pkt_steer_send_ipi(cpu, pcpu);
 	fifo->stats.fifo_enq++;
+	atomic_inc(&pcpu->queued);
 	ret = 1;
 
 done:
+	netfn_pkt_steer_send_ipi(cpu, pcpu);
 	rcu_read_unlock_bh();
 	return ret;
 }
@@ -340,7 +361,9 @@ bool netfn_pkt_steer_enable(struct netfn_pkt_steer *ps)
 		pcpu->csd.flags = 0;
 		pcpu->csd.info = pcpu;
 		pcpu->csd.func = netfn_pkt_steer_rcv_ipi;
-		atomic_set(&pcpu->ipi_pending, 0);
+		atomic_set(&pcpu->ipi_queued, 0);
+		atomic_set(&pcpu->ipi_masked, 0);
+		atomic_set(&pcpu->queued, 0);
 
 		netif_napi_add(info->dev, &pcpu->napi, netfn_pkt_steer_rcv_poll, info->budget);
 		napi_enable(&pcpu->napi);
