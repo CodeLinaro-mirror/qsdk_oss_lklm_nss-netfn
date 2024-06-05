@@ -99,7 +99,7 @@ static void netfn_capwap_enc_capwap(struct netfn_capwap_enc *enc, struct sk_buff
 	info.fields.fbit = mdata->frag;
 	info.fields.lbit = mdata->frag_end;
 
-	info.fields.kbit = 0;
+	info.fields.kbit = !!(phdr->type & NETFN_CAPWAP_PKT_TYPE_ENC_KEEPALIVE);
 	info.fields.mbit = 0;
 	info.fields.flags = 0;
 	frag.fields.id = mdata->frag_id;
@@ -461,6 +461,17 @@ void netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, st
 	 */
 	mdata.phdr = NETFN_CAPWAP_CB(orig_skb)->phdr;
 	phdr = &mdata.phdr;
+
+	/*
+	 * Bypass capwap processing if BYPASS bit is set.
+	 */
+	if (unlikely(phdr->type & NETFN_CAPWAP_PKT_TYPE_BYPASS_KEEPALIVE)) {
+		struct netfn_capwap_enc_stats *stats = &enc->stats;
+
+		NETFN_CAPWAP_TUN_STATS_INC(&stats->keepalive_pkts);
+		__skb_queue_head(q_frag, orig_skb);
+		return;
+	}
 
 	/*
 	 * If inner is 802.3 then we convert it to 802.11
