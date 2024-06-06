@@ -877,6 +877,7 @@ bool netfn_capwapmgr_tun_init(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_
 	struct net_device *capwap_dev = ctx->capwap_dev;
 	struct netfn_capwapmgr *mgr = &g_mgr;
 	struct timer_list *timer = NULL;
+	struct netfn_flow_cookie_db *db;
 	netfn_tuple_t dec_tuple = {0};
 	long bit_pos;
 	int ret = 0;
@@ -892,6 +893,18 @@ bool netfn_capwapmgr_tun_init(struct netfn_capwapmgr_tun_ctx *ctx, struct netfn_
 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_ENABLED) - 1;
 	__set_bit(bit_pos, ctx->state);
+
+	/*
+	 * Instantiate the Flow Cookie Data Base here.
+	 */
+	db = netfn_flow_cookie_db_alloc(NETFN_CAPWAPMGR_FLOW_COOKIE_HASHTABLE_SIZE);
+	if (!db) {
+		atomic64_inc(&mgr->stats.error_stats[NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_DB_ALLOC]);
+		netfn_capwapmgr_warn("%p: Failed to alloc flow_db instance", ctx);
+		return false;
+	}
+
+	ctx->db = netfn_flow_cookie_db_ref(db);
 
 	/*
 	 * If DTLS is enabled on this tunnel, configure DTLS offload accordingly.
@@ -1030,6 +1043,21 @@ fail:
 		netfn_dtls_tun_free(ctx->dtls_dev);
 	}
 
+	/*
+	 * Check if the flow_db has entries then Drop the reference taken in the alloc
+	 */
+	if (ctx->flow_count) {
+		pr_warn("%p: Active flows present in flow_db (%d)\n", ctx, ctx->flow_count);
+		netfn_capwap_tun_disable_flow_db(ctx->capwap_dev);
+
+		/*
+		 * TODO: purge entries in case flow_count is non-zero
+		 */
+		return false;
+	}
+
+	netfn_flow_cookie_db_deref(ctx->db);
+	ctx->db = NULL;
 	return false;
 }
 
@@ -1120,6 +1148,21 @@ bool netfn_capwapmgr_tun_deinit(struct netfn_capwapmgr_tun_ctx *ctx)
 		netfn_dtls_tun_free(ctx->dtls_dev);
 	}
 
+	/*
+	 * Check if the flow_db has entries then Drop the reference taken in the alloc
+	 */
+	if (ctx->flow_count) {
+		pr_warn("%p: Active flows present in flow_db (%d)\n", ctx, ctx->flow_count);
+		netfn_capwap_tun_disable_flow_db(ctx->capwap_dev);
+
+		/*
+		 * TODO: purge entries in case flow_count is non-zero
+		 */
+		return false;
+	}
+
+	netfn_flow_cookie_db_deref(ctx->db);
+	ctx->db = NULL;
 
 	bit_pos = __builtin_ffs(NETFN_CAPWAPMGR_TUN_STATE_DEINIT_DONE) - 1;
 	__set_bit(bit_pos, ctx->state);
@@ -1139,7 +1182,6 @@ struct net_device *netfn_capwapmgr_tun_alloc(struct netfn_capwapmgr_tun_cfg *cfg
 	struct netfn_capwapmgr_tun_ctx *ctx = NULL;
 	struct net_device *capwap_dev = NULL;
 	struct netfn_capwapmgr *mgr = &g_mgr;
-	struct netfn_flow_cookie_db *db;
 
 	if (netfn_capwapmgr_tun_init_cfg(cfg) != NETFN_CAPWAPMGR_SUCCESS) {
 		netfn_capwapmgr_warn("%px: Failed to valiate the configuration\n", cfg);
@@ -1171,18 +1213,6 @@ struct net_device *netfn_capwapmgr_tun_alloc(struct netfn_capwapmgr_tun_cfg *cfg
 	}
 
 	/*
-	 * Instantiate the Flow Cookie Data Base here.
-	 */
-	db = netfn_flow_cookie_db_alloc(NETFN_CAPWAPMGR_FLOW_COOKIE_HASHTABLE_SIZE);
-	if (!db) {
-		atomic64_inc(&mgr->stats.error_stats[NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_DB_ALLOC]);
-		netfn_capwapmgr_warn("%p: Failed to alloc flow_db instance", ctx);
-		return NULL;
-	}
-
-	ctx->db = netfn_flow_cookie_db_ref(db);
-
-	/*
 	 * deref:netfn_capwapmgr_tun_free.
 	 */
 	netfn_capwapmgr_ref(mgr);
@@ -1201,22 +1231,6 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tun_free(struct net_device *dev)
 	struct netfn_capwapmgr_tun_ctx *ctx = NULL;
 
 	ctx = netfn_capwap_tun_pvt_get(dev);
-
-	/*
-	 * Check if the flow_db has entries then Drop the reference taken in the alloc
-	 */
-	if (ctx->flow_count) {
-		pr_warn("%p: Active flows present in flow_db (%d)\n", ctx, ctx->flow_count);
-		netfn_capwap_tun_disable_flow_db(ctx->capwap_dev);
-
-		/*
-		 * TODO: purge entries in case flow_count is non-zero
-		 */
-		return NETFN_CAPWAPMGR_ERROR_FLOW_COOKIE_DEL;
-	}
-
-	netfn_flow_cookie_db_deref(ctx->db);
-	ctx->db = NULL;
 
 	/*
 	 * Deinit tunnel.
