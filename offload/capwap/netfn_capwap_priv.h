@@ -24,6 +24,11 @@
 extern struct netfn_capwap global_nc;
 extern ulong fwd_cores_mask;
 extern ulong capwap_core;
+extern int tx_napi_budget;
+extern int rx_napi_budget;
+
+#define NETFN_CAPWAP_RX_BUDGET 64
+#define NETFN_CAPWAP_TX_BUDGET 32
 
 #define NETFN_CAPWAP_RPS_CORE ((find_first_bit(&fwd_cores_mask, NR_CPUS)) % (NR_CPUS))
 #define NETFN_CAPWAP_TUN_STATS_STRLEN 20	/* Stats string length. */
@@ -40,9 +45,8 @@ extern ulong capwap_core;
  *	Driver level instance
  */
 struct netfn_capwap {
-	struct netfn_flow_cookie_db *d;	/* Store the DB handle here */
-	struct dentry *dentry;		/* Debug entry for driver. */
-	spinlock_t lock;		/* Driver level instance lock. */
+	struct dentry *dentry;			/* Debug entry for driver. */
+	spinlock_t lock;			/* Driver level instance lock. */
 };
 
 /*
@@ -73,10 +77,4 @@ static inline void netfn_capwap_frags_init(struct netfn_capwap_frags *frags)
  */
 void netfn_capwap_frags_add(struct netfn_capwap_frags *frags, struct sk_buff *skb);
 
-/*
- * netfn_capwap_get_db_handle()
- *	API to fetch the DB handle
- *	in the CAPWAP offload module.
- */
-struct netfn_flow_cookie_db * netfn_capwap_get_db_handle(void);
 #endif /* __NETFN_CAPWAP_PRIV_H */

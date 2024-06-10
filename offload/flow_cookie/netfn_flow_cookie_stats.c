@@ -19,343 +19,130 @@
 #include <netfn_flow_cookie.h>
 #include "netfn_flow_cookie_priv.h"
 
-static const char *netfn_flow_cookie_stats_base_str[] = {
-	"Flow DB init ops successful", /* Flow DB init operations successful */
-	"Flow DB init ops failed",       /* Flow DB init operations failed */
-	"Flow DB init ops failed due to unavailable memory", /* Flow DB init operations failed due to memory issues */
-	"Flow DB init ops failed due to other reasons",  /* Flow DB init operations failed due to other reasons */
-	"Flow DBs active",		/* Active no.of Flow DBs */
-	"Flow DB Free ops performed successfully",	/* Flow DB Free operations successful*/
-	"Flow DB Free ops failed",      /* Flow DB Free operations failed*/
-	"Flows active for the DBs",	/* Active no.of Flows added to DBs */
-	"Flow rule add ops successful", /* Flow rule add operations successful */
-	"Flow rule add ops failed", /* Flow rule add operations failed */
-	"Flow rule add ops failed due to unavailable memory", /* Flow rule add operations failed due to memory issues*/
-	"Flow rule add ops failed due to other reasons", /* Flow rule add operations failed due to other reasons */
-	"Flow rule delete ops successful", /* Flow rule delete operations successful */
-	"Flow rule delete ops failed", /* Flow rule delete operations failed */
-	"Flow ID fetch calls successful", /* Flow ID fetch calls successful */
-	"Flow ID fetch calls failed", /* Flow ID fetch calls failed */
-	"Sawf handle fetch calls successful", /* Sawf handle fetch calls successful */
-	"Sawf handle fetch calls failed", /* Sawf handle fetch calls failed */
-	"Flow Mark fetch calls successful", /* Flow Mark fetch calls successful */
-	"Flow Mark fetch calls failed", /* Flow Mark fetch calls failed */
-	"SCS ID fetch calls successful", /* SCS ID fetch calls successful */
-	"SCS ID fetch calls failed", /* SCS ID fetch calls failed */
-	"Flow Cookie fetch calls successful", /* Flow Cookie fetch calls successful */
-	"Flow Cookie fetch calls failed", /* Flow Cookie fetch calls failed */
-	"Flow Hit counts", /* Hit count for various fetch calls for the entire DB */
-};
-
-static const char *netfn_flow_cookie_stats_base_db_str[] = {
-	"Flow DB Free ops failed",      /* Flow DB Free operations failed*/
-	"Flows active for the DB",     /* Active no.of Flows added to this DB */
-	"Flow rule add ops successful", /* Flow rule add operations successful */
-	"Flow rule add ops failed", /* Flow rule add operations failed */
-	"Flow rule add ops failed due to unavailable memory", /* Flow rule add operations failed due to memory issues*/
-	"Flow rule add ops failed due to other reasons", /* Flow rule add operations failed due to other reasons */
-	"Flow rule delete ops successful", /* Flow rule delete operations successful */
-	"Flow rule delete ops failed", /* Flow rule delete operations failed */
-	"Flow ID fetch calls successful", /* Flow ID fetch calls successful */
-	"Flow ID fetch calls failed", /* Flow ID fetch calls failed */
-	"Sawf handle fetch calls successful", /* Sawf handle fetch calls successful */
-	"Sawf handle fetch calls failed", /* Sawf handle fetch calls failed */
-	"Flow Mark fetch calls successful", /* Flow Mark fetch calls successful */
-	"Flow Mark fetch calls failed", /* Flow Mark fetch calls failed */
-	"SCS ID fetch calls successful", /* SCS ID fetch calls successful */
-	"SCS ID fetch calls failed", /* SCS ID fetch calls failed */
-	"Flow Cookie fetch calls successful", /* Flow Cookie fetch calls successful */
-	"Flow Cookie fetch calls failed", /* Flow Cookie fetch calls failed */
-	"Flow Hit counts", /* Hit count for various fetch calls for this DB */
+static const char *netfn_flow_cookie_stats_str[] = {
+	"Flow add success",			/* Flow Cookie add operations successful */
+	"Flow add failed",			/* Flow Cookie add operations failed */
+	"Flow del success",			/* Flow Cookie delete operations successful */
+	"Flow del failed",			/* Flow Cookie delete operations failed */
+	"Total Hits",				/* Total Hits for all the Flows */
+	"Total Miss",				/* Total Miss */
 };
 
 /*
- * netfn_flow_cookie_stats_reset_global
- * 	API to reset the flow cookie stats.
+ * netfn_flow_cookie_stats_get()
+ *	API to retrieve the Flow cookie stats DB specifically.
  *
- * @param[in]
- * void
- *
- * @return
- * void
- *
+ * Note: All the Per CPU stats will be accumulated here.
  */
-void netfn_flow_cookie_stats_reset_global(void)
+static void netfn_flow_cookie_stats_get(struct netfn_flow_cookie_db *db, struct netfn_flow_cookie_stats *stats)
 {
-	struct netfn_flow_cookie_gbl *nfc_ctx = &netfn_flow_cookie_gbl_ctx;
-	uint32_t i;
+	int dwords, cpu;
 
-	for (i = 0; i < NETFN_FLOW_COOKIE_GBL_STATS_MAX; i++) {
-		atomic64_set(&nfc_ctx->gbl_base_stats[i], 0);
-	}
-
-	return;
-}
-
-/*
- * netfn_flow_cookie_stats_show_global
- *	API to dump the flow cookie stats in the appropriate file.
- *
- * @param[in]
- * File attributes
- *
- * @return
- * int returning Success/Failure
- *
- */
-static int netfn_flow_cookie_stats_show_global(struct seq_file *m, void __attribute__((unused))*p)
-{
-	struct netfn_flow_cookie_gbl *nfc_ctx = &netfn_flow_cookie_gbl_ctx;
-	uint32_t i;
+	dwords = (sizeof(*stats) / sizeof(uint64_t));
+	memset(stats, 0, sizeof(*stats));
 
 	/*
-	 * Start displaying the Netfn Flow Cookie Base stats.
+	 * All statistics are 64bit. So we can just iterate by words.
 	 */
-	seq_printf(m, "\n################ Netfn Flow Cookie Generic Statistics Start ################\n");
-	seq_printf(m, "\nBase Netfn Flow Cookie Statistics:\n");
+	for_each_possible_cpu(cpu) {
+		struct netfn_flow_cookie_stats *sp = per_cpu_ptr(db->stats, cpu);
+		uint64_t *stats_ptr = (uint64_t *)stats;
+		uint64_t *sp_ptr = (uint64_t *)sp;
+		int i;
 
-	for (i = 0; i < NETFN_FLOW_COOKIE_GBL_STATS_MAX; i++) {
-		seq_printf(m, "\t[%s]:  %llu\n", netfn_flow_cookie_stats_base_str[i], atomic64_read(&nfc_ctx->gbl_base_stats[i]));
+		for (i = 0; i < dwords; i++, stats_ptr++, sp_ptr++)
+			*stats_ptr += *sp_ptr;
 	}
-
-	seq_printf(m, "\n################ Netfn Flow Cookie Generic Statistics End ################\n\n");
-
-	return 0;
 }
 
 /*
- * netfn_flow_cookie_stats_open_global
- * 	API to perform the flow cookie stats file open operation.
- *
- * @param[in]
- * File attributes
- *
- * @return
- * int returning Success/Failure
- *
+ * netfn_flow_cookie_stats_print()
+ *	API to dump the flow cookie stats in the appropriate file.
  */
-static int netfn_flow_cookie_stats_open_global(struct inode *inode, struct file *file)
+static ssize_t netfn_flow_cookie_stats_print(struct file *fp, char __user *ubuf, size_t sz, loff_t *ppos)
 {
-	return single_open(file, netfn_flow_cookie_stats_show_global, inode->i_private);
-}
-
-/*
- * netfn_flow_cookie_stats_ops_global
- *	File operations for Netfn Flow Cookie Base stats Global.
- */
-static const struct file_operations netfn_flow_cookie_stats_ops_global = {
-		.open = netfn_flow_cookie_stats_open_global,
-		.read = seq_read,
-		.llseek = seq_lseek,
-		.release = seq_release,
-};
-
-/*
- * netfn_flow_cookie_stats_reset_db
- * 	API to reset the flow cookie db stats
- * 	for the specific DB whose DB handle is provided.
- *
- * @param[in] d         netfn_flow_cookie_db handle
- *
- * @return
- * void
- *
- */
-void netfn_flow_cookie_stats_reset_db(struct netfn_flow_cookie_db *d)
-{
+	struct netfn_flow_cookie_db *db = fp->private_data;
+	struct netfn_flow_cookie_stats stats;
+	uint64_t *stats_shadow;
+	ssize_t len = 0;
+	ssize_t max_len;
 	uint32_t i;
+	char *buf;
 
-	for (i = 0; i < NETFN_FLOW_COOKIE_DB_STATS_MAX; i++) {
-		atomic64_set(&d->db_base_stats[i], 0);
-	}
-
-	return;
-}
-
-/*
- * netfn_flow_cookie_stats_reset_all_dbs
- *	API to reset the flow cookie db stats for all the DBs.
- *
- * @param[in]
- * void
- *
- * @return
- * void
- *
- */
-void netfn_flow_cookie_stats_reset_all_dbs(void)
-{
-	struct netfn_flow_cookie_gbl *nfc_ctx = &netfn_flow_cookie_gbl_ctx;
-	uint8_t id;
-	uint32_t i;
-
-	for (id = 0; id < NETFN_FLOW_COOKIE_DB_ARRAY_SIZE; id = id + 1) {
-
-		if (nfc_ctx->db_array[id] == NULL) {
-			continue;
-		}
-
-		for (i = 0; i < NETFN_FLOW_COOKIE_DB_STATS_MAX; i++) {
-			atomic64_set(&nfc_ctx->db_array[id]->db_base_stats[i], 0);
-		}
-	}
-
-	return;
-}
-
-/*
- * netfn_flow_cookie_stats_get_db
- *	API to retrieve the flow cookie db stats for the specific DB.
- *
- * @param[in] d         netfn_flow_cookie_db handle
- *
- * @return
- * netfn_flow_cookie_status_t
- *
- */
-netfn_flow_cookie_status_t netfn_flow_cookie_stats_get_db(struct netfn_flow_cookie_db *d, atomic64_t db_stats[NETFN_FLOW_COOKIE_DB_STATS_MAX])
-{
-	uint32_t i;
-
-	if (!d) {
-		return NETFN_FLOW_COOKIE_STATUS_FAILURE;
-	}
+	netfn_flow_cookie_stats_get(db, &stats);
 
 	/*
-	 * Start copying the Netfn Flow Cookie DB Stats.
+	 * We need to calculate required string buffer for stats, else full stats may not be captured.
 	 */
-	for (i = 0; i < NETFN_FLOW_COOKIE_DB_STATS_MAX; i++) {
-		atomic64_set(&db_stats[i], atomic64_read(&d->db_base_stats[i]));
+	max_len = (sizeof(stats) / sizeof(uint64_t)) * NETFN_FLOW_COOKIE_MAX_STR_LEN; /* Members */
+	max_len += NETFN_FLOW_COOKIE_MAX_STR_LEN; /* DB stats start heading */
+	max_len += NETFN_FLOW_COOKIE_MAX_STR_LEN; /* DB stats end heading */
+
+	buf = vzalloc(max_len);
+	if (!buf) {
+		pr_warn("%px: Failed to allocate stats print buffer (%zu)\n", db, max_len);
+		return 0;
 	}
 
-	return NETFN_FLOW_COOKIE_STATUS_SUCCESS;
-}
+	len = snprintf(buf, max_len, "\n%lx:Flow cookie stats start:\n", (uintptr_t)db);
 
-/*
- * netfn_flow_cookie_stats_show_db
- *	API to dump the flow cookie stats in the appropriate file.
- *
- * @param[in]
- * File attributes
- *
- * @return
- * int returning Success/Failure
- *
- */
-static int netfn_flow_cookie_stats_show_db(struct seq_file *m, void __attribute__((unused))*p)
-{
-	struct netfn_flow_cookie_gbl *nfc_ctx = &netfn_flow_cookie_gbl_ctx;
-	uint8_t id;
-	uint32_t i;
+	stats_shadow = (uint64_t *)&stats;
 
-	for (id = 0; id < NETFN_FLOW_COOKIE_DB_ARRAY_SIZE; id = id + 1) {
-
-		if (nfc_ctx->db_array[id] == NULL) {
-			continue;
-		}
-
-		/*
-		 * Start displaying the Netfn Flow Cookie Base stats.
-		 */
-		seq_printf(m, "\n################ Netfn Flow Cookie DB %d Statistics Start ################\n", id);
-		seq_printf(m, "\nBase Netfn Flow Cookie Statistics:\n");
-		for (i = 0; i < NETFN_FLOW_COOKIE_DB_STATS_MAX; i++) {
-			seq_printf(m, "\t[%s]:  %llu\n", netfn_flow_cookie_stats_base_db_str[i], atomic64_read(&nfc_ctx->db_array[id]->db_base_stats[i]));
-		}
-
-		seq_printf(m, "\n################ Netfn Flow Cookie DB %d Statistics End ################\n\n", id);
+	for (i = 0; i < (sizeof(struct netfn_flow_cookie_stats) / sizeof(uint64_t)); i++) {
+		len += snprintf(buf + len, max_len - len, "\t[%s]: %llu\n", netfn_flow_cookie_stats_str[i], stats_shadow[i]);
 	}
 
-	return 0;
+	len += snprintf(buf + len, max_len - len, "\n%lx:Flow cookie stats end:\n", (uintptr_t)db);
+
+	len = simple_read_from_buffer(ubuf, sz, ppos, buf, len);
+	vfree(buf);
+
+	return len;
 }
 
 /*
- * netfn_flow_cookie_stats_open_db
- *	API to perform the flow cookie stats file open operation.
- *
- * @param[in]
- * File attributes
- *
- * @return
- * int returning Success/Failure
- *
+ * netfn_flow_cookie_stats_ops()
+ *	File operations for Netfn Flow Cookie DB Specific stats.
  */
-static int netfn_flow_cookie_stats_open_db(struct inode *inode, struct file *file)
-{
-	return single_open(file, netfn_flow_cookie_stats_show_db, inode->i_private);
-}
-
-/*
- * netfn_flow_cookie_stats_ops_db
- *	File operations for Netfn Flow Cookie DB Base stats
- */
-static const struct file_operations netfn_flow_cookie_stats_ops_db = {
-	.open = netfn_flow_cookie_stats_open_db,
-	.read = seq_read,
-	.llseek = seq_lseek,
-	.release = seq_release,
+const struct file_operations netfn_flow_cookie_stats_ops = {
+	.open = simple_open,
+	.llseek = default_llseek,
+	.read = netfn_flow_cookie_stats_print,
 };
 
 /*
- * netfn_flow_cookie_stats_init
- *	Initialize the infra for the Netfn Flow Cookie Global and DB Specific Stats.
- *
- * @param[in] void
- *
- * @return
- * netfn_flow_cookie_status_t
- *
+ * netfn_flow_cookie_stats_alloc()
+ *	Allocate the Netfn Flow Cookie DB Stats and the Infra.
  */
-netfn_flow_cookie_status_t netfn_flow_cookie_stats_init(void)
+struct netfn_flow_cookie_stats *netfn_flow_cookie_stats_alloc(struct netfn_flow_cookie_db *db)
 {
-	struct netfn_flow_cookie_gbl *nfc_ctx = &netfn_flow_cookie_gbl_ctx;
+	struct netfn_flow_cookie_stats *stats;
 
-	nfc_ctx->dentry = debugfs_create_dir("qca-nss-netfn-flow-cookie", NULL);
-	if (!nfc_ctx->dentry) {
-		netfn_flow_cookie_warn("%p: Unable to create qca-nss-netfn-flow-cookie debugfs stats directory in flow cookie\n", nfc_ctx);
-		return NETFN_FLOW_COOKIE_STATUS_FAILURE;
+	stats = alloc_percpu_gfp(struct netfn_flow_cookie_stats, GFP_KERNEL | __GFP_ZERO);
+	if (!stats) {
+		pr_warn("%px: Failed to allocate stats memory\n", db);
+		return NULL;
 	}
 
-	if (!debugfs_create_file("global_stats", S_IRUGO, nfc_ctx->dentry,  NULL, &netfn_flow_cookie_stats_ops_global)) {
-		netfn_flow_cookie_warn("%px: Failed to create debugfs entry for Netfn Flow Cookie Global stats\n", nfc_ctx);
-		goto debugfs_stats_init_failed;
+	if (!debugfs_create_file("stats", S_IRUGO, db->dentry, db, &netfn_flow_cookie_stats_ops)) {
+		pr_warn("%p: Failed to create file entry for flow_db_dir(%p)\n", db, db->dentry);
+		goto fail;
 	}
 
-	netfn_flow_cookie_info("%px: Done with initializing Netfn Flow Cookie Global Stats\n", nfc_ctx);
+	pr_info("%p:Successfully initialized Flow Cookie Stats\n", db);
+	return stats;
 
-	if (!debugfs_create_file("db_stats", S_IRUGO, nfc_ctx->dentry, NULL, &netfn_flow_cookie_stats_ops_db)) {
-		netfn_flow_cookie_warn("%px: Failed to create debugfs entry for Netfn Flow Cookie DB stats\n", nfc_ctx);
-		goto debugfs_stats_init_failed;
-	}
-
-	netfn_flow_cookie_info("%px: Done with initializing Netfn Flow Cookie DB Stats\n", nfc_ctx);
-
-	return NETFN_FLOW_COOKIE_STATUS_SUCCESS;
-
-debugfs_stats_init_failed:
-	debugfs_remove_recursive(nfc_ctx->dentry);
-	nfc_ctx->dentry = NULL;
-	return NETFN_FLOW_COOKIE_STATUS_FAILURE;
+fail:
+	debugfs_remove_recursive(db->dentry);
+	free_percpu(stats);
+	return NULL;
 }
 
 /*
- * netfn_flow_cookie_stats_exit
- *	De-Initialize the infra for the Netfn Flow Cookie Global and DB Specific Stats.
- *
- * @param[in] void
- *
- * @return
- * void
- *
+ * netfn_flow_cookie_stats_free()
+ *	De-Initialize the Netfn Flow Cookie DB Stats Infra.
  */
-void netfn_flow_cookie_stats_exit(void)
+void netfn_flow_cookie_stats_free(struct netfn_flow_cookie_stats *stats)
 {
-	struct netfn_flow_cookie_gbl *nfc_ctx = &netfn_flow_cookie_gbl_ctx;
-
-	if (nfc_ctx->dentry) {
-		debugfs_remove_recursive(nfc_ctx->dentry);
-		nfc_ctx->dentry = NULL;
-	}
-
-	return;
+	free_percpu(stats);
 }

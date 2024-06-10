@@ -39,64 +39,20 @@ struct netfn_capwap global_nc;
  * Core configuration.
  */
 ulong fwd_cores_mask = NETFN_CAPWAP_FWD_CORES_MASK;	/* 0100 represents core 2 */
+module_param(fwd_cores_mask, ulong, S_IRUSR);
+MODULE_PARM_DESC(fwd_cores_mask, "Core mask to be used for pkt forwarding.");
+
 ulong capwap_core = NETFN_CAPWAP_CORE;			/* 3 represents core 3 */
+module_param(capwap_core, ulong, S_IRUSR);
+MODULE_PARM_DESC(capwap_core, "Core marked for processing CAPWAP pkts.");
 
-/*
- * netfn_capwap_get_db_handle()
- * 	We use the following API to retrieve the DB handle
- * 	from the CAPWAP Offload Module
- * 	as given by the CAPWAP Manager Module.
- */
-struct netfn_flow_cookie_db *netfn_capwap_get_db_handle(void)
-{
+int tx_napi_budget = NETFN_CAPWAP_TX_BUDGET;
+module_param(tx_napi_budget, int, S_IRUSR);
+MODULE_PARM_DESC(tx_napi_budget, "Budget for Transmit side Packet Steer");
 
-	/*
-	 * We retrieve the Netfn Flow Cookie DB handle
-	 * here and return the same.
-	 */
-	return global_nc.d;
-}
-
-/*
- * netfn_capwap_set_db_handle()
- * 	We use the following API to set the DB handle
- * 	in the CAPWAP Offload Module
- * 	as given by the CAPWAP Manager Module.
- */
-void netfn_capwap_set_db_handle(struct netfn_flow_cookie_db *d)
-{
-	struct netfn_capwap *nc = &global_nc;
-
-	/*
-	 * We assign the Netfn Flow Cookie DB handle
-	 * to the CAPWAP Offload Module here.
-	 */
-	spin_lock_bh(&nc->lock);
-	nc->d = d;
-	spin_unlock_bh(&nc->lock);
-	return;
-}
-EXPORT_SYMBOL(netfn_capwap_set_db_handle);
-
-/*
- * netfn_capwap_clear_db_handle()
- * 	We use the following API to clear the DB handle
- * 	in the CAPWAP Offload Module.
- */
-void netfn_capwap_clear_db_handle(void)
-{
-	struct netfn_capwap *nc = &global_nc;
-
-	/*
-	 * We assign the Netfn Flow Cookie DB handle
-	 * to NULL for the CAPWAP Offload Module here.
-	 */
-	spin_lock_bh(&nc->lock);
-	nc->d = NULL;
-	spin_unlock_bh(&nc->lock);
-	return;
-}
-EXPORT_SYMBOL(netfn_capwap_clear_db_handle);
+int rx_napi_budget = NETFN_CAPWAP_RX_BUDGET;
+module_param(rx_napi_budget, int, S_IRUSR);
+MODULE_PARM_DESC(rx_napi_budget, "Budget for Receive side Packet Steer");
 
 /*
  * netfn_capwap_frags_add()
@@ -167,12 +123,7 @@ void __exit netfn_capwap_exit(void)
 	debugfs_remove_recursive(nc->dentry);
 }
 
-module_param(fwd_cores_mask, ulong, S_IRUSR);
-module_param(capwap_core, ulong, S_IRUSR);
-
 module_init(netfn_capwap_init);
 module_exit(netfn_capwap_exit);
-MODULE_PARM_DESC(fwd_cores_mask, "Core mask to be used for pkt forwarding.");
-MODULE_PARM_DESC(capwap_core, "Core marked for processing CAPWAP pkts.");
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_DESCRIPTION("CAPWAP offload engine");

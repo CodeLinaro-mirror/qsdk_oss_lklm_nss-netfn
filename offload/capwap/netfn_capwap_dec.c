@@ -119,11 +119,80 @@ static void netfn_capwap_dec_add_slow(struct netfn_capwap_dec_ctx *ctx, uint16_t
 	 */
 	if (!skb_queue_empty(frag_list) && (unlikely(frag_id != frags->frag_id))) {
 		NETFN_CAPWAP_TUN_STATS_ADD(&dec->stats.drop_missing_frags, skb_queue_len(frag_list));
-		skb_queue_splice_tail(q_free, frag_list);
+		skb_queue_splice_tail(frag_list, q_free);
 		netfn_capwap_frags_init(frags);
 	}
 
 	netfn_capwap_frags_add(frags, skb);
+}
+
+/*
+ * netfn_capwap_dec_get_flow_cookie
+ *	Fetch the Pointer to Flow Cookie from the Netfn Flow Cookie DB.
+ */
+static struct netfn_flow_cookie *netfn_capwap_dec_get_flow_cookie(struct netfn_flow_cookie_db *db, uint8_t *data)
+{
+	struct iphdr *iph = (struct iphdr *)data;
+	struct netfn_tuple t = {0};
+	uint32_t l4_hdr_offset;
+	uint8_t proto = 0;
+
+	if (iph->version == IPVERSION) {
+		proto = iph->protocol;
+		l4_hdr_offset = sizeof(struct iphdr);
+		t.ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V4;
+		t.tuples.tuple_5.src_ip.ip4.s_addr = iph->saddr;
+		t.tuples.tuple_5.dest_ip.ip4.s_addr = iph->daddr;
+	} else {
+		struct ipv6hdr *ip6h = (struct ipv6hdr *)data;
+
+		proto = ip6h->nexthdr;
+		l4_hdr_offset = sizeof(struct ipv6hdr);
+		t.ip_version = NETFN_FLOWMGR_TUPLE_IP_VERSION_V6;
+
+		/*
+		 * Source IP
+		 */
+		t.tuples.tuple_5.src_ip.ip6.s6_addr32[0] = ip6h->saddr.s6_addr32[0];
+		t.tuples.tuple_5.src_ip.ip6.s6_addr32[1] = ip6h->saddr.s6_addr32[1];
+		t.tuples.tuple_5.src_ip.ip6.s6_addr32[2] = ip6h->saddr.s6_addr32[2];
+		t.tuples.tuple_5.src_ip.ip6.s6_addr32[3] = ip6h->saddr.s6_addr32[3];
+
+		/*
+		 * Destination IP
+		 */
+		t.tuples.tuple_5.dest_ip.ip6.s6_addr32[0] = ip6h->daddr.s6_addr32[0];
+		t.tuples.tuple_5.dest_ip.ip6.s6_addr32[1] = ip6h->daddr.s6_addr32[1];
+		t.tuples.tuple_5.dest_ip.ip6.s6_addr32[2] = ip6h->daddr.s6_addr32[2];
+		t.tuples.tuple_5.dest_ip.ip6.s6_addr32[3] = ip6h->daddr.s6_addr32[3];
+	}
+
+	t.tuples.tuple_5.protocol = proto;
+
+	/*
+	 * Check if the protocol is TCP/UDP and extract the port numbers
+	 */
+	if (proto == IPPROTO_TCP) {
+		struct tcphdr *tcph = (struct tcphdr *)(data + l4_hdr_offset);
+
+		t.tuples.tuple_5.l4_src_ident = tcph->source;
+		t.tuples.tuple_5.l4_dest_ident = tcph->dest;
+		t.tuple_type = NETFN_TUPLE_5TUPLE;
+
+		return netfn_flow_cookie_db_lookup(db, &t);
+	}
+
+	if (proto == IPPROTO_UDP) {
+		struct udphdr *udph = (struct udphdr *)(data + l4_hdr_offset);
+
+		t.tuples.tuple_5.l4_src_ident = udph->source;
+		t.tuples.tuple_5.l4_dest_ident = udph->dest;
+		t.tuple_type = NETFN_TUPLE_5TUPLE;
+
+		return netfn_flow_cookie_db_lookup(db, &t);
+	}
+
+	return NULL;
 }
 
 /*
@@ -132,14 +201,13 @@ static void netfn_capwap_dec_add_slow(struct netfn_capwap_dec_ctx *ctx, uint16_t
  */
 static void netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buff *skb)
 {
-	bool flow_id_lookup_needed = dec->features & NETFN_CAPWAP_FEATURES_FLOW_COOKIE;
-	struct netfn_capwap_dec_stats *stats = &dec->stats;
-	netfn_flow_cookie_status_t nfc_status;
 	struct ieee80211_hdr_3addr *wlan_hdr;
 	struct netfn_capwap_hdr_mdata *mdata;
-	struct netfn_flow_cookie nfc = {0};
 	struct netfn_capwap_prehdr *phdr;
-	struct netfn_flow_cookie_db *d;
+	struct netfn_flow_cookie_db *db;
+	struct netfn_flow_cookie *nfc;
+	struct netfn_capwap_tun *nct;
+	bool is_ctrl_frame = false;
 	uint8_t *start, *next_hdr;
 	uint8_t smac[ETH_ALEN];
 	uint8_t dmac[ETH_ALEN];
@@ -178,7 +246,7 @@ static void netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buf
 	frame_ctrl = ntohs(wlan_hdr->frame_control);
 
 	if (!unlikely(ieee80211_is_data(frame_ctrl))) {
-		flow_id_lookup_needed = false;
+		is_ctrl_frame = true;
 		goto add_prehdr;
 	}
 
@@ -225,34 +293,41 @@ add_prehdr:
 
 	__skb_push(skb, start - next_hdr);
 
-	if (!flow_id_lookup_needed) {
+	if (is_ctrl_frame) {
 		return;
 	}
 
-	d = netfn_capwap_get_db_handle();
-	if (!d) {
-		NETFN_CAPWAP_TUN_STATS_INC(&stats->flow_cookie_no_db);
-		return;
-	}
+	nct = container_of(dec, struct netfn_capwap_tun, dec);
 
 	/*
 	 * Fill the right offset here.
 	 */
 	offset = sizeof(*eth) + sizeof(*phdr);
 
+	phdr->flow_id = 0;
+
 	/*
-	 * We append the valid Flow ID as retrieved
-	 * from the Netfn Flow Cookie DB
-	 * to the Meta Data Header here.
+	 * Optional flow - ID lookup for inner payload
 	 */
-	nfc_status = netfn_flow_cookie_db_entry_get_flow_cookie_using_skb(d, skb, offset, &nfc);
-	if (nfc_status != NETFN_FLOW_COOKIE_STATUS_SUCCESS) {
-		return;
+	rcu_read_lock_bh();
+
+	db = rcu_dereference(nct->db);
+	if (unlikely(db) && ((ntohs(skb->protocol) == ETH_P_IP) || (ntohs(skb->protocol) == ETH_P_IPV6)))  {
+		nfc = netfn_capwap_dec_get_flow_cookie(db, skb->data + offset);
+		if (nfc) {
+
+			/*
+			 * Only fill if we get the cookie
+			 */
+			phdr->flow_id = nfc->flow_id;
+			phdr->scs_sdwf_id = nfc->scs_sdwf_hdl;
+			phdr->type |= (nfc->valid_flag & NETFN_CAPWAP_DEC_PHDR_TYPE_MASK);
+
+		}
 	}
 
-	phdr->flow_id = nfc.flow_id;
-	phdr->scs_sdwf_id = nfc.scs_id;
-	phdr->type |= (nfc.valid_flag & NETFN_CAPWAP_DEC_PHDR_TYPE_MASK);
+	rcu_read_unlock_bh();
+	return;
 }
 
 /*
@@ -325,7 +400,7 @@ static struct sk_buff *netfn_capwap_dec_fast_reasm(struct netfn_capwap_dec_ctx *
  * netfn_capwap_dec_linearize()
  *	Linearizes the chain of skbs
  */
-static struct sk_buff *netfn_capwap_dec_linearize(struct netfn_capwap_frags *frags, struct netfn_capwap_dec_stats *stats)
+static struct sk_buff *netfn_capwap_dec_linearize(struct netfn_capwap_frags *frags, struct netfn_capwap_dec_stats *stats, struct sk_buff_head *q_free)
 {
 	struct sk_buff *iter, *tmp, *skb = NULL;
 	struct netfn_capwap_hdr_mdata *mdata;
@@ -336,7 +411,7 @@ static struct sk_buff *netfn_capwap_dec_linearize(struct netfn_capwap_frags *fra
 	skb = dev_alloc_skb(skb_size);
 	if (!skb) {
 		pr_warn_ratelimited("%px: Unable to allocate skb of size(%d)\n", &frags->list, skb_size);
-		dev_kfree_skb_list_fast(&frags->list);
+		skb_queue_splice_tail(&frags->list, q_free);
 		return NULL;
 	}
 
@@ -363,7 +438,7 @@ restart:
 	}
 
 	__skb_put(skb, frags->tot_sz);
-	dev_kfree_skb_list_fast(&q_tmp);
+	skb_queue_splice_tail(&q_tmp, q_free);
 
 	/*
 	 * If we have fragments left then fragments were corrupted.
@@ -374,7 +449,7 @@ restart:
 		skb = NULL;
 	}
 
-	dev_kfree_skb_list_fast(&frags->list);
+	skb_queue_splice_tail(&frags->list, q_free);
 	return skb;
 }
 
@@ -410,7 +485,7 @@ static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec_ctx *
 	 */
 	if (unlikely(frags->tot_sz > dec->max_payload_sz)) {
 		NETFN_CAPWAP_TUN_STATS_ADD(&stats->err_large_frags, skb_queue_len(frag_list));
-		dev_kfree_skb_list_fast(frag_list);
+		skb_queue_splice_tail(frag_list, q_free);
 		goto done;
 	}
 
@@ -419,7 +494,7 @@ static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec_ctx *
 	 */
 	if (unlikely(skb_queue_len(frag_list) > dec->max_frags)) {
 		NETFN_CAPWAP_TUN_STATS_ADD(&stats->err_max_frags, skb_queue_len(frag_list));
-		dev_kfree_skb_list_fast(frag_list);
+		skb_queue_splice_tail(frag_list, q_free);
 		goto done;
 	}
 
@@ -430,7 +505,7 @@ static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec_ctx *
 	 */
 	if (unlikely(frags->tot_sz && (frags->frag_sz > frags->tot_sz))) {
 		NETFN_CAPWAP_TUN_STATS_ADD(&stats->err_excess_len, skb_queue_len(frag_list));
-		dev_kfree_skb_list_fast(frag_list);
+		skb_queue_splice_tail(frag_list, q_free);
 		goto done;
 	}
 
@@ -441,7 +516,7 @@ static struct sk_buff *netfn_capwap_dec_slow_reasm(struct netfn_capwap_dec_ctx *
 		return NULL;
 	}
 
-	reasm_skb = netfn_capwap_dec_linearize(frags, stats);
+	reasm_skb = netfn_capwap_dec_linearize(frags, stats, q_free);
 	if (!reasm_skb) {
 		goto done;
 	}

@@ -74,7 +74,6 @@ struct netfn_capwapmgr {
 	struct mutex lock;			/* Mutex to serialize config updates */
 	struct dentry *dentry;			/* Debugfs for driver stats */
 	struct netfn_capwapmgr_stats stats;	/* Stats */
-	struct netfn_flow_cookie_db *d;		/* Store the DB handle here */
 };
 
 extern struct netfn_capwapmgr g_mgr;	/* Global manager object */

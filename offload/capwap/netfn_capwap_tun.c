@@ -127,6 +127,17 @@ static netdev_tx_t netfn_capwap_tun_tx(struct sk_buff *skb, struct net_device *d
 	}
 
 	/*
+	 * Unshare the SKB as we will be modifying it.
+	 */
+	if (unlikely(skb_shared(skb))) {
+		skb = skb_unshare(skb, GFP_NOWAIT | __GFP_NOWARN);
+		if (!skb) {
+			pr_warn_ratelimited("%px: Failed to unshare\n", dev);
+			goto fail;
+		}
+	}
+
+	/*
 	 * Check if we have sufficient headroom and tailroom.
 	 */
 	expand_skb = (skb_cloned(skb) || (skb_headroom(skb) < needed_hroom) || (skb_tailroom(skb) < needed_troom));
@@ -137,7 +148,9 @@ static netdev_tx_t netfn_capwap_tun_tx(struct sk_buff *skb, struct net_device *d
 		goto fail;
 	}
 
-	phdr = (struct netfn_capwap_prehdr *)skb->data;
+	NETFN_CAPWAP_CB(skb)->phdr = *(struct netfn_capwap_prehdr *)skb->data;
+	phdr = &NETFN_CAPWAP_CB(skb)->phdr;
+	__skb_pull(skb, sizeof(*phdr));
 
 	/*
 	 * Check for capwap version.
@@ -595,52 +608,55 @@ static void netfn_capwap_tun_tx_cb(struct netfn_pkt_steer *tx_steer, struct sk_b
 {
 	struct netfn_capwap_tun *nct = container_of(tx_steer, struct netfn_capwap_tun, tx_steer);
 	struct netfn_capwap_pkt_stats *stats = &nct->stats;
+	struct sk_buff_head q_frags;
 	struct sk_buff *skb, *nskb;
+
+	skb_queue_head_init(&q_frags);
 
 	/*
 	 * Encapsulates and transmits out.
 	 */
 	skb_queue_walk_safe(q_head, skb, nskb) {
-		struct sk_buff *skb_frag, *tmp;
-		struct sk_buff_head q_frags;
-
-		skb_queue_head_init(&q_frags);
 		__skb_unlink(skb, q_head);
+		if (likely(skb_queue_len(q_head))) {
+			uint8_t *ndata = nskb->data;
+			uint32_t mtu = nct->enc.mtu;
+
+			prefetch(ndata);
+			if (likely(nskb->len > mtu)) {
+				prefetch_range(ndata + mtu, nskb->len - mtu);
+			}
+		}
 
 		/*
 		 * Encapsulate the packet.
 		 */
-		if (!netfn_capwap_enc(&nct->enc, skb, &q_frags)) {
-			dev_kfree_skb_list_fast(&q_frags);
+		netfn_capwap_enc(&nct->enc, skb, &q_frags);
+	}
+
+	/*
+	 * Trasmit the packet out.
+	 */
+	skb_queue_walk_safe(&q_frags, skb, nskb) {
+		struct net_device *dev = nct->next_dev;
+		int len = skb->len;
+
+		__skb_unlink(skb, &q_frags);
+		skb->dev = dev;
+		skb->fast_xmit = true;
+
+		/*
+		 * We are either sending it to VP or DTLS netdevice. Which is controlled path,
+		 * and don't require unnecessary overhead of dev_queue_xmit()
+		 */
+		if (dev->netdev_ops->ndo_start_xmit(skb, dev) != NETDEV_TX_OK) {
+			NETFN_CAPWAP_TUN_STATS_INC(&nct->enc.stats.err_dev_tx);
+			dev_kfree_skb(skb);
 			continue;
 		}
 
-		/*
-		 * TODO: optimize this path by merging the fragmentation and send loop into one.
-		 */
-		/*
-		 * Trasmit the packet out.
-		 */
-		skb_queue_walk_safe(&q_frags, skb_frag, tmp) {
-			struct net_device *dev = nct->next_dev;
-			int len = skb_frag->len;
-
-			__skb_unlink(skb_frag, &q_frags);
-			skb_frag->dev = dev;
-
-			/*
-			 * We are either sending it to VP or DTLS netdevice. Which is controlled path,
-			 * and don't require unnecessary overhead of dev_queue_xmit()
-			 */
-			if (dev->netdev_ops->ndo_start_xmit(skb_frag, dev) != NETDEV_TX_OK) {
-				NETFN_CAPWAP_TUN_STATS_INC(&nct->enc.stats.err_dev_tx);
-				dev_kfree_skb(skb_frag);
-				continue;
-			}
-
-			NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_pkts);
-			NETFN_CAPWAP_TUN_STATS_ADD(&stats->tx_bytes, len);
-		}
+		NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_pkts);
+		NETFN_CAPWAP_TUN_STATS_ADD(&stats->tx_bytes, len);
 	}
 }
 
@@ -799,7 +815,7 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, stru
 	 * Allocate tx data pkt steering object.
 	 */
 	info.cb = netfn_capwap_tun_tx_cb;
-	info.budget = NETFN_CAPWAP_TUN_TX_BUDGET;
+	info.budget = tx_napi_budget;
 	info.weight = 1;
 	info.dev = dev;
 	netfn_pkt_steer_init(&nct->tx_steer, &info);
@@ -808,7 +824,7 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, stru
 	 * Allocate rx data pkt steering object.
 	 */
 	info.cb = netfn_capwap_tun_rx_cb;
-	info.budget = NETFN_CAPWAP_TUN_RX_BUDGET;
+	info.budget = rx_napi_budget;
 	info.weight = 1;
 	info.dev = dev;
 	netfn_pkt_steer_init(&nct->rx_steer, &info);
@@ -817,7 +833,7 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, stru
 	 * Allocate rx control pkt steering object.
 	 */
 	info.cb = netfn_capwap_tun_rx_pri_cb;
-	info.budget = NETFN_CAPWAP_TUN_RX_BUDGET;
+	info.budget = rx_napi_budget;
 	info.weight = 1;
 	info.dev = dev;
 	netfn_pkt_steer_init(&nct->rx_steer_pri, &info);
@@ -906,31 +922,40 @@ bool netfn_capwap_tun_unbind(struct net_device *dev)
 EXPORT_SYMBOL(netfn_capwap_tun_unbind);
 
 /*
- * netfn_capwap_tun_flow_cookie_cfg()
- *	Sets the flag to enable/disable
- *	the Flow Cookie Lookup functionality.
+ * netfn_capwap_tun_enable_flow_db()
+ *	Set the DB handle for flow-ID lookup
  */
-void netfn_capwap_tun_flow_cookie_cfg(struct net_device *dev, bool enable)
+void netfn_capwap_tun_enable_flow_db(struct net_device *dev, struct netfn_flow_cookie_db *db)
 {
-	struct netfn_capwap_tun *nct;
-	struct netfn_capwap_dec *dec;
-
-	BUG_ON(!dev);
-
-	nct = netdev_priv(dev);
-	dec = &nct->dec;
+	struct netfn_capwap_tun *nct = netdev_priv(dev);
 
 	/*
-	 * Set the relevant flags here.
+	 * Take the DB reference while loading the RCU protected handle
 	 */
-	if (enable) {
-		dec->features |= NETFN_CAPWAP_FEATURES_FLOW_COOKIE;
-		return;
-	}
-
-	dec->features &= ~NETFN_CAPWAP_FEATURES_FLOW_COOKIE;
+	rcu_assign_pointer(nct->db, netfn_flow_cookie_db_ref(db));
 }
-EXPORT_SYMBOL(netfn_capwap_tun_flow_cookie_cfg);
+EXPORT_SYMBOL(netfn_capwap_tun_enable_flow_db);
+
+/*
+ * netfn_capwap_tun_disable_flow_db()
+ *	Clear the DB handle for flow-ID lookup
+ */
+void netfn_capwap_tun_disable_flow_db(struct net_device *dev)
+{
+	struct netfn_capwap_tun *nct = netdev_priv(dev);
+	struct netfn_flow_cookie_db *db;
+
+	/*
+	 * There are open references to
+	 */
+	db = rcu_dereference_protected(nct->db, lockdep_rtnl_is_held());
+	if (db) {
+		RCU_INIT_POINTER(nct->db, NULL);
+		synchronize_net();
+		netfn_flow_cookie_db_deref(db);
+	}
+}
+EXPORT_SYMBOL(netfn_capwap_tun_disable_flow_db);
 
 /*
  * netfn_capwap_tun_stats_get()

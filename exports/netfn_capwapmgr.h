@@ -170,7 +170,7 @@ typedef enum {
        NETFN_CAPWAPMGR_ERROR_DTLS_ALLOC = 13,			/**< Failed to allocated DTLS tunnel */
        NETFN_CAPWAPMGR_ERROR_DTLS_BIND = 14,			/**< Failed to Bind DTLS Net Device to capwap Net Device */
        NETFN_CAPWAPMGR_ERROR_STATS_GET = 15,			/**< Failed to get tunnel stats */
-       NETFN_CAPWAPMGR_ERROR_INVALID_CFG = 16,			/**< Invalid tunnel create configuration */			
+       NETFN_CAPWAPMGR_ERROR_INVALID_CFG = 16,			/**< Invalid tunnel create configuration */
        NETFN_CAPWAPMGR_ERROR_TUN_ENABLED = 17,			/**< Updating tunnel config when tunnel is enabled */
        NETFN_CAPWAPMGR_ERROR_TUN_DEINIT = 18,			/**< Failed to Deinitialize the tunnel */
        NETFN_CAPWAPMGR_ERROR_TUN_INIT = 19,			/**< Failed to Initialize the tunnel */

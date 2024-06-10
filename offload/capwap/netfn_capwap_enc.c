@@ -99,7 +99,7 @@ static void netfn_capwap_enc_capwap(struct netfn_capwap_enc *enc, struct sk_buff
 	info.fields.fbit = mdata->frag;
 	info.fields.lbit = mdata->frag_end;
 
-	info.fields.kbit = 0;
+	info.fields.kbit = !!(phdr->type & NETFN_CAPWAP_PKT_TYPE_ENC_KEEPALIVE);
 	info.fields.mbit = 0;
 	info.fields.flags = 0;
 	frag.fields.id = mdata->frag_id;
@@ -128,7 +128,7 @@ static void netfn_capwap_enc_l4(struct netfn_capwap_enc *enc, struct sk_buff *sk
 	 * udph->len is set to payload len in case protocol is udp,
 	 * else indicates checksum coverage for udplite protocol.
 	 */
-	udph->len = (hdr->proto_next_hdr == IPPROTO_UDP) ? htons(skb->len) : hdr->csum_cov;
+	udph->len = (hdr->proto_next_hdr == IPPROTO_UDP) ? htons(skb->len) : htons(hdr->csum_cov);
 
 	/*
 	 * check = 0 means no checksum, however the intent is to have it offloaded to EDMA.
@@ -197,6 +197,33 @@ static inline void netfn_capwap_enc_snap_hdr(struct netfn_capwap_enc *enc, struc
 
 	*snap = *((struct __snap_hdr *)enc->snap_hdr);
 	*next_proto = skb->protocol;
+}
+
+static inline void netfn_capwap_enc_add_hdr(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct netfn_capwap_enc_mdata *mdata)
+{
+	/*
+	 * We insert winfo if preheader has winfo type set and if:
+	 * 1. If its first frag OR
+	 * 2. If its a non-fragmented packet
+	 */
+	if (mdata->first_frag || !mdata->frag) {
+		netfn_capwap_enc_winfo(enc, skb, mdata);
+	}
+
+	netfn_capwap_enc_capwap(enc, skb, mdata);
+
+	/*
+	 * We don't encapsulate with UDP and IP if dtls is enabled.
+	 * DTLS adds these for us.
+	 * SKB Priority used to store TOS.
+	 */
+	if (enc->features & NETFN_CAPWAP_FEATURES_DTLS) {
+		skb->priority = mdata->phdr.dscp << 2;
+		return;
+	}
+
+	netfn_capwap_enc_l4(enc, skb, mdata);	/* UDP or UDPLite */
+	netfn_capwap_enc_l3(enc, skb, mdata);
 }
 
 /*
@@ -277,13 +304,14 @@ static void netfn_capwap_enc_80211(struct netfn_capwap_enc *enc, struct sk_buff 
  * netfn_capwap_enc_frag()
  *	CAPWAP fragmentation routine
  */
-static bool netfn_capwap_enc_frag(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, struct sk_buff_head *q_frag)
+static bool netfn_capwap_enc_frag(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, struct sk_buff_head *q_frag, struct netfn_capwap_enc_mdata *mdata)
 {
 	struct netfn_capwap_enc_stats *stats = &enc->stats;
 	uint8_t *next_data = orig_skb->data;
 	uint16_t total_len = orig_skb->len;
 	uint16_t headroom, tailroom;
 	uint16_t mtu = enc->mtu;
+	int offset = 0;
 	int frag_len;
 
 	headroom = skb_headroom(orig_skb);
@@ -292,8 +320,10 @@ static bool netfn_capwap_enc_frag(struct netfn_capwap_enc *enc, struct sk_buff *
 	/*
 	 * If buffer size is less than next hop MTU no need to fragment.
 	 */
+	mdata->frag_id = enc->frag_id++;
 	if (total_len <= mtu) {
 		NETFN_CAPWAP_TUN_STATS_INC(&stats->num_frags);
+		netfn_capwap_enc_add_hdr(enc, orig_skb, mdata);
 		__skb_queue_head(q_frag, orig_skb);
 		return true;
 	}
@@ -304,6 +334,12 @@ static bool netfn_capwap_enc_frag(struct netfn_capwap_enc *enc, struct sk_buff *
 	next_data += frag_len;
 
 	NETFN_CAPWAP_TUN_STATS_INC(&stats->num_frags);
+	mdata->frag_end = false;
+	mdata->first_frag = true;
+	mdata->frag_offset = offset;
+	mdata->frag = true;
+	offset += orig_skb->len;
+	netfn_capwap_enc_add_hdr(enc, orig_skb, mdata);
 	__skb_queue_head(q_frag, orig_skb);
 
 	/*
@@ -327,6 +363,12 @@ static bool netfn_capwap_enc_frag(struct netfn_capwap_enc *enc, struct sk_buff *
 		skb_reserve(skb, enc->outer_hdr_len + headroom);
 		memcpy(__skb_put(skb, frag_len), next_data, frag_len);
 		NETFN_CAPWAP_TUN_STATS_INC(&stats->num_frags);
+		mdata->frag_end = !total_len;
+		mdata->first_frag = false;
+		mdata->frag_offset = offset;
+		mdata->frag = true;
+		offset += skb->len;
+		netfn_capwap_enc_add_hdr(enc, skb, mdata);
 		__skb_queue_tail(q_frag, skb);
 		next_data += frag_len;
 	}
@@ -405,21 +447,31 @@ void netfn_capwap_enc_stats_read(struct netfn_capwap_enc *enc, struct netfn_capw
  * netfn_capwap_enc()
  *	Parse, fragment and encapsulate.
  */
-bool netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, struct sk_buff_head *q_frag)
+void netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, struct sk_buff_head *q_frag)
 {
-	struct netfn_capwap_prehdr *phdr = (struct netfn_capwap_prehdr *)orig_skb->data;
 	struct netfn_capwap_enc_mdata mdata = {0};
-	uint16_t offset = 0, num_frags;
-	struct sk_buff *skb;
-	bool is_frag;
+	struct netfn_capwap_prehdr *phdr;
+	struct sk_buff_head tmp;
 
+	skb_queue_head_init(&tmp);
 	NETFN_CAPWAP_TUN_STATS_INC(&enc->stats.pkts_rcvd);
 
 	/*
 	 * Pull the meta header.
 	 */
-	mdata.phdr = *phdr;
-	__skb_pull(orig_skb, sizeof(*phdr));
+	mdata.phdr = NETFN_CAPWAP_CB(orig_skb)->phdr;
+	phdr = &mdata.phdr;
+
+	/*
+	 * Bypass capwap processing if BYPASS bit is set.
+	 */
+	if (unlikely(phdr->type & NETFN_CAPWAP_PKT_TYPE_BYPASS_KEEPALIVE)) {
+		struct netfn_capwap_enc_stats *stats = &enc->stats;
+
+		NETFN_CAPWAP_TUN_STATS_INC(&stats->keepalive_pkts);
+		__skb_queue_head(q_frag, orig_skb);
+		return;
+	}
 
 	/*
 	 * If inner is 802.3 then we convert it to 802.11
@@ -430,62 +482,16 @@ bool netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, st
 	}
 
 	/*
-	 * Fragment the skb if needed.
+	 * Fragment the skb if needed and Encapsulate.
 	 */
-	if (unlikely(!netfn_capwap_enc_frag(enc, orig_skb, q_frag))) {
+	if (unlikely(!netfn_capwap_enc_frag(enc, orig_skb, &tmp, &mdata))) {
 		pr_warn_ratelimited("%px: Fragmentation failed\n", enc);
-		dev_kfree_skb_list_fast(q_frag);
-		return false;
+		dev_kfree_skb_list_fast(&tmp);
+		return;
 	}
 
-	num_frags = skb_queue_len(q_frag);
-
-	/*
-	 * Check if its a fragmented packet.
-	 */
-	is_frag = !!(num_frags - 1);
-	mdata.frag_id = enc->frag_id++;
-
-	/*
-	 * Walk the frag list and encapsulate.
-	 */
-	skb_queue_walk(q_frag, skb) {
-		num_frags--;
-		if (likely(is_frag)) {
-			mdata.frag_end = !num_frags;
-			mdata.first_frag = !offset;
-			mdata.frag_offset = offset;
-			mdata.frag = true;
-		}
-
-		offset += skb->len;
-
-		/*
-		 * We insert winfo if preheader has winfo type set and if:
-		 * 1. If its first frag OR
-		 * 2. If its a non-fragmented packet
-		 */
-		if (mdata.first_frag || !is_frag) {
-			netfn_capwap_enc_winfo(enc, skb, &mdata);
-		}
-
-		netfn_capwap_enc_capwap(enc, skb, &mdata);
-
-		/*
-		 * We don't encapsulate with UDP and IP if dtls is enabled.
-		 * DTLS adds these for us.
-		 * SKB Priority used to store TOS.
-		 */
-		if (enc->features & NETFN_CAPWAP_FEATURES_DTLS) {
-			skb->priority = mdata.phdr.dscp << 2;
-			continue;
-		}
-
-		netfn_capwap_enc_l4(enc, skb, &mdata);	/* UDP or UDPLite */
-		netfn_capwap_enc_l3(enc, skb, &mdata);
-	}
-
-	return true;
+	skb_queue_splice_tail(&tmp, q_frag);
+	return;
 }
 
 /*

@@ -33,9 +33,6 @@ static inline int netfn_auto_flowcookie_genl_cmd(struct sk_buff *skb, struct gen
 static inline int netfn_auto_flowcookie_rule_add(struct sk_buff *skb, struct genl_info *info);
 static inline int netfn_auto_flowcookie_rule_delete(struct sk_buff *skb, struct genl_info *info);
 static inline int netfn_auto_flowcookie_rule_init(struct sk_buff *skb, struct genl_info *info);
-static inline int netfn_auto_flowcookie_flow_id_get(struct sk_buff *skb, struct genl_info *info);
-static inline int netfn_auto_flowcookie_flow_mark_get(struct sk_buff *skb, struct genl_info *info);
-static inline int netfn_auto_flowcookie_sawf_handle_get(struct sk_buff *skb, struct genl_info *info);
 
 /*
  * nla_policy for flowcookie
@@ -122,15 +119,6 @@ static inline int netfn_auto_flowcookie_genl_cmd(struct sk_buff *skb, struct gen
 		case 2:
 			netfn_auto_flowcookie_rule_init(skb, info);
 			break;
-		case 3:
-			netfn_auto_flowcookie_flow_id_get(skb, info);
-			break;
-		case 4:
-			netfn_auto_flowcookie_flow_mark_get(skb, info);
-			break;
-		case 5:
-			netfn_auto_flowcookie_sawf_handle_get(skb, info);
-			break;
 		default:
 			netfn_auto_info("\nWrong cmd for flowcookie\n");
 			goto error;
@@ -159,7 +147,8 @@ static inline int netfn_auto_flowcookie_rule_add(struct sk_buff *skb, struct gen
 	netfn_auto_info("\nThis is for flowcookie add\n");
 
 	if(info->attrs[FLOWCOOKIE_INFO]) {
-		int rem, flow_id, flow_mark;
+		uint32_t flow_id, flow_mark, sawf_handle, valid_flag;
+		int rem;
 
 		netfn_auto_info("\nFLOW_COOKIE_INFO not empty\n");
 
@@ -180,22 +169,18 @@ static inline int netfn_auto_flowcookie_rule_add(struct sk_buff *skb, struct gen
 				flow_cookie.flow_mark = flow_mark;
 				netfn_auto_info("\nFrom netlink, flow_cookie_flow_mark :%d\n", flow_mark);
 			} else if(nla_type(attr) == FLOWCOOKIE_SAWF_HANDLE) {
-				int rem, val;
-				struct nlattr *sawf_handle = NULL;
-				netfn_auto_info("\nFLOWCOOKIE_SAWF_HANDLE not empty\n");
-				nla_for_each_nested(sawf_handle, attr, rem) {
-					netfn_auto_info("\nsawf_handle->nla_type: %d\n", nla_type(sawf_handle));
-
-					if(nla_type(sawf_handle) == FLOWCOOKIE_SAWF_ID) {
-						val = nla_get_u32(sawf_handle);
-						flow_cookie.sawf_handle.sawf_id = val;
-						netfn_auto_info("\nFrom netlink, flow_cookie_sawf_id :%d\n", val);
-					}
-				}
+				sawf_handle = nla_get_u32(attr);
+				flow_cookie.scs_sdwf_hdl = sawf_handle;
+				netfn_auto_info("\nFrom netlink, flow_cookie_sawf_handle :%d\n", sawf_handle);
+			} else if(nla_type(attr) == VALID_FLAGS) {
+				valid_flag = nla_get_u32(attr);
+				flow_cookie.valid_flag = valid_flag;
+				netfn_auto_info("\nFrom netlink, flow_cookie_valid_flag :%d\n", valid_flag);
 			}
 		}
 	} else {
 		netfn_auto_info("\nNetlink FLOW_COOKIE_INFO failed\n");
+		return -EINVAL;
 	}
 
 	if(info->attrs[FLOWCOOKIE_TUPLE_INFO]) {
@@ -204,9 +189,10 @@ static inline int netfn_auto_flowcookie_rule_add(struct sk_buff *skb, struct gen
 		netfn_auto_flowcookie_parse_tuple(&tuple, tuple_info);
 	} else {
 		netfn_auto_info("\nNetlink Tuple info failed\n");
+		return -EINVAL;
 	}
 
-	netfn_flow_cookie_db_entry_add(d, &tuple, &flow_cookie);
+	netfn_flow_cookie_db_add(d, &tuple, &flow_cookie);
 	return 0;
 }
 
@@ -228,7 +214,7 @@ static inline int netfn_auto_flowcookie_rule_delete(struct sk_buff *skb, struct 
 		netfn_auto_info("\nNetlink Tuple info failed\n");
 	}
 
-	netfn_flow_cookie_db_entry_del(d, &tuple);
+	netfn_flow_cookie_db_del(d, &tuple);
 	return 0;
 }
 
@@ -250,92 +236,6 @@ static inline int netfn_auto_flowcookie_rule_init(struct sk_buff *skb, struct ge
 	}
 
 	d = netfn_flow_cookie_db_alloc(hash_table_size);
-
-	return 0;
-}
-
-/*
- * netfn_auto_flowcookie_flow_id_get()
- * 	parse info for flow id
- */
-static inline int netfn_auto_flowcookie_flow_id_get(struct sk_buff *skb, struct genl_info *info)
-{
-	netfn_tuple_t tuple;
-	uint32_t flow_id;
-
-	netfn_auto_info("\nThis is for flowcookie get_flow_id\n");
-
-	if(info->attrs[FLOWCOOKIE_TUPLE_INFO]) {
-		struct nlattr *tuple_info = NULL;
-		tuple_info = info->attrs[FLOWCOOKIE_TUPLE_INFO];
-		netfn_auto_flowcookie_parse_tuple(&tuple, tuple_info);
-	} else {
-		netfn_auto_info("\nNetlink Tuple info failed\n");
-	}
-
-	flow_id = netfn_flow_cookie_db_entry_get_flow_id(d, &tuple);
-	netfn_auto_info("\nFLOW_ID: %d\n", flow_id);
-
-	return 0;
-}
-
-/*
- * netfn_auto_flowcookie_flow_mark_get()
- * 	parse info for flow mark
- */
-static inline int netfn_auto_flowcookie_flow_mark_get(struct sk_buff *skb, struct genl_info *info)
-{
-	netfn_tuple_t tuple;
-	uint32_t flow_mark;
-	netfn_auto_info("\nThis is for flowcookie get_flow_mark\n");
-
-	if(info->attrs[FLOWCOOKIE_TUPLE_INFO]) {
-		struct nlattr *tuple_info = NULL;
-		tuple_info = info->attrs[FLOWCOOKIE_TUPLE_INFO];
-		netfn_auto_flowcookie_parse_tuple(&tuple, tuple_info);
-	} else {
-		netfn_auto_info("\nNetlink Tuple info failed\n");
-	}
-
-	flow_mark = netfn_flow_cookie_db_entry_get_flow_mark(d, &tuple);
-	netfn_auto_info("\nFlow_mark: %d\n", flow_mark);
-	return 0;
-}
-
-/*
- * netfn_auto_flowcookie_sawf_handle_get()
- * 	parse info for sawf handle
- */
-static inline int netfn_auto_flowcookie_sawf_handle_get(struct sk_buff *skb, struct genl_info *info)
-{
-	netfn_tuple_t tuple;
-	struct netfn_flow_cookie_sawf_handle netfn_auto_sawf_handle;
-
-	netfn_auto_info("\nThis is for flowcookie get_sawf_handle\n");
-
-	if(info->attrs[FLOWCOOKIE_TUPLE_INFO]) {
-		struct nlattr *tuple_info = NULL;
-		tuple_info = info->attrs[FLOWCOOKIE_TUPLE_INFO];
-		netfn_auto_flowcookie_parse_tuple(&tuple, tuple_info);
-	} else if(info->attrs[FLOWCOOKIE_SAWF_HANDLE]) {
-		int rem, val;
-		struct nlattr *sawf_handle = NULL, *attr = info->attrs[FLOWCOOKIE_SAWF_HANDLE];
-
-		netfn_auto_info("\nFLOWCOOKIE_SAWF_HANDLE not empty\n");
-		nla_for_each_nested(sawf_handle, attr, rem) {
-			netfn_auto_info("\nsawf_handle->nla_type: %d\n", nla_type(sawf_handle));
-			if(nla_type(sawf_handle) == FLOWCOOKIE_SAWF_ID) {
-				val = nla_get_u32(sawf_handle);
-				netfn_auto_sawf_handle.sawf_id = val;
-				netfn_auto_info("\nFrom netlink, flow_cookie_sawf_id :%d\n", val);
-			}
-		}
-
-	} else {
-		netfn_auto_info("\nWrong attribute in netfn_auto_flowcookie_get_sawf_handle\n");
-	}
-
-	netfn_flow_cookie_db_entry_get_sawf_handle(d, &tuple, &netfn_auto_sawf_handle);
 
 	return 0;
 }
