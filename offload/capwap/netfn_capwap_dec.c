@@ -408,7 +408,7 @@ static struct sk_buff *netfn_capwap_dec_linearize(struct netfn_capwap_frags *fra
 	struct sk_buff_head q_tmp;
 
 	skb_size = frags->tot_sz + NETFN_CAPWAP_HEADROOM_RESERVE + NETFN_CAPWAP_TAILROOM_RESERVE;
-	skb = dev_alloc_skb(skb_size);
+	skb = netdev_alloc_skb_fast(NULL, skb_size);
 	if (!skb) {
 		pr_warn_ratelimited("%px: Unable to allocate skb of size(%d)\n", &frags->list, skb_size);
 		skb_queue_splice_tail(&frags->list, q_free);
