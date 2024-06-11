@@ -35,6 +35,7 @@
 #include <netfn_flow_cookie.h>
 #include "netfn_flow_cookie_hash.h"
 #include "netfn_flow_cookie_priv.h"
+#include "netfn_flow_cookie_dump.h"
 
 /*
  * netfn_flow_cookie_db_free()
@@ -55,6 +56,8 @@ static void netfn_flow_cookie_db_free(struct kref *kref)
 	}
 
 	netfn_flow_cookie_stats_free(db->stats);
+	netfn_flow_cookie_dump_exit(db);
+	kfree(db->bitmap);
 
 	/*
 	 * If, there are active nodes then its an anamoly
@@ -248,6 +251,7 @@ int netfn_flow_cookie_db_add(struct netfn_flow_cookie_db *db, struct netfn_tuple
 
 	atomic_inc(&db->active_cnt);
 	stats->total_add_success++;
+	set_bit(hash_idx, db->bitmap);
 
 	pr_debug("Successfully added the DB entry node:%p", entry);
 	spin_unlock_bh(&db->lock);
@@ -268,12 +272,15 @@ int netfn_flow_cookie_db_del(struct netfn_flow_cookie_db *db, struct netfn_tuple
 {
 	struct netfn_flow_cookie_db_entry *entry;
 	struct netfn_flow_cookie_stats *stats;
+	struct hlist_node *hlist_head_ptr;
+	uint32_t hash_idx;
 
 	/*
 	 * Take reference before processing the delete
 	 */
 	netfn_flow_cookie_db_ref(db);
 	stats = this_cpu_ptr(db->stats);
+	hash_idx = netfn_flow_cookie_db_hash(db, t);
 
 	spin_lock_bh(&db->lock);
 	entry = netfn_flow_cookie_db_find_entry(db, t);
@@ -293,6 +300,12 @@ int netfn_flow_cookie_db_del(struct netfn_flow_cookie_db *db, struct netfn_tuple
 	 * Remove the DB entry from the RCU based Hash List
 	 */
 	hlist_del_rcu(&(entry->node));
+
+	hlist_head_ptr = hlist_first_rcu(&(db->db_table[hash_idx]));
+
+	if (unlikely(!hlist_head_ptr)) {
+		clear_bit(hash_idx, db->bitmap);
+	}
 	spin_unlock_bh(&db->lock);
 
 	/*
@@ -373,6 +386,21 @@ struct netfn_flow_cookie_db *netfn_flow_cookie_db_alloc(uint32_t num_entries)
 		goto fail2;
 	}
 
+	if (netfn_flow_cookie_dump_init(db) == -1) {
+		goto fail2;
+	}
+
+	db->bitmap = kzalloc(db->max_size, GFP_ATOMIC);
+	if (!db->bitmap) {
+		pr_warn("%p: Memory allocation failed for Bit Map.\n", db);
+		goto fail3;
+	}
+
+        /*
+	 * Initialize all bits to 0.
+	 */
+	memset(db->bitmap, 0, db->max_size);
+
 	/*
 	 * We initialize the reference structure here
 	 * for the DB instance.
@@ -381,6 +409,8 @@ struct netfn_flow_cookie_db *netfn_flow_cookie_db_alloc(uint32_t num_entries)
 	pr_info("%p: Database handle created\n", db);
 	return db;
 
+fail3:
+	netfn_flow_cookie_dump_exit(db);
 fail2:
 	if (db->dentry)
 		debugfs_remove_recursive(db->dentry);

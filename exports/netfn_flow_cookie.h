@@ -38,6 +38,8 @@ struct netfn_flow_cookie_db {
 
 	struct dentry *dentry;  	  	                        /* Debug fs entry */
 	struct netfn_flow_cookie_stats __percpu *stats;			/* DB specific Per CPU Stats */
+	int dump_dev_major_id;						/* Flow Dump File Major ID */
+	unsigned long *bitmap;						/* Bit Map */
 
 	spinlock_t lock;						/* DB specific Spin Lock */
 	struct hlist_head db_table[] __attribute((aligned(L1_CACHE_BYTES)));
