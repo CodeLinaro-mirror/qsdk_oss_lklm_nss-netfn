@@ -116,6 +116,13 @@ static int netfn_pkt_steer_reap_fifo(struct netfn_pkt_steer_fifo *fifo, struct s
 	while (avail--) {
 		skb = xchg(&fifo->skbs[cons], NULL);
 		cons = NETFN_PKT_STEER_INC(cons);
+		if (likely(avail)) {
+			struct sk_buff *nskb = fifo->skbs[cons];
+			prefetch(nskb);
+			prefetch((uint8_t *)nskb + 64);
+			prefetch((uint8_t *)nskb + 128);
+			prefetch((uint8_t *)nskb + 192);
+		}
 
 		__skb_queue_tail(skb_head, skb);
 	}
@@ -430,7 +437,7 @@ EXPORT_SYMBOL(netfn_pkt_steer_deinit);
  */
 int __init netfn_pkt_steer_init_module(void)
 {
-	pr_info("NETFN packet steer module loaded %s\n", NSS_NETFN_BUILD_ID);
+	pr_info("NETFN packet steer module loaded with Queue size(%u) %s\n", NETFN_PKT_STEER_QUEUE_DEPTH, NSS_NETFN_BUILD_ID);
 	return 0;
 }
 

@@ -71,7 +71,7 @@ static inline void netfn_capwap_enc_winfo(struct netfn_capwap_enc *enc, struct s
  * netfn_capwap_enc_capwap()
  *	Encapsulate the CAPWAP header
  */
-static void netfn_capwap_enc_capwap(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct netfn_capwap_enc_mdata *mdata)
+static inline void netfn_capwap_enc_capwap(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct netfn_capwap_enc_mdata *mdata)
 {
 	struct netfn_capwap_hdr *nch = (struct netfn_capwap_hdr *)__skb_push(skb, sizeof(*nch));
 	struct netfn_capwap_prehdr *phdr = &mdata->phdr;
@@ -114,7 +114,7 @@ static void netfn_capwap_enc_capwap(struct netfn_capwap_enc *enc, struct sk_buff
  * netfn_capwap_enc_l4()
  *	Encapsulate the UDP/UDPLite header
  */
-static void netfn_capwap_enc_l4(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct netfn_capwap_enc_mdata *mdata)
+static inline void netfn_capwap_enc_l4(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct netfn_capwap_enc_mdata *mdata)
 {
 	struct udphdr *udph = (struct udphdr *)__skb_push(skb, sizeof(*udph));
 	struct netfn_capwap_enc_hdr *hdr = &enc->hdr;
@@ -141,7 +141,7 @@ static void netfn_capwap_enc_l4(struct netfn_capwap_enc *enc, struct sk_buff *sk
  * netfn_capwap_enc_l3()
  *	Encapsulate the IP header
  */
-static void netfn_capwap_enc_l3(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct netfn_capwap_enc_mdata *mdata)
+static inline void netfn_capwap_enc_l3(struct netfn_capwap_enc *enc, struct sk_buff *skb, struct netfn_capwap_enc_mdata *mdata)
 {
 	struct netfn_capwap_enc_hdr *hdr = &enc->hdr;
 	struct ipv6hdr *ip6h;
@@ -230,7 +230,7 @@ static inline void netfn_capwap_enc_add_hdr(struct netfn_capwap_enc *enc, struct
  * netfn_capwap_enc_80211()
  *	Converts the inner capwap packet from 802.3 to 802.11
  */
-static void netfn_capwap_enc_80211(struct netfn_capwap_enc *enc, struct sk_buff *skb, void *preh)
+static inline void netfn_capwap_enc_80211(struct netfn_capwap_enc *enc, struct sk_buff *skb, void *preh)
 {
 	struct netfn_capwap_prehdr *phdr = preh;
 	struct ieee80211_hdr_3addr *wlan_hdr;
@@ -304,7 +304,7 @@ static void netfn_capwap_enc_80211(struct netfn_capwap_enc *enc, struct sk_buff 
  * netfn_capwap_enc_frag()
  *	CAPWAP fragmentation routine
  */
-static bool netfn_capwap_enc_frag(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, struct sk_buff_head *q_frag, struct netfn_capwap_enc_mdata *mdata)
+static inline bool netfn_capwap_enc_frag(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, struct sk_buff_head *q_frag, struct netfn_capwap_enc_mdata *mdata)
 {
 	struct netfn_capwap_enc_stats *stats = &enc->stats;
 	uint8_t *next_data = orig_skb->data;
@@ -353,7 +353,7 @@ static bool netfn_capwap_enc_frag(struct netfn_capwap_enc *enc, struct sk_buff *
 		total_len -= frag_len;
 		skb_size = frag_len + enc->outer_hdr_len + headroom + tailroom;
 
-		skb = dev_alloc_skb(skb_size);
+		skb = netdev_alloc_skb_fast(NULL, skb_size);
 		if (!skb) {
 			pr_warn_ratelimited("%px: Unable to allocate memory for fragment len(%ld).\n", enc, skb_size);
 			NETFN_CAPWAP_TUN_STATS_INC(&stats->drop_mem_alloc);
@@ -361,6 +361,7 @@ static bool netfn_capwap_enc_frag(struct netfn_capwap_enc *enc, struct sk_buff *
 		}
 
 		skb_reserve(skb, enc->outer_hdr_len + headroom);
+		prefetchw(skb->data);
 		memcpy(__skb_put(skb, frag_len), next_data, frag_len);
 		NETFN_CAPWAP_TUN_STATS_INC(&stats->num_frags);
 		mdata->frag_end = !total_len;
