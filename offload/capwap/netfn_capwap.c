@@ -39,7 +39,20 @@ struct netfn_capwap global_nc;
  * Core configuration.
  */
 ulong fwd_cores_mask = NETFN_CAPWAP_FWD_CORES_MASK;	/* 0100 represents core 2 */
+module_param(fwd_cores_mask, ulong, S_IRUSR);
+MODULE_PARM_DESC(fwd_cores_mask, "Core mask to be used for pkt forwarding.");
+
 ulong capwap_core = NETFN_CAPWAP_CORE;			/* 3 represents core 3 */
+module_param(capwap_core, ulong, S_IRUSR);
+MODULE_PARM_DESC(capwap_core, "Core marked for processing CAPWAP pkts.");
+
+int tx_napi_budget = NETFN_CAPWAP_TX_BUDGET;
+module_param(tx_napi_budget, int, S_IRUSR);
+MODULE_PARM_DESC(tx_napi_budget, "Budget for Transmit side Packet Steer");
+
+int rx_napi_budget = NETFN_CAPWAP_RX_BUDGET;
+module_param(rx_napi_budget, int, S_IRUSR);
+MODULE_PARM_DESC(rx_napi_budget, "Budget for Receive side Packet Steer");
 
 /*
  * netfn_capwap_frags_add()
@@ -110,12 +123,7 @@ void __exit netfn_capwap_exit(void)
 	debugfs_remove_recursive(nc->dentry);
 }
 
-module_param(fwd_cores_mask, ulong, S_IRUSR);
-module_param(capwap_core, ulong, S_IRUSR);
-
 module_init(netfn_capwap_init);
 module_exit(netfn_capwap_exit);
-MODULE_PARM_DESC(fwd_cores_mask, "Core mask to be used for pkt forwarding.");
-MODULE_PARM_DESC(capwap_core, "Core marked for processing CAPWAP pkts.");
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_DESCRIPTION("CAPWAP offload engine");
