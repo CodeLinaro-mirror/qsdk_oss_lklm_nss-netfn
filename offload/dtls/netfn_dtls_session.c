@@ -140,6 +140,7 @@ static void netfn_dtls_session_fill_tr(struct netfn_dtls_cfg *cfg, netfn_tuple_t
 	dtls->flags |= (flags & NETFN_DTLS_FLAG_ENC) ? EIP_TR_DTLS_FLAG_ENC : 0;
 	dtls->flags |= (flags & NETFN_DTLS_FLAG_IPV6) ? EIP_TR_DTLS_FLAG_IPV6 : 0;
 	dtls->flags |= (flags & NETFN_DTLS_FLAG_UDPLITE) ? EIP_TR_DTLS_FLAG_UDPLITE : 0;
+	dtls->flags |= (flags & NETFN_DTLS_FLAG_UDPLITE_CSUM) ? EIP_TR_DTLS_FLAG_UDPLITE_CSUM: 0;
 	dtls->flags |= (flags & NETFN_DTLS_FLAG_CAPWAP) ? EIP_TR_DTLS_FLAG_CAPWAP : 0;
 	dtls->flags |= (flags & NETFN_DTLS_FLAG_CP_TOS) ? EIP_TR_DTLS_FLAG_CP_TOS : 0;
 	dtls->flags |= (flags & NETFN_DTLS_FLAG_CP_DF) ? EIP_TR_DTLS_FLAG_CP_DF : 0;
