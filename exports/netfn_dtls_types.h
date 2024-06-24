@@ -48,6 +48,7 @@ struct netfn_dtls_cfg {
 #define NETFN_DTLS_FLAG_CAPWAP   BIT(3)	/* set = Capwap hdr enable, clear = capwap hdr disable */
 #define NETFN_DTLS_FLAG_CP_TOS  BIT(4)	/* set = copy IP TOS value from SKB, clear = use default TOS */
 #define NETFN_DTLS_FLAG_CP_DF   BIT(5)	/* set = copy IP DF value from SKB, clear = use default DF */
+#define NETFN_DTLS_FLAG_UDPLITE_CSUM BIT(6)	/* set = header checksum only, clear = Full checksum */
 
 	__be16 version;				/* DTLS version (0xFFFE/v1.0 or 0xFDFE/v1.2) */
 	__be16 epoch;				/* Unique epoch value */
