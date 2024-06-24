@@ -437,7 +437,7 @@ typedef enum {
 	NSS_CAPWAPMGR_ERROR_DTLS_ALLOC,			/**< Failed to allocated DTLS tunnel */
 	NSS_CAPWAPMGR_ERROR_DTLS_BIND,			/**< Failed to Bind DTLS Net Device to capwap Net Device */
 	NSS_CAPWAPMGR_ERROR_STATS_GET,	 		/**< Failed to get tunnel stats */
-	NSS_CAPWAPMGR_ERROR_INVALID_CFG, 		/**< Invalid tunnel create configuration */			
+	NSS_CAPWAPMGR_ERROR_INVALID_CFG, 		/**< Invalid tunnel create configuration */
 	NSS_CAPWAPMGR_ERROR_TUN_ENABLED,	 	/**< Updating tunnel config when tunnel is enabled */
 	NSS_CAPWAPMGR_ERROR_TUN_DEINIT,			/**< Failed to Deinitialize the tunnel */
 	NSS_CAPWAPMGR_ERROR_TUN_INIT,			/**< Failed to Initialize the tunnel */
@@ -556,6 +556,7 @@ struct nss_capwap_tunnel_stats {
 #define NSS_DTLSMGR_HDR_IPV6		NETFN_DTLS_FLAG_IPV6	/**< L3 header is v6 or v4 */
 #define NSS_DTLSMGR_HDR_UDPLITE		NETFN_DTLS_FLAG_UDPLITE	/**< L4 header is UDP-Lite or UDP */
 #define NSS_DTLSMGR_HDR_CAPWAP		NETFN_DTLS_FLAG_CAPWAP	/**< CAPWAP-DTLS or DTLS header */
+#define NSS_DTLSMGR_ENCAP_UDPLITE_CSUM	NETFN_DTLS_FLAG_UDPLITE_CSUM /**< UDPlite only header checksum */
 
 /**
  * DTLS protocol version
