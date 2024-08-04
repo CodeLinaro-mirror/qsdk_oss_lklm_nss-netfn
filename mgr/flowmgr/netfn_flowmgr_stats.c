@@ -147,6 +147,8 @@ static const char * const netfn_flowmgr_debug_stats_str[] = {
 	"validate_unsupported_tuple_type",		/**< No of v4/v6 failure due to unsupported tuple type */
 	"dscp_priority_add_req",			/**< No of add dscp priority requests */
 	"dscp_priority_del_req",			/**< No of del dscp priority requests */
+	"dscp_priority_add_req_fail_inval_core_id",	/**< No of add dscp priority request fail due to invalid core id */
+	"dscp_priority_add_req_fail_inval_pri_queue",	/**< No of add dscp priority request fail due to invalid priority queue */
 	"dscp_priority_add_req_fail_no_wan_dev",	/**< No of add dscp priority request fail due to no WAN dev */
 	"dscp_priority_add_req_rule_create_fail",	/**< No of add dscp priority request fail due to rule create fail */
 	"dscp_priority_del_req_rule_destroy_fail",	/**< No of del dscp priority request fail due to rule destroy fail */

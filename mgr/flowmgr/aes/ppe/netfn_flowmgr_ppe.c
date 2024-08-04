@@ -18,6 +18,11 @@
 #include "netfn_flowmgr_ppe_ipv6.h"
 
 /*
+ * Maximum queue priority supported per core
+ */
+#define NETFN_MAX_PRI_PER_CORE  8
+
+/*
  * netfn_flowmgr_ppe_create_rule()
  *	Create ppe flow rule
  */
@@ -322,12 +327,47 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_dscp_pri_add(struct netfn_flowmgr_dscp_pri
 	struct netfn_flowmgr_debug_stats *stats;
 	struct ppe_acl_rule acl_rule = {0};
 	struct net_device *netdev = NULL;
+	int16_t queue_num = 0;
+	uint8_t core_id = 0;
+	uint8_t priority_queue = 0;
+	uint8_t ppe_queue_id = 0;
 	ppe_acl_ret_t ppe_acl_status;
 	netfn_flowmgr_ret_t status = 0;
 
 	stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_PPE];
 
 	netfn_flowmgr_stats_inc(&stats->dscp_priority_add_req);
+
+	/*
+	 * Check if the core id is valid or not
+	 */
+	core_id = dscpinfo->core_id;
+	if (core_id >= NR_CPUS) {
+		netfn_flowmgr_warn("Invalid core-id:%u\n", core_id);
+		netfn_flowmgr_stats_inc(&stats->dscp_priority_add_req_fail_inval_core_id);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_FAIL_INVALID_PARAM, 0);
+	}
+
+	/*
+	 * Check if the priority queue is valid or not
+	 */
+	priority_queue = dscpinfo->priority;
+	if (priority_queue >= NETFN_MAX_PRI_PER_CORE) {
+		netfn_flowmgr_warn("Invalid priority_queue:%u\n", priority_queue);
+		netfn_flowmgr_stats_inc(&stats->dscp_priority_add_req_fail_inval_pri_queue);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_FAIL_INVALID_PARAM, 0);
+	}
+
+	/*
+	 * Check if the src netdevice is valid or not
+	 */
+	netdev = dscpinfo->src_dev;
+	if (!netdev) {
+		netfn_flowmgr_warn("No WAN net device\n");
+		netfn_flowmgr_stats_inc(&stats->dscp_priority_add_req_fail_no_wan_dev);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_INVALID_DSCP_RULE, 0);
+	}
+
 	/*
 	 * Create acl rule
 	 */
@@ -337,34 +377,44 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_dscp_pri_add(struct netfn_flowmgr_dscp_pri
 	 * Bind the ACL rule to the WAN port
 	 */
 	acl_rule.stype = PPE_ACL_RULE_SRC_TYPE_DEV;
-        netdev = dscpinfo->src_dev;
-	if (!netdev) {
-		netfn_flowmgr_warn("No WAN net device\n");
-		netfn_flowmgr_stats_inc(&stats->dscp_priority_add_req_fail_no_wan_dev);
-		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_INVALID_DSCP_RULE, 0);
-	}
 
 	strlcpy(acl_rule.src.dev_name, netdev->name, IFNAMSIZ);
-	acl_rule.rules[PPE_ACL_RULE_MATCH_TYPE_DSCP_TC].rule.dscp_tc.l3_dscp_tc = dscpinfo->dscp_val;
+
+	/*
+	 * tos_tc_val in dscpinfo takes full 8-bit value:
+	 * IPv4 header: 8-bit ToS [DSCP(6) & ECN(2)]
+	 * IPv6 header: 8-bit TC [DSCP(6) & ECN(2)]
+	 */
+	acl_rule.rules[PPE_ACL_RULE_MATCH_TYPE_DSCP_TC].rule.tos_tc.l3_tos_tc = dscpinfo->tos_tc_val;
+
+	/*
+	 * Get base queue for a given core
+	 */
+	queue_num = ppe_drv_queue_from_core(dscpinfo->core_id);
+
+	/*
+	 * Calculate the queue based on given priority queue
+	 */
+	ppe_queue_id = queue_num + dscpinfo->priority;
+
+	netfn_flowmgr_trace("Base queue = %u, ppe_queue_id = %u", queue_num, ppe_queue_id);
 
 	/*
 	 * Action
 	 */
 	acl_rule.cmn.cmn_flags |=  PPE_ACL_RULE_CMN_FLAG_NO_RULEID;
-	acl_rule.action.flags = PPE_ACL_RULE_ACTION_FLAG_ENQUEUE_PRI_CHANGE_EN;
-	acl_rule.action.flags |= PPE_ACL_RULE_ACTION_FLAG_REDIR_TO_CORE_EN;
-	acl_rule.action.enqueue_pri = dscpinfo->priority;
-	acl_rule.action.redir_core = dscpinfo->core_id;
+	acl_rule.action.flags = PPE_ACL_RULE_ACTION_FLAG_QID_EN;
+	acl_rule.action.qid = ppe_queue_id;
 
 	/*
 	 * Call ppe acl rule create API
 	 */
 	ppe_acl_status = ppe_acl_rule_create(&acl_rule);
 	if (ppe_acl_status != PPE_ACL_RET_SUCCESS) {
-                netfn_flowmgr_warn("Failed to create ACL rule for dscp prioritization, error:%d", ppe_acl_status);
+		netfn_flowmgr_warn("Failed to create ACL rule for dscp prioritization, error:%d", ppe_acl_status);
 		netfn_flowmgr_stats_inc(&stats->dscp_priority_add_req_rule_create_fail);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_DSCP_RULE_ADD_FAILED, ppe_acl_status);
-        }
+	}
 
 	dscpinfo->rule_id = acl_rule.rule_id;
 	netfn_flowmgr_trace("DSCP priority added, rule_id = %u", dscpinfo->rule_id);
@@ -497,6 +547,8 @@ bool netfn_flowmgr_ppe_init(void)
 	ppe_ops.create_rule = netfn_flowmgr_ppe_create_rule;
 	ppe_ops.destroy_rule = netfn_flowmgr_ppe_destroy_rule;
 	ppe_ops.get_stats = netfn_flowmgr_ppe_get_stats;
+	ppe_ops.add_dscp_priority = netfn_flowmgr_ppe_dscp_pri_add;
+	ppe_ops.del_dscp_priority = netfn_flowmgr_ppe_dscp_pri_del;
 
 	/*
 	 * Register the callbacks with netfn core.
