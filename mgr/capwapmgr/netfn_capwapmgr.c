@@ -166,6 +166,28 @@ const struct file_operations netfn_capwapmgr_snap_ops = {
 };
 
 /*
+ * netfn_capwapmgr_stats_write()
+ *	Clear netfn capwapmgr statistics.
+ */
+static ssize_t netfn_capwapmgr_stats_write(struct file *filep, const char __user *buffer, size_t count, loff_t *ppos)
+{
+	struct netfn_capwapmgr *mgr = &g_mgr;
+	uint32_t reset;
+
+	if (kstrtou32_from_user(buffer, count, 0, &reset)) {
+		return -EINVAL;
+	}
+
+	if (reset != 0) {
+		return -EINVAL;
+	}
+
+	memset(&mgr->stats, 0, sizeof(struct netfn_capwapmgr_stats));
+
+	return count;
+}
+
+/*
  * netfn_capwapmgr_stats_open
  *	Open file handler for common stats debugfs.
  */
@@ -180,6 +202,7 @@ static int netfn_capwapmgr_stats_open(struct inode *inode, struct file *file)
  */
 const struct file_operations netfn_capwapmgr_stats_ops = {
 	.open = netfn_capwapmgr_stats_open,
+	.write = netfn_capwapmgr_stats_write,
 	.read = seq_read,
 	.llseek = seq_lseek,
 	.release = seq_release,

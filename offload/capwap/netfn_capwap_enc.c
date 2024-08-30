@@ -378,6 +378,31 @@ static inline bool netfn_capwap_enc_frag(struct netfn_capwap_enc *enc, struct sk
 }
 
 /*
+ * netfn_capwap_enc_stats_clear()
+ *	Clears the encap statistics
+ *
+ * TODO: Add locks for writing to encap statistics
+ */
+static ssize_t netfn_capwap_enc_stats_clear(struct file *fp, const char __user *ubuf, size_t sz, loff_t *ppos)
+{
+	struct netfn_capwap_dec *enc = fp->private_data;
+	uint32_t reset;
+
+	if (kstrtou32_from_user(ubuf, sz, 0, &reset)) {
+		return -EINVAL;
+	}
+
+	if (reset != 0) {
+		return -EINVAL;
+	}
+
+	memset(&enc->stats, 0, sizeof(struct netfn_capwap_enc_stats));
+
+	return sz;
+}
+
+
+/*
  * netfn_capwap_enc_stats_show()
  *	Prints the encap stats.
  */
@@ -426,7 +451,8 @@ static ssize_t netfn_capwap_enc_stats_show(struct file *fp, char __user *ubuf, s
 static const struct file_operations file_ops = {
 	.open = simple_open,
 	.llseek = default_llseek,
-	.read = netfn_capwap_enc_stats_show
+	.read = netfn_capwap_enc_stats_show,
+	.write = netfn_capwap_enc_stats_clear
 };
 
 /*

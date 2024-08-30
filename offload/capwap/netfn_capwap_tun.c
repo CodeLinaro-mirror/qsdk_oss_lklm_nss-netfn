@@ -440,6 +440,30 @@ static void netfn_capwap_tun_setup(struct net_device *dev)
 }
 
 /*
+ * netfn_capwap_tun_stats_clear()
+ *      Show netfn capwap tun statistics.
+ *
+ * TODO: Add locks for writing to tunnel statistics
+ */
+static ssize_t netfn_capwap_tun_stats_clear(struct file *fp, const char __user *ubuf, size_t sz, loff_t *ppos)
+{
+	struct netfn_capwap_tun *nct = fp->private_data;
+	uint32_t reset;
+
+	if (kstrtou32_from_user(ubuf, sz, 0, &reset)) {
+		return -EINVAL;
+	}
+
+	if (reset != 0) {
+		return -EINVAL;
+	}
+
+	memset(&nct->stats, 0, sizeof(struct netfn_capwap_pkt_stats));
+
+	return sz;
+}
+
+/*
  * netfn_capwap_tun_stats_show()
  *      Show netfn capwap tun statistics.
  */
@@ -493,7 +517,8 @@ static ssize_t netfn_capwap_tun_stats_show(struct file *fp, char __user *ubuf, s
 static const struct file_operations file_ops = {
 	.open = simple_open,
 	.llseek = default_llseek,
-	.read = netfn_capwap_tun_stats_show
+	.read = netfn_capwap_tun_stats_show,
+	.write = netfn_capwap_tun_stats_clear
 };
 
 /*

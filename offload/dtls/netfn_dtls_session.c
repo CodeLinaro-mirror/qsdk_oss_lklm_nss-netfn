@@ -27,6 +27,30 @@
 #include "netfn_dtls_priv.h"
 
 /*
+ * netfn_dtls_session_reset_stats()
+ *	reset the summary stats.
+ */
+static void netfn_dtls_session_reset_stats(struct netfn_dtls_session *ses)
+{
+	int words;
+	int cpu;
+	int i;
+
+	words = (sizeof(struct netfn_dtls_session_stats) / sizeof(uint64_t));
+
+	/*
+	 * All statistics are 64bit. So we can just iterate by words.
+	 */
+	for_each_possible_cpu(cpu) {
+		const struct netfn_dtls_session_stats *sp = per_cpu_ptr(ses->stats_pcpu, cpu);
+		uint64_t *sp_ptr = (uint64_t *)sp;
+
+		for (i = 0; i < words; i++, sp_ptr++)
+			*sp_ptr = 0;
+	}
+}
+
+/*
  * netfn_dtls_session_get_stats()
  *	Update the summary stats.
  */
@@ -110,12 +134,35 @@ static ssize_t netfn_dtls_session_read(struct file *fp, char __user *ubuf, size_
 }
 
 /*
+ * netfn_dtls_session_write()
+ *	Read the all Session statistics in provided buffer.
+ */
+static ssize_t netfn_dtls_session_write(struct file *fp, const char __user *ubuf, size_t sz, loff_t *ppos)
+{
+	struct netfn_dtls_session *ses = fp->private_data;
+	uint32_t reset;
+
+	if (kstrtou32_from_user(ubuf, sz, 0, &reset)) {
+		return -EINVAL;
+	}
+
+	if (reset != 0) {
+		return -EINVAL;
+	}
+
+	netfn_dtls_session_reset_stats(ses);
+
+	return sz;
+}
+
+/*
  * stats callback.
  */
 const struct file_operations netfn_dtls_ses_file_ops = {
 	.open = simple_open,
 	.llseek = default_llseek,
 	.read = netfn_dtls_session_read,
+	.write = netfn_dtls_session_write
 };
 
 /*
@@ -184,15 +231,6 @@ static void netfn_dtls_session_fill_tr(struct netfn_dtls_cfg *cfg, netfn_tuple_t
 		dtls->dst_ip[3] = t5->dest_ip.ip6.s6_addr32[3];
 	}
 }
-
-/*
- * stats callback.
- */
-const struct file_operations netfn_dtls_session_file_ops = {
-	.open = simple_open,
-	.llseek = default_llseek,
-	.read = netfn_dtls_session_read,
-};
 
 /*
  * netfn_dtls_session_get_overhead()
