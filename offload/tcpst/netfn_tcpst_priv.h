@@ -1,0 +1,92 @@
+/*
+ * netfn_tcpst_priv.h
+ *	Netfn TCP Speedtest private header
+ *
+ * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ *
+ * Permission to use, copy, modify, and/or distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+#ifndef __NETFN_TCPST_PRIV_H
+#define __NETFN_TCPST_PRIV_H
+
+#include <linux/in.h>
+#include <linux/in6.h>
+#include <linux/uio.h>
+
+#include <net/sock.h>
+
+#include <netfn_tcpst.h>
+#include <netfn_types.h>
+#include <ppe_vp_public.h>
+
+#define NETFN_TCPST_HTTP_RESPONSE_LEN 8192
+#define NETFN_TCPST_BUF_LEN (128 * 1024)
+
+/*
+ * Global tcp speedtest object
+ */
+extern struct netfn_tcpst g_tcpst;
+
+/*
+ * netfn_tcpst_stats_ext
+ *	Extended debug statistics
+ */
+struct netfn_tcpst_stats_ext {
+	uint64_t vp_rx_pkts;			/* Total VP pkts received */
+	uint64_t vp_rx_bytes;			/* Total VP bytes received */
+	uint64_t dst_miss_pkts;			/* Total times dst wasn't found */
+	uint64_t test_rx_pkts;			/* Total test pkts rcvd */
+	uint64_t test_rx_bytes;			/* Total test bytes rcvd */
+	uint64_t test_tx_pkts;			/* Total test pkts sent */
+	uint64_t test_tx_bytes;			/* Total test bytes sent */
+};
+
+/*
+ * netfn_tcpst_conn
+ *	Per connection object
+ */
+struct netfn_tcpst_conn {
+	struct socket *sock;			/* Socket used for this flow */
+	struct hrtimer hrtimer;			/* Speedtest control timer */
+	struct work_struct work;		/* Work */
+	struct netfn_tcpst_http http;		/* HTTP configuration */
+	struct netfn_tcpst_stats stats;		/* Debug statistics per connection */
+	struct netfn_tcpst_stats_ext ext_stats;	/* Extended debug statistcs per connection */
+	uint16_t offset;			/* Offset duration for test */
+	uint16_t duration;			/* Duration of the test */
+};
+
+/*
+ * netfn_tcpst_ctx
+ *	Test context info
+ */
+struct netfn_tcpst_ctx {
+	struct netfn_tcpst_conn conn[NR_CPUS];	/* Connections */
+	enum netfn_tcpst_state state;		/* State of the test */
+	struct workqueue_struct *wq;		/* Workqueue for all workers */
+	struct net_device *vp_dev;		/* VP netdev */
+	ppe_vp_num_t vp_num;			/* VP number associated with netdev */
+	int num_conns;				/* Total connections started */
+};
+
+/*
+ * netfn_tcpst
+ *	Global driver object
+ */
+struct netfn_tcpst {
+	struct netfn_tcpst_ctx __rcu *ctx;		/* Context per test run */
+	struct dentry *dentry;				/* Debug entry for tcp speedtest */
+	int (*proto_handler)(struct sk_buff *skb);	/* Protocol handler */
+};
+
+#endif
