@@ -365,14 +365,20 @@ bool netfn_pkt_steer_enable(struct netfn_pkt_steer *ps)
 
 		pcpu->ps = ps;
 		pcpu->cb = info->cb;
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
 		pcpu->csd.flags = 0;
+#endif
 		pcpu->csd.info = pcpu;
 		pcpu->csd.func = netfn_pkt_steer_rcv_ipi;
 		atomic_set(&pcpu->ipi_queued, 0);
 		atomic_set(&pcpu->ipi_masked, 0);
 		atomic_set(&pcpu->queued, 0);
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
 		netif_napi_add(info->dev, &pcpu->napi, netfn_pkt_steer_rcv_poll, info->budget);
+#else
+		netif_napi_add_weight(info->dev, &pcpu->napi, netfn_pkt_steer_rcv_poll, info->budget);
+#endif
 		napi_enable(&pcpu->napi);
 
 		pr_info("%s:Enabled pkt_steer for cpu(%u)\n", info->dev->name, cpu);

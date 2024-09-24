@@ -172,7 +172,7 @@ bool netfn_flowmgr_sfe_init(void)
 	/*
 	 * Register the callbacks with netfn core.
 	 */
-	netfn_flowmgr_ae_ops_register(NETFN_FLOWMGR_ACCEL_MODE_SFE, &sfe_ops);
+	netfn_flowmgr_ae_ops_register(NETFN_FLOWMGR_AE_TYPE_SFE, &sfe_ops);
 
 	if (!netfn_flowmgr_sfe_ipv4_init()) {
 		netfn_flowmgr_warn("Netfn flowmgr SFE IPv4 initialization failed\n");

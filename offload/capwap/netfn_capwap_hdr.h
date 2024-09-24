@@ -20,6 +20,7 @@
 #define __NETFN_CAPWAP_HDR_H
 
 #include <linux/ieee80211.h>
+#include <linux/if_vlan.h>
 
 /*
  * First word

@@ -282,7 +282,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_destroy_v4_rule(struct netfn_flowmgr_destr
 	/*
 	 * Destroy the SFE connection cache entry.
 	 */
-	sfe_status = sfe_ipv4_tx_with_resp(NULL, nim);
+	sfe_status =(sfe_tx_status_t)sfe_ipv4_tx_with_resp(NULL, nim);
 	if (sfe_status != SFE_TX_SUCCESS) {
 		netfn_flowmgr_warn("SFE rule destroy failed with error: %u\n", sfe_status);
 		netfn_flowmgr_stats_inc(&stats->v4_destroy_rule_req_fail_sfe_fail);
@@ -1129,7 +1129,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_create_v4_rule(struct netfn_flowmgr_create
 				nircm->dscp_rule.flow_dscp,
 				nircm->dscp_rule.return_dscp);
 
-	sfe_status = sfe_ipv4_tx_with_resp(NULL, nim);
+	sfe_status = (sfe_tx_status_t)sfe_ipv4_tx_with_resp(NULL, nim);
 	if (sfe_status != SFE_TX_SUCCESS) {
 		netfn_flowmgr_warn("SFE rule create failed with error: %u\n", sfe_status);
 		netfn_flowmgr_stats_inc(&stats->v4_create_rule_req_fail_sfe_fail);

@@ -17,6 +17,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <linux/version.h>
 #include <linux/skbuff.h>
 #include <linux/inetdevice.h>
 #include <linux/etherdevice.h>
@@ -408,6 +409,9 @@ static void netfn_capwap_tun_destructor(struct net_device *dev)
  */
 static void netfn_capwap_tun_setup(struct net_device *dev)
 {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+	uint8_t eth_addr[ETH_ALEN];
+#endif
 	dev->addr_len = ETH_ALEN;
 	dev->mtu = ETH_DATA_LEN;
 	dev->hard_header_len = NETFN_CAPWAP_MAX_HDR_SZ;
@@ -423,7 +427,12 @@ static void netfn_capwap_tun_setup(struct net_device *dev)
 	/*
 	 * Get the MAC address from the ethernet device
 	 */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
 	random_ether_addr(dev->dev_addr);
+#else
+	eth_random_addr(eth_addr);
+	dev_addr_set(dev, eth_addr);
+#endif
 	memset(dev->broadcast, 0xff, dev->addr_len);
 	memcpy(dev->perm_addr, dev->dev_addr, dev->addr_len);
 

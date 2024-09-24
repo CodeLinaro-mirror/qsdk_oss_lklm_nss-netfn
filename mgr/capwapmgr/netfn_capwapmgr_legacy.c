@@ -1,7 +1,7 @@
 /*
  **************************************************************************
  * Copyright (c) 2014-2021, The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2023,2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2022-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -455,7 +455,7 @@ void netfn_capwapmgr_stats2legacy_stats(struct netfn_capwap_tun_stats *netfn_sta
 	/*
 	 * Get pkt stats.
 	 */
-	memcpy(&legacy_stats->pnode_stats, &netfn_stats->pkts, sizeof(struct netfn_capwap_pkt_stats));
+	memcpy(&legacy_stats->pnode_stats, &netfn_stats->pkts, sizeof(struct nss_capwap_pn_stats));
 
       /*
        * Convert decap stats.

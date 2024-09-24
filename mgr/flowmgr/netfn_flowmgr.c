@@ -9,10 +9,13 @@
  * netfn_flowmgr.c
  *      Network function manager
  */
+#include <linux/version.h>
 #include <linux/types.h>
 #include <linux/module.h>
 #include <linux/skbuff.h>
 #include <linux/etherdevice.h>
+#include <linux/sysctl.h>
+
 #include "netfn_flowmgr_priv.h"
 #include "aes/ppe/netfn_flowmgr_ppe.h"
 #include "aes/sfe/netfn_flowmgr_sfe.h"
@@ -531,6 +534,7 @@ static struct ctl_table netfn_flowmgr_sub[] = {
 	{}
 };
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
 /*
  * netfn_flowmgr_main
  *      Netfn flowmgr main directory
@@ -556,7 +560,7 @@ static struct ctl_table netfn_flowmgr_root[] = {
 	},
 	{}
 };
-
+#endif
 
 /*
  * netfn_flowmgr_ae_deinit()
@@ -642,7 +646,11 @@ static int __init netfn_flowmgr_init_module(void)
 	 * Register sysctl framework
 	 * TODO: Change the sysctl regsitration as per the newer kernel.
 	 */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
 	netfn_flowmgr_gbl.netfn_flowmgr_header = register_sysctl_table(netfn_flowmgr_root);
+#else
+	netfn_flowmgr_gbl.netfn_flowmgr_header = register_sysctl("netfn/flowmgr/", netfn_flowmgr_sub);
+#endif
 	if (!netfn_flowmgr_gbl.netfn_flowmgr_header) {
 		netfn_flowmgr_warn("sysctl table configuration failed");
 		return -EINVAL;
