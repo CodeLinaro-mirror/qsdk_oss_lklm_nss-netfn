@@ -152,15 +152,48 @@ EXPORT_SYMBOL(netfn_flowmgr_rule_decel);
  */
 netfn_flowmgr_ret_t netfn_flowmgr_dscp_pri_add(struct netfn_flowmgr_dscp_priority *dscpinfo, netfn_flowmgr_accel_mode_t mode)
 {
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+	netfn_flowmgr_ret_t status = 0;
+
+	if (!dscpinfo) {
+		netfn_flowmgr_warn("dscpinfo is NULL\n");
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_FAIL_INVALID_PARAM, 0);
+	}
+
 	/*
-	 * Check if the AE is PPE or not
+	 * AE mode should either be PPE or SFE
 	 */
-	if (mode != NETFN_FLOWMGR_ACCEL_MODE_PPE) {
-		netfn_flowmgr_warn("Invalid accel mode, it should be PPE\n");
+	if ((mode != NETFN_FLOWMGR_ACCEL_MODE_PPE) && (mode != NETFN_FLOWMGR_ACCEL_MODE_SFE)) {
+		netfn_flowmgr_warn("Invalid accel mode\n");
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_INVALID_ACCEL_MODE, 0);
 	}
 
-	return netfn_flowmgr_ppe_dscp_pri_add(dscpinfo);
+	/*
+	 * Ops should be registered
+	 */
+	if (f->ae_ops[mode] == NULL) {
+		netfn_flowmgr_warn("Ops not registerd for mode = %d\n", mode);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_OPS_NOT_REGISTERED, 0);
+	}
+
+	/*
+	 * Check if add dscp priority ops is valid
+	 */
+	if (f->ae_ops[mode]->add_dscp_priority == NULL) {
+		netfn_flowmgr_warn("add dscp priority not registered for mode = %d\n", mode);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_OPS_NOT_REGISTERED, 0);
+	}
+
+	/*
+	 * Call add dscp priority callback function registered by AEs
+	 * If status is non-zero that means rule add is failed and it
+	 * will contain both errors (AE specific error and Netfn error)
+	 */
+	status = f->ae_ops[mode]->add_dscp_priority(dscpinfo);
+	if (status)
+		netfn_flowmgr_warn("Add DSCP priority failed\n");
+
+	return status;
 }
 EXPORT_SYMBOL(netfn_flowmgr_dscp_pri_add);
 
@@ -170,15 +203,43 @@ EXPORT_SYMBOL(netfn_flowmgr_dscp_pri_add);
  */
 netfn_flowmgr_ret_t netfn_flowmgr_dscp_pri_del(int16_t rule_id, netfn_flowmgr_accel_mode_t mode)
 {
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+	netfn_flowmgr_ret_t status = 0;
+
 	/*
-	 * Check if the AE is PPE or not
+	 * AE mode should either be PPE or SFE
 	 */
-	if (mode != NETFN_FLOWMGR_ACCEL_MODE_PPE) {
-		netfn_flowmgr_warn("Invalid accel mode, it should be PPE\n");
+	if ((mode != NETFN_FLOWMGR_ACCEL_MODE_PPE) && (mode != NETFN_FLOWMGR_ACCEL_MODE_SFE)) {
+		netfn_flowmgr_warn("Invalid accel mode\n");
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_INVALID_ACCEL_MODE, 0);
 	}
 
-	return netfn_flowmgr_ppe_dscp_pri_del(rule_id);
+	/*
+	 * Ops should be registered
+	 */
+	if (f->ae_ops[mode] == NULL) {
+		netfn_flowmgr_warn("Ops not registerd for mode = %d\n", mode);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_OPS_NOT_REGISTERED, 0);
+	}
+
+	/*
+	 * Check if del dscp priority ops is valid
+	 */
+	if (f->ae_ops[mode]->del_dscp_priority == NULL) {
+		netfn_flowmgr_warn("del dscp priority not registered for mode = %d\n", mode);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_OPS_NOT_REGISTERED, 0);
+	}
+
+	/*
+	 * Call delete dscp priority callback function registered by AEs
+	 * If status is non-zero that means rule delete is failed and it
+	 * will contain both errors (AE specific error and Netfn error)
+	 */
+	status = f->ae_ops[mode]->del_dscp_priority(rule_id);
+	if (status)
+		netfn_flowmgr_warn("Delete DSCP priority failed\n");
+
+	return status;
 }
 EXPORT_SYMBOL(netfn_flowmgr_dscp_pri_del);
 
@@ -379,6 +440,8 @@ bool netfn_flowmgr_ae_ops_register(netfn_flowmgr_ae_type_t ae_type, struct netfn
 	ae_ops->create_rule = ops->create_rule;
 	ae_ops->destroy_rule = ops->destroy_rule;
 	ae_ops->get_stats = ops->get_stats;
+	ae_ops->add_dscp_priority = ops->add_dscp_priority;
+	ae_ops->del_dscp_priority = ops->del_dscp_priority;
 
 	/*
 	 * Storing the ops in global structure pointer

@@ -355,7 +355,8 @@ struct netfn_flowmgr_skb_mark_rule {
  *	Netfn flowmgr dscp priority info
  */
 struct netfn_flowmgr_dscp_priority {
-	uint8_t dscp_val;			/**< DSCP value */
+	uint8_t tos_tc_val;			/**< ToS/TC value IPv4 header: 8-bit ToS [DSCP(6) & ECN(2)]*/
+						/**< ToS/TC value IPv6 header: 8-bit TC [DSCP(6) & ECN(2)]*/
 	uint8_t priority;			/**< Priority */
         struct net_device *src_dev;		/**< Source dev */
 	uint8_t core_id;			/**< Core to which the packet has to be redirected */

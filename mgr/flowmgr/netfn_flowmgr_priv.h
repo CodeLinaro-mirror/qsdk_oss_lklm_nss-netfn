@@ -86,6 +86,8 @@ struct netfn_flowmgr_ae_ops {
 	netfn_flowmgr_ret_t (*create_rule)(struct netfn_flowmgr_create_rule *original, struct netfn_flowmgr_create_rule *reply);   /* Function pointer to create flow rule */
 	netfn_flowmgr_ret_t (*destroy_rule)(struct netfn_flowmgr_destroy_rule *original, struct netfn_flowmgr_destroy_rule *reply);  /* Function pointer to destroy flow rule */
 	netfn_flowmgr_ret_t (*get_stats)(struct netfn_flowmgr_flow_conn_stats *conn_stats);  /* Function pointer to get stats of a single flow based on 5 tuple */
+	netfn_flowmgr_ret_t (*add_dscp_priority)(struct netfn_flowmgr_dscp_priority *dscpinfo);  /* Function pointer to add dscp priority */
+	netfn_flowmgr_ret_t (*del_dscp_priority)(int16_t rule_id);  /* Function pointer to delete dscp priority */
 };
 
 /*
