@@ -81,6 +81,9 @@ static struct genl_family netfn_auto_capwapmgr_genl_family = {
 	.module		= THIS_MODULE,
 	.ops		= capwapmgr_genl_ops,
 	.n_ops		= ARRAY_SIZE(capwapmgr_genl_ops),
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+	.resv_start_op  = NETFN_AUTO_CAPWAPMGR_CMD_MAX,
+#endif
 };
 
 
