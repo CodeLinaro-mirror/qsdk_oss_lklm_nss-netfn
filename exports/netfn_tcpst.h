@@ -59,6 +59,7 @@ enum netfn_tcpst_state {
 	NETFN_TCPST_STATE_ABORTED,		/* Test is aborted */
 	NETFN_TCPST_STATE_INPROGRESS,		/* Test is in progress */
 	NETFN_TCPST_STATE_COMPLETED,		/* Test has completed */
+	NETFN_TCPST_STATE_STOPPED,		/* Test has been stopped */
 };
 
 /*
@@ -159,6 +160,7 @@ struct netfn_tcpst_cfg {
 		struct netfn_tcpst_raw raw;	/* General test params */
 	};
 
+	uint64_t buf_len;			/* Buffer length to configure */
 	uint32_t duration;         		/* Test Duration in seconds */
 	uint32_t offset;           		/* Start offset for test result capture in seconds */
 	uint8_t conn;       			/* Total connections */

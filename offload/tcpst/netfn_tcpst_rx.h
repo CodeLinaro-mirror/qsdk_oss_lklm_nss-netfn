@@ -19,7 +19,7 @@
 #ifndef __NETFN_TCPST_RX_H
 #define __NETFN_TCPST_RX_H
 
-bool netfn_tcpst_rx_vp_v4(struct ppe_vp_cb_info *info, void *cb_data);
-bool netfn_tcpst_rx_vp_v6(struct ppe_vp_cb_info *info, void *cb_data);
-void netfn_tcpst_http_rx(struct work_struct *work);
+bool netfn_tcpst_rx_vp4(struct ppe_vp_cb_info *info, void *cb_data);
+bool netfn_tcpst_rx_vp6(struct ppe_vp_cb_info *info, void *cb_data);
+void netfn_tcpst_http_get_work(struct work_struct *work);
 #endif

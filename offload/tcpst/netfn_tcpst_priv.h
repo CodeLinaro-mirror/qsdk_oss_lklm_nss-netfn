@@ -24,13 +24,16 @@
 #include <linux/uio.h>
 
 #include <net/sock.h>
+#include <net/protocol.h>
 
 #include <netfn_tcpst.h>
 #include <netfn_types.h>
 #include <ppe_vp_public.h>
 
-#define NETFN_TCPST_HTTP_RESPONSE_LEN 8192
-#define NETFN_TCPST_BUF_LEN (128 * 1024)
+#define NETFN_TCPST_HTTP_RESPONSE_LEN 8192	/* Max response length expected */
+#define NETFN_TCPST_BUF_LEN (128 * 1024)	/* Buffer length used for tx/rx */
+#define NETFN_TCPST_TIMER_FWD_BIT 1		/* Indicates if timer is forwarded or not */
+#define NETFN_TCPST_TIMER_COMP_BIT 2		/* Indicates if timer has completed or not */
 
 /*
  * Global tcp speedtest object
@@ -56,6 +59,7 @@ struct netfn_tcpst_stats_ext {
  *	Per connection object
  */
 struct netfn_tcpst_conn {
+	struct netfn_tcpst_ctx *ctx;		/* Pointer to context */
 	struct socket *sock;			/* Socket used for this flow */
 	struct hrtimer hrtimer;			/* Speedtest control timer */
 	struct work_struct work;		/* Work */
@@ -66,8 +70,10 @@ struct netfn_tcpst_conn {
 
 	struct netfn_tcpst_stats stats;		/* Debug statistics per connection */
 	struct netfn_tcpst_stats_ext ext_stats;	/* Extended debug statistcs per connection */
+	unsigned long timer_state;		/* Maintains state of timer */
 	uint16_t offset;			/* Offset duration for test */
 	uint16_t duration;			/* Duration of the test */
+	char *buf;				/* Buffer for tx/rx */
 };
 
 /*
@@ -92,5 +98,27 @@ struct netfn_tcpst {
 	struct mutex lock;			/* Global lock */
 	struct dentry *dentry;			/* Debug entry for tcp speedtest */
 };
+
+/*
+ * netfn_tcpst_state_set()
+ *	Sets the state for context
+ */
+static inline enum netfn_tcpst_state netfn_tcpst_state_set(struct netfn_tcpst_ctx *ctx, enum netfn_tcpst_state new,
+		enum netfn_tcpst_state old)
+{
+	/*
+	 * If the context is already removed we are already aborted
+	 */
+	return cmpxchg(&ctx->state, old, new);
+}
+
+/*
+ * netfn_tcpst_state_get()
+ *	Gets the state of context
+ */
+static inline enum netfn_tcpst_state netfn_tcpst_state_get(struct netfn_tcpst_ctx *ctx)
+{
+	return READ_ONCE(ctx->state);
+}
 
 #endif

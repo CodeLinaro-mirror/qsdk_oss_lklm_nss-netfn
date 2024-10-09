@@ -118,7 +118,7 @@ static struct netfn_tcpst_result *netfn_tcpst_get_result(struct netfn_tcpst_ctx 
 	int cpu;
 
 	result->error = NETFN_TCPST_ERR_NONE;
-	result->state = ctx->state;
+	result->state = netfn_tcpst_state_get(ctx);
 
 	stats->http.bom_time = U64_MAX;
 	stats->http.rom_time = U64_MAX;
@@ -203,6 +203,7 @@ static void netfn_tcpst_conn_deinit_all(struct netfn_tcpst_ctx *ctx)
 		netfn_tcpst_ppe_decel(conn->sock->sk);
 		kernel_sock_shutdown(conn->sock, SHUT_RDWR);
 		sock_release(conn->sock);
+		vfree(conn->buf);
 		WRITE_ONCE(conn->sock, NULL);
 	}
 }
@@ -216,11 +217,27 @@ static enum netfn_tcpst_err netfn_tcpst_conn_init(struct netfn_tcpst_ctx *ctx, s
 	struct sockaddr_in local_in = {0}, remote_in = {0};
 	struct netfn_tcpst_server *remote = &cfg->remote;
 	struct netfn_tcpst_conn *conn = &ctx->conn[cpu];
+	struct netfn_tcpst_stats *stats = &conn->stats;
 	struct sockaddr *local_sa, *remote_sa;
 	enum netfn_tcpst_err err;
 	struct socket *sock;
 	int status = 0;
 	int addrlen;
+
+	/*
+	 * Allocate memory for dummy buffer used for tx/rx
+	 */
+	cfg->buf_len = !cfg->buf_len ? NETFN_TCPST_BUF_LEN : cfg->buf_len;
+	conn->buf = vzalloc(cfg->buf_len);
+	if (!conn->buf) {
+		pr_err("%px: Failed to allocate dummy buffer\n", conn);
+		return NETFN_TCPST_ERR_NOMEM;
+	}
+
+	/*
+	 * Set buf memory to dummy data
+	 */
+	memset(conn->buf, 'c', sizeof(conn->buf));
 
 	/*
 	 * Initialize test specific parameters used in scheduled work.
@@ -282,6 +299,11 @@ static enum netfn_tcpst_err netfn_tcpst_conn_init(struct netfn_tcpst_ctx *ctx, s
 	}
 
 	/*
+	 * Record the TCP request time
+	 */
+	stats->tcp_open.request_time = ktime_get_real_ns();
+
+	/*
 	 * Connect Socket to remote ip.
 	 */
 	status = kernel_connect(sock, remote_sa, addrlen, 0);
@@ -291,6 +313,11 @@ static enum netfn_tcpst_err netfn_tcpst_conn_init(struct netfn_tcpst_ctx *ctx, s
 		goto free_sock;
 	}
 
+	/*
+	 * Record the TCP response time
+	 */
+	stats->tcp_open.response_time = ktime_get_real_ns();
+
 	if (!netfn_tcpst_ppe_accel(sock->sk, ctx->vp_dev)) {
 		pr_err("%px: Failed to accelerate Rule", conn);
 		status = NETFN_TCPST_ERR_FLOW;
@@ -298,11 +325,15 @@ static enum netfn_tcpst_err netfn_tcpst_conn_init(struct netfn_tcpst_ctx *ctx, s
 	}
 
 	WRITE_ONCE(conn->sock, sock);
+	conn->duration = cfg->duration;
+	conn->offset = cfg->offset;
+	conn->timer_state = 0;
+	conn->ctx = ctx;
 
 	/*
 	 * Connection uses timer for statistics offset and test duration control.
 	 */
-	hrtimer_init(&conn->hrtimer, CLOCK_MONOTONIC, HRTIMER_MODE_ABS_HARD);
+	hrtimer_init(&conn->hrtimer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 
 	return NETFN_TCPST_ERR_NONE;
 
@@ -357,6 +388,11 @@ static struct netfn_tcpst_ctx *netfn_tcpst_ctx_alloc(struct netfn_tcpst_cfg *cfg
 		return NULL;
 	}
 
+	/*
+	 * Set the state to not running
+	 */
+	netfn_tcpst_state_set(ctx, NETFN_TCPST_STATE_NOT_RUNNING, netfn_tcpst_state_get(ctx));
+
 	ctx->vp_dev = alloc_netdev(0, "tcpst", NET_NAME_ENUM, netfn_tcpst_netdev_setup);
 	if (!ctx->vp_dev) {
 		pr_err("%p:Failed to allocate netdevice\n", ctx);
@@ -372,7 +408,7 @@ static struct netfn_tcpst_ctx *netfn_tcpst_ctx_alloc(struct netfn_tcpst_cfg *cfg
 	vpai.dst_cb_data = ctx;
 	vpai.src_cb = NULL;
 	vpai.src_cb_data = NULL;
-	vpai.dst_cb = (cfg->remote.ip_version == IPVERSION) ? netfn_tcpst_rx_vp_v4 : netfn_tcpst_rx_vp_v6;
+	vpai.dst_cb = (cfg->remote.ip_version == IPVERSION) ? netfn_tcpst_rx_vp4 : netfn_tcpst_rx_vp6;
 
 	ctx->vp_num = ppe_vp_alloc(ctx->vp_dev, &vpai);
 	if (ctx->vp_num < 0) {
@@ -451,7 +487,7 @@ enum netfn_tcpst_state netfn_tcpst_get_stats(struct netfn_tcpst_stats *stats)
 		stats->test_bytes.rcvd += conn_stats->test_rx_bytes;
 	}
 
-	state = READ_ONCE(ctx->state);
+	state = netfn_tcpst_state_get(ctx);
 	rcu_read_unlock_bh();
 
 	return state;
@@ -490,11 +526,11 @@ enum netfn_tcpst_state netfn_tcpst_start(struct netfn_tcpst_cfg *cfg)
 
 	switch (cfg->test) {
 	case NETFN_TCPST_TEST_HTTP_UPLOAD:
-		work_cb = netfn_tcpst_http_tx;
+		work_cb = netfn_tcpst_http_put_work;
 		break;
 
 	case NETFN_TCPST_TEST_HTTP_DOWNLOAD:
-		work_cb = netfn_tcpst_http_rx;
+		work_cb = netfn_tcpst_http_get_work;
 		break;
 
 	default:
@@ -513,8 +549,8 @@ enum netfn_tcpst_state netfn_tcpst_start(struct netfn_tcpst_cfg *cfg)
 		goto unlock;
 	}
 
-	WRITE_ONCE(ctx->state, NETFN_TCPST_STATE_INPROGRESS);
-	state = NETFN_TCPST_STATE_INPROGRESS;
+	netfn_tcpst_state_set(ctx, NETFN_TCPST_STATE_INPROGRESS, NETFN_TCPST_STATE_NOT_RUNNING);
+	state = netfn_tcpst_state_get(ctx);
 	rcu_assign_pointer(tcpst->ctx, ctx);
 
 	/*
@@ -540,7 +576,6 @@ enum netfn_tcpst_state netfn_tcpst_stop(netfn_tcpst_comp_t cb, void *app_data)
 {
 	struct netfn_tcpst *tcpst = &g_tcpst;
 	struct netfn_tcpst_result res = {0};
-	enum netfn_tcpst_state state;
 	struct netfn_tcpst_ctx *ctx;
 	int cpu;
 
@@ -553,7 +588,6 @@ enum netfn_tcpst_state netfn_tcpst_stop(netfn_tcpst_comp_t cb, void *app_data)
 		return NETFN_TCPST_STATE_NOT_RUNNING;
 	}
 
-	state = READ_ONCE(ctx->state);
 	RCU_INIT_POINTER(tcpst->ctx, NULL);
 	mutex_unlock(&tcpst->lock);
 	synchronize_net();
@@ -579,11 +613,16 @@ enum netfn_tcpst_state netfn_tcpst_stop(netfn_tcpst_comp_t cb, void *app_data)
 		cb(app_data, netfn_tcpst_get_result(ctx, &res));
 
 	/*
+	 * Set state to stopped
+	 */
+	netfn_tcpst_state_set(ctx, NETFN_TCPST_STATE_STOPPED, netfn_tcpst_state_get(ctx));
+
+	/*
 	 * We are done with the test, Free the context.
 	 */
 	netfn_tcpst_ctx_free(ctx);
 
-	return state;
+	return NETFN_TCPST_STATE_STOPPED;
 }
 EXPORT_SYMBOL(netfn_tcpst_stop);
 
