@@ -371,7 +371,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_dscp_pri_add(struct netfn_flowmgr_dscp_pri
 	/*
 	 * Create acl rule
 	 */
-	acl_rule.valid_flags |= PPE_ACL_RULE_MATCH_TYPE_DSCP_TC_VALID;
+	acl_rule.valid_flags |= PPE_ACL_RULE_MATCH_TYPE_TOS_TC_VALID;
 
 	/*
 	 * Bind the ACL rule to the WAN port
@@ -385,7 +385,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_dscp_pri_add(struct netfn_flowmgr_dscp_pri
 	 * IPv4 header: 8-bit ToS [DSCP(6) & ECN(2)]
 	 * IPv6 header: 8-bit TC [DSCP(6) & ECN(2)]
 	 */
-	acl_rule.rules[PPE_ACL_RULE_MATCH_TYPE_DSCP_TC].rule.tos_tc.l3_tos_tc = dscpinfo->tos_tc_val;
+	acl_rule.rules[PPE_ACL_RULE_MATCH_TYPE_TOS_TC].rule.tos_tc.l3_tos_tc = dscpinfo->tos_tc_val;
 
 	/*
 	 * Get base queue for a given core
