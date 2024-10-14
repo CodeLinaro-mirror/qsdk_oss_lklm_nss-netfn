@@ -58,8 +58,7 @@ enum netfn_tcpst_state {
 	NETFN_TCPST_STATE_NOT_RUNNING,		/* Test is not running */
 	NETFN_TCPST_STATE_ABORTED,		/* Test is aborted */
 	NETFN_TCPST_STATE_INPROGRESS,		/* Test is in progress */
-	NETFN_TCPST_STATE_TIMEOUT,		/* Test ended due to timeout */
-	NETFN_TCPST_STATE_EOM,			/* Test ended due to no data left to send/receive */
+	NETFN_TCPST_STATE_COMPLETED,		/* Test has completed */
 };
 
 /*
@@ -187,9 +186,9 @@ typedef void (*netfn_tcpst_comp_t) (void *app_data, struct netfn_tcpst_result *r
  * @cfg[in] TCP speedtest configuration
  *
  * @return
- * Error status of netfn_tcpst_start
+ * State of test
  */
-enum netfn_tcpst_err netfn_tcpst_start(struct netfn_tcpst_cfg *cfg);
+enum netfn_tcpst_state netfn_tcpst_start(struct netfn_tcpst_cfg *cfg);
 
 /*
  * netfn_tcpst_stop()
@@ -199,9 +198,9 @@ enum netfn_tcpst_err netfn_tcpst_start(struct netfn_tcpst_cfg *cfg);
  * @void*[in] Application data
  *
  * @return
- * Error status of netfn_tcpst_stop
+ * State of test
  */
-enum netfn_tcpst_err netfn_tcpst_stop(netfn_tcpst_comp_t cb, void *app_data);
+enum netfn_tcpst_state netfn_tcpst_stop(netfn_tcpst_comp_t cb, void *app_data);
 
 /*
  * netfn_tcpst_get_stats()
@@ -210,9 +209,9 @@ enum netfn_tcpst_err netfn_tcpst_stop(netfn_tcpst_comp_t cb, void *app_data);
  * @stats[in] Stats to be prepared and returned back
  *
  * @return
- * Error status of netfn_tcpst_get_stats
+ * State of test
  */
-enum netfn_tcpst_err netfn_tcpst_get_stats(struct netfn_tcpst_stats *stats);
+enum netfn_tcpst_state netfn_tcpst_get_stats(struct netfn_tcpst_stats *stats);
 
 #endif /* __KERNEL__ */
 #endif /* __NETFN_TCPST_TYPES_H */

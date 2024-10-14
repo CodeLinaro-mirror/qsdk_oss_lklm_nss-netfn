@@ -59,7 +59,11 @@ struct netfn_tcpst_conn {
 	struct socket *sock;			/* Socket used for this flow */
 	struct hrtimer hrtimer;			/* Speedtest control timer */
 	struct work_struct work;		/* Work */
-	struct netfn_tcpst_http http;		/* HTTP configuration */
+	union {
+		struct netfn_tcpst_http http;	/* HTTP configuration */
+		struct netfn_tcpst_raw raw;	/* RAW TCP test configuration */
+	};
+
 	struct netfn_tcpst_stats stats;		/* Debug statistics per connection */
 	struct netfn_tcpst_stats_ext ext_stats;	/* Extended debug statistcs per connection */
 	uint16_t offset;			/* Offset duration for test */
@@ -84,9 +88,9 @@ struct netfn_tcpst_ctx {
  *	Global driver object
  */
 struct netfn_tcpst {
-	struct netfn_tcpst_ctx __rcu *ctx;		/* Context per test run */
-	struct dentry *dentry;				/* Debug entry for tcp speedtest */
-	int (*proto_handler)(struct sk_buff *skb);	/* Protocol handler */
+	struct netfn_tcpst_ctx __rcu *ctx;	/* Context per test run */
+	struct mutex lock;			/* Global lock */
+	struct dentry *dentry;			/* Debug entry for tcp speedtest */
 };
 
 #endif
