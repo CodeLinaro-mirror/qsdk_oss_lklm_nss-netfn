@@ -462,6 +462,9 @@ const struct file_operations netfn_dtls_tun_file_ops = {
  */
 static void netfn_dtls_tun_setup(struct net_device *dev)
 {
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+	uint8_t eth_addr[ETH_ALEN];
+#endif
 	dev->addr_len = ETH_ALEN;
 	dev->mtu = ETH_DATA_LEN;
 
@@ -479,7 +482,12 @@ static void netfn_dtls_tun_setup(struct net_device *dev)
 	/*
 	 * Assign random ethernet address.
 	 */
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
 	random_ether_addr(dev->dev_addr);
+#else
+	eth_random_addr(eth_addr);
+	dev_addr_set(dev, eth_addr);
+#endif
 	memset(dev->broadcast, 0xff, dev->addr_len);
 	memcpy(dev->perm_addr, dev->dev_addr, dev->addr_len);
 }

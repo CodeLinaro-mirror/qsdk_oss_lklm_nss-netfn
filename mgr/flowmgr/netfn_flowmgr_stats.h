@@ -144,9 +144,11 @@ struct netfn_flowmgr_debug_stats {
 	atomic64_t validate_unsupported_tuple_type;		/**< No of v4/v6 failure due to unsupported tuple type */
 	atomic64_t dscp_priority_add_req;			/**< No of add dscp priority requests */
 	atomic64_t dscp_priority_del_req;			/**< No of del dscp priority requests */
-	atomic64_t dscp_priority_add_req_fail_no_wan_dev;	/**< No of add dscp priority request fail due to no WAN dev  */
-	atomic64_t dscp_priority_add_req_rule_create_fail;	/**< No of add dscp priority request fail due to rule create fail  */
-	atomic64_t dscp_priority_del_req_rule_destroy_fail;	/**< No of del dscp priority request fail due to rule destroy fail  */
+	atomic64_t dscp_priority_add_req_fail_inval_core_id;	/**< No of add dscp priority request fail due to invalid core id */
+	atomic64_t dscp_priority_add_req_fail_inval_pri_queue;	/**< No of add dscp priority request fail due to invalid priority queue */
+	atomic64_t dscp_priority_add_req_fail_no_wan_dev;	/**< No of add dscp priority request fail due to no WAN dev */
+	atomic64_t dscp_priority_add_req_rule_create_fail;	/**< No of add dscp priority request fail due to rule create fail */
+	atomic64_t dscp_priority_del_req_rule_destroy_fail;	/**< No of del dscp priority request fail due to rule destroy fail */
 };
 
 /*

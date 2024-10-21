@@ -17,6 +17,7 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
+#include <linux/version.h>
 #include <linux/skbuff.h>
 #include <linux/inetdevice.h>
 #include <linux/etherdevice.h>
@@ -207,7 +208,7 @@ static const struct net_device_ops netfn_capwap_tunid_ops = {
 	.ndo_stop               = netfn_capwap_tunid_close,
 	.ndo_start_xmit         = netfn_capwap_tunid_tx,
 	.ndo_set_mac_address    = eth_mac_addr,
-	.ndo_change_mtu         = eth_change_mtu,
+	.ndo_change_mtu    	= dev_set_mtu,
 	.ndo_get_stats64        = netfn_capwap_tunid_stats,
 };
 
@@ -236,7 +237,12 @@ static void netfn_capwap_tunid_setup(struct net_device *dev)
 	dev->header_ops = NULL;
 	dev->netdev_ops = &netfn_capwap_tunid_ops;
 	dev->priv_destructor = netfn_capwap_tunid_destructor;
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
 	memcpy(dev->dev_addr, "\x00\x00\x00\x00\x00\x00", dev->addr_len);
+#else
+	dev_addr_set(dev, "\x00\x00\x00\x00\x00\x00");
+#endif
 	memset(dev->broadcast, 0xff, dev->addr_len);
 	memcpy(dev->perm_addr, dev->dev_addr, dev->addr_len);
 }

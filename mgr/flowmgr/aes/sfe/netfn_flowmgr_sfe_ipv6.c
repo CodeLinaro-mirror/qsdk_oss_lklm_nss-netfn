@@ -282,7 +282,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_destroy_v6_rule(struct netfn_flowmgr_destr
 	/*
 	 * Destroy the SFE connection cache entry.
 	 */
-	sfe_status = sfe_ipv6_tx_with_resp(NULL, nim);
+	sfe_status = (sfe_tx_status_t)sfe_ipv6_tx_with_resp(NULL, nim);
 	if (sfe_status != SFE_TX_SUCCESS) {
 		netfn_flowmgr_warn("SFE rule destroy failed with error: %u\n", sfe_status);
 		netfn_flowmgr_stats_inc(&stats->v6_destroy_rule_req_fail_sfe_fail);
@@ -1105,7 +1105,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_create_v6_rule(struct netfn_flowmgr_create
 
 	nircm->valid_flags |= SFE_RULE_CREATE_CONN_VALID;
 
-	sfe_status = sfe_ipv6_tx_with_resp(NULL, nim);
+	sfe_status = (sfe_tx_status_t)sfe_ipv6_tx_with_resp(NULL, nim);
 	if (sfe_status != SFE_TX_SUCCESS) {
 		netfn_flowmgr_warn("SFE rule create failed with error: %u\n", sfe_status);
 		netfn_flowmgr_stats_inc(&stats->v6_create_rule_req_fail_sfe_fail);

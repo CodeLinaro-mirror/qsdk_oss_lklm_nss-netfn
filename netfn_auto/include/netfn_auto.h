@@ -32,7 +32,6 @@
 #include <linux/msg.h>
 #include <linux/skbuff.h>
 #include <linux/etherdevice.h>
-#include <stdbool.h>
 
 #include <linux/inet.h>
 #include <netfn_flowmgr.h>
