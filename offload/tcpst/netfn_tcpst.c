@@ -33,6 +33,7 @@
 #include "netfn_tcpst_ppe.h"
 #include "netfn_tcpst_tx.h"
 #include "netfn_tcpst_rx.h"
+#include "netfn_tcpst_nl.h"
 
 /*
  * global TCP speedtest instance.
@@ -680,6 +681,12 @@ int __init netfn_tcpst_init_module(void)
 	debugfs_create_file("stats", S_IRUGO, tcpst->dentry, tcpst, &netfn_tcpst_file_ops);
 	mutex_init(&tcpst->lock);
 
+	if (!netfn_tcpst_nl_register()) {
+                pr_err("%px: Failed to initialize TCP ST netlink family\n", tcpst);
+		debugfs_remove(tcpst->dentry);
+                return -1;
+        }
+
 	pr_info("NSS TCP Speedtest loaded: (%s)\n", NSS_NETFN_BUILD_ID);
 	return 0;
 }
@@ -698,6 +705,8 @@ void __exit netfn_tcpst_exit_module(void)
 		pr_warn("%px: Module unloaded while test is running\n", ctx);
 		netfn_tcpst_stop(NULL, NULL);
 	}
+
+	netfn_tcpst_nl_unregister();
 
 	/*
 	 * Remove debug entry

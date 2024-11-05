@@ -9,5 +9,6 @@ $(NETFN_TCPST_MOD_NAME)-objs += netfn_tcpst.o
 $(NETFN_TCPST_MOD_NAME)-objs += netfn_tcpst_ppe.o
 $(NETFN_TCPST_MOD_NAME)-objs += netfn_tcpst_tx.o
 $(NETFN_TCPST_MOD_NAME)-objs += netfn_tcpst_rx.o
+$(NETFN_TCPST_MOD_NAME)-objs += netfn_tcpst_nl.o
 
 obj ?= .
