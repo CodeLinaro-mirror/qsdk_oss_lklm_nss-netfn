@@ -48,10 +48,36 @@ struct netfn_tcpst_stats_ext {
 	uint64_t vp_rx_pkts;			/* Total VP pkts received */
 	uint64_t vp_rx_bytes;			/* Total VP bytes received */
 	uint64_t dst_miss_pkts;			/* Total times dst wasn't found */
+	uint64_t coalesce;			/* Total pkts coalesced to head */
+	uint64_t start_coalesce;		/* Total pkts started coalesced */
+	uint64_t fail_coalesce;			/* Total pkts failed to coalesced */
+	uint64_t fail_start_coalesce;		/* Total pkts failed to coalesced start */
+	uint64_t napi_flush;			/* GRO flushed by Linux Napi complete */
 	uint64_t test_rx_pkts;			/* Total test pkts rcvd */
 	uint64_t test_rx_bytes;			/* Total test bytes rcvd */
 	uint64_t test_tx_pkts;			/* Total test pkts sent */
 	uint64_t test_tx_bytes;			/* Total test bytes sent */
+};
+
+/*
+ * netfn_tcpst_gro_state
+ *	GRO state
+ */
+struct netfn_tcpst_gro_state {
+	struct sk_buff *head;			/* head packet holding frag_list */
+	struct sk_buff *first_frag;		/* frag_list Head */
+	struct sk_buff *last_frag;		/* last packet */
+	int protocol;				/* skb->protocol */
+	struct {
+		uint32_t len;			/* Total packet length */
+		uint32_t truesize;		/* Total truesize of all SKBs */
+	} head_cache;
+
+	uint16_t frag_cnt;			/* Number of packet in list */
+	uint16_t hlen;				/* TCP header length */
+	uint32_t flag_word;			/* Flag word of head TCP header */
+	uint32_t ack_seq;			/* Ack sequence in head TCP header */
+	uint32_t next_seq;			/* Expected next data sequence */
 };
 
 /*
@@ -69,6 +95,7 @@ struct netfn_tcpst_conn {
 	};
 
 	struct netfn_tcpst_stats stats;		/* Debug statistics per connection */
+	struct netfn_tcpst_gro_state gro_state;	/* Connection GRO state */
 	struct netfn_tcpst_stats_ext ext_stats;	/* Extended debug statistcs per connection */
 	unsigned long timer_state;		/* Maintains state of timer */
 	uint16_t offset;			/* Offset duration for test */

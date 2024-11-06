@@ -26,6 +26,7 @@
 #include <linux/if_arp.h>
 #include <net/inet_sock.h>
 #include <net/protocol.h>
+#include <net/gro.h>
 #include <ppe_drv.h>
 
 #include "netfn_tcpst_priv.h"
@@ -38,6 +39,15 @@
  */
 struct netfn_tcpst g_tcpst;
 
+static struct packet_offload gro_offload = {
+	.type = cpu_to_be16(ETH_P_MAP),
+	.priority = 1,
+	.callbacks = {
+		.gro_receive = NULL,
+		.gro_complete = netfn_tcpst_rx_gro_comp,
+	},
+};
+
 /*
  * Statistics name for netfn_tcpst_stats
  */
@@ -45,6 +55,11 @@ static int8_t *netfn_tcpst_stats_name[] = {
 	"VP rx packets",
 	"VP rx bytes",
 	"Dst miss packets",
+	"coalesce",
+	"start_coalesce",
+	"fail_coalesce",
+	"fail_start_coalesce",
+	"napi_flush",
 	"Test rx packets",
 	"Test rx bytes",
 	"Test tx packets",
@@ -453,6 +468,7 @@ static void netfn_tcpst_ctx_free(struct netfn_tcpst_ctx *ctx)
 	destroy_workqueue(ctx->wq);
 	netfn_tcpst_conn_deinit_all(ctx);
 	ppe_vp_free(ctx->vp_num);
+	dev_remove_offload(&gro_offload);
 	free_netdev(ctx->vp_dev);
 	kfree(ctx);
 }
@@ -552,6 +568,11 @@ enum netfn_tcpst_state netfn_tcpst_start(struct netfn_tcpst_cfg *cfg)
 	netfn_tcpst_state_set(ctx, NETFN_TCPST_STATE_INPROGRESS, NETFN_TCPST_STATE_NOT_RUNNING);
 	state = netfn_tcpst_state_get(ctx);
 	rcu_assign_pointer(tcpst->ctx, ctx);
+
+	/*
+	 * Register GRO offload handler.
+	 */
+	dev_add_offload(&gro_offload);
 
 	/*
 	 * Schedule the Tx/Rx work.

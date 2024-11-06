@@ -21,6 +21,7 @@
 #include <linux/kernel.h>
 #include <linux/tcp.h>
 #include <net/tcp.h>
+#include <net/gro.h>
 
 #include "netfn_tcpst_priv.h"
 
@@ -66,6 +67,7 @@ static enum hrtimer_restart netfn_tcpst_http_get_timeout(struct hrtimer *timer)
  */
 static inline void netfn_tcpst_rx_conn(struct netfn_tcpst_conn *conn, struct sk_buff *skb)
 {
+	struct netfn_tcpst_gro_state *gro_state = &conn->gro_state;
 	struct inet6_protocol *proto6;
 	struct net_protocol *proto4;
 	struct dst_entry *dst;
@@ -98,6 +100,39 @@ static inline void netfn_tcpst_rx_conn(struct netfn_tcpst_conn *conn, struct sk_
 	skb_dst_set_noref(skb, dst);
 
 	/*
+	 * If this is GRO'd SKB, We need to update head SKB.
+	 * - First SKB's original length will become head length
+	 * - First SKB length will be total length.
+	 * - All coalesced SKB length will become data length.
+	 */
+	if (likely(gro_state->frag_cnt)) {
+		struct tcphdr *tcph = tcp_hdr(skb);
+		uint32_t head_len = skb->len;
+
+		skb->len = gro_state->head_cache.len;
+		skb->truesize = gro_state->head_cache.truesize;
+		skb->data_len = gro_state->head_cache.len - head_len;
+		skb_shinfo(skb)->frag_list = gro_state->first_frag;
+
+		/*
+		 * Correct headers.
+		 * We are not correcting checksum as we are directly giving SKB to TCP stack.
+		 */
+		iph_set_totlen(ip_hdr(skb), skb->len);
+		tcp_flag_word(tcph) |= gro_state->flag_word;
+	}
+
+	/*
+	 * Restore SKB protocol as we changed to ETH_P_MAP.
+	 */
+	skb->protocol = gro_state->protocol;
+
+	/*
+	 * Reset local state.
+	 */
+	memset(gro_state, 0, sizeof(*gro_state));
+
+	/*
 	 * Hand over to linux
 	 */
 	if (skb->protocol == htons(ETH_P_IP)) {
@@ -108,6 +143,177 @@ static inline void netfn_tcpst_rx_conn(struct netfn_tcpst_conn *conn, struct sk_
 
 	proto6 = rcu_dereference(inet6_protos[IPPROTO_TCP]);
 	proto6->handler(skb);
+}
+
+/*
+ * netfn_tcpst_rx_gro_start()
+ *	Initialize GRO head.
+ */
+static bool netfn_tcpst_rx_gro_start(struct netfn_tcpst_conn *conn, struct napi_struct *napi, struct sk_buff *skb)
+{
+	struct netfn_tcpst_gro_state *gro_state = &conn->gro_state;
+	struct netfn_tcpst_stats_ext *ext_stats = &conn->ext_stats;
+	struct tcphdr *tcph = tcp_hdr(skb);
+	struct gro_list *gro_list;
+	uint32_t skip_gro = 0;
+	uint32_t bucket = 0;
+	uint32_t hlen;
+
+	gro_list = &napi->gro_hash[bucket];
+	hlen = tcph->doff * 4;
+
+	/*
+	 * Don't Coalesce if flag other then ACK is set,
+	 * or checksum is not verified by EDMA.
+	 * or this is pure ack (No data is present).
+	 */
+	skip_gro += !!((tcp_flag_word(tcph) & htonl(GENMASK(23,16))) & ~TCP_FLAG_ACK);
+	skip_gro += !!(skb->ip_summed ^ CHECKSUM_UNNECESSARY);
+	skip_gro += !!(skb->len <= hlen);
+	if (skip_gro) {
+		ext_stats->fail_start_coalesce++;
+		return false;
+	}
+
+	/*
+	 * Reset GRO fields as we are going to use napi gro list.
+	 */
+	*(u32 *)&NAPI_GRO_CB(skb)->zeroed = 0;
+
+	NAPI_GRO_CB(skb)->count = 2; /* WAR: Linux doesn't call gro_complete if count is 1. */
+	NAPI_GRO_CB(skb)->age = jiffies;
+
+	/*
+	 * Reset our local state for coalesce,
+	 * We will copy this to NAPI_GRO_CB() during flush.
+	 */
+	gro_state->first_frag = gro_state->last_frag = NULL;
+	gro_state->frag_cnt = 0;
+	gro_state->hlen = hlen;
+	gro_state->head_cache.len = skb->len;
+	gro_state->head_cache.truesize = skb->truesize;
+	gro_state->flag_word = tcp_flag_word(tcph);
+	gro_state->head = skb;
+	gro_state->ack_seq = tcph->ack_seq;
+	gro_state->next_seq = ntohl(tcph->seq) + (skb->len - hlen);
+
+	/*
+	 * We will override protocol to ETH_P_MAP for GRO.
+	 */
+	gro_state->protocol = skb->protocol;
+	skb->protocol = htons(ETH_P_MAP);
+
+	/*
+	 * Add to NAPI List.
+	 * FIXME: Flush when list goes beyond limit?
+	 */
+	gro_list->count++;
+	list_add(&skb->list, &gro_list->list);
+	__set_bit(bucket, &napi->gro_bitmask);
+	ext_stats->start_coalesce++;
+	return true;
+}
+
+/*
+ * netfn_tcpst_rx_gro_flush()
+ *	Flush the GRO list and remove from Linux napi.
+ */
+static void netfn_tcpst_rx_gro_flush(struct netfn_tcpst_conn *conn, struct napi_struct *napi)
+{
+	struct netfn_tcpst_gro_state *gro_state = &conn->gro_state;
+	struct sk_buff *skb = gro_state->head;
+	struct gro_list *gro_list;
+	uint32_t bucket = 0;
+
+	gro_list = &napi->gro_hash[bucket];
+
+	skb_list_del_init(skb);
+	gro_list->count--;
+	if (!gro_list->count && test_bit(bucket, &napi->gro_bitmask)) {
+		__clear_bit(bucket, &napi->gro_bitmask);
+	}
+
+	netfn_tcpst_rx_conn(conn, skb);
+}
+
+/*
+ * netfn_tcpst_rx_gro_add()
+ *	Merge SKB into current GRO state.
+ */
+static bool netfn_tcpst_rx_gro_add(struct netfn_tcpst_conn *conn, struct napi_struct *napi, struct sk_buff *skb)
+{
+	struct netfn_tcpst_gro_state *gro_state = &conn->gro_state;
+	struct netfn_tcpst_stats_ext *ext_stats = &conn->ext_stats;
+	struct tcphdr *tcph = tcp_hdr(skb);
+	uint32_t skip_gro = 0;
+	uint32_t hlen;
+	__be32 flags;
+
+	flags = tcp_flag_word(tcph);
+	hlen = tcph->doff * 4;
+
+	/*
+	 * TCP Flags must be the same as previous, Allow coalesce for FIN & PSH.
+	 */
+	skip_gro += !!((flags ^ gro_state->flag_word) & ~(TCP_FLAG_FIN | TCP_FLAG_PSH));
+
+	/*
+	 * TCP sequence check.
+	 */
+	skip_gro += !!(tcph->ack_seq ^ gro_state->ack_seq);
+	skip_gro += !!(ntohl(tcph->seq) ^ gro_state->next_seq);
+
+	/*
+	 * Data offset has to be same.
+	 */
+	skip_gro += !!(hlen ^ gro_state->hlen);
+
+	/*
+	 * We can't coalesce new SKB. Flush the previous list.
+	 */
+	if (skip_gro) {
+		ext_stats->fail_coalesce++;
+		netfn_tcpst_rx_gro_flush(conn, napi);
+		return false;
+	}
+
+	/*
+	 * We are going to coalesce data, Pull TCP header as well.
+	 */
+	__skb_pull(skb, hlen);
+
+	/*
+	 * Update GRO state for next packet.
+	 */
+	gro_state->flag_word |= (flags & (TCP_FLAG_FIN | TCP_FLAG_PSH));
+	gro_state->next_seq += skb->len;
+
+	/*
+	 * Insert into GRO list.
+	 */
+	gro_state->frag_cnt++;
+	gro_state->head_cache.len += skb->len;
+	gro_state->head_cache.truesize +=  skb->truesize;
+
+	/*
+	 * If first_frag is empty, Then this is first frag in chain.
+	 */
+	if (!gro_state->first_frag) {
+		gro_state->first_frag = gro_state->last_frag = skb;
+	} else {
+		gro_state->last_frag->next = skb;
+		gro_state->last_frag = skb;
+	}
+
+	/*
+	 * Flush coalesced chain if we had received PSH or FIN.
+	 */
+	if ((flags & (TCP_FLAG_FIN | TCP_FLAG_PSH))) {
+		netfn_tcpst_rx_gro_flush(conn, napi);
+	}
+
+	ext_stats->coalesce++;
+	return true;
 }
 
 /*
@@ -215,12 +421,43 @@ static bool netfn_tcpst_http_get(struct netfn_tcpst_conn *conn)
 }
 
 /*
+ * netfn_tcpst_rx_gro_comp()
+ *	Flush the packet to Linux TCP stack.
+ */
+int netfn_tcpst_rx_gro_comp(struct sk_buff *skb, int thoff)
+{
+	struct netfn_tcpst_conn *conn;
+	struct netfn_tcpst_ctx *ctx;
+
+	rcu_read_lock_bh();
+	ctx = rcu_dereference_bh(g_tcpst.ctx);
+	if (!ctx) {
+		dev_kfree_skb(skb);
+		goto unlock;
+	}
+
+	conn = &ctx->conn[smp_processor_id()];
+	conn->ext_stats.napi_flush++;
+	netfn_tcpst_rx_conn(conn, skb);
+
+	/*
+	 * Inform linux we have consumed/forwarded the packet.
+	 */
+unlock:
+	rcu_read_unlock_bh();
+	return -EINPROGRESS;
+}
+
+/*
  * netfn_tcpst_rx_vp4()
  *	PPE-VP callback for IPv4
  */
 bool netfn_tcpst_rx_vp4(struct ppe_vp_cb_info *info, void *cb_data)
 {
+	bool (*gro_rcv)(struct netfn_tcpst_conn *conn, struct napi_struct *napi, struct sk_buff *skb);
 	struct netfn_tcpst_ctx *ctx = (struct netfn_tcpst_ctx *)cb_data;
+	struct netfn_tcpst_gro_state *gro_state;
+	struct netfn_tcpst_stats_ext *ext_stats;
 	struct sk_buff *skb = info->skb;
 	struct netfn_tcpst_conn *conn;
 
@@ -236,7 +473,9 @@ bool netfn_tcpst_rx_vp4(struct ppe_vp_cb_info *info, void *cb_data)
 		return true;
 	}
 
-	conn->ext_stats.vp_rx_pkts++;
+	gro_state = &conn->gro_state;
+	ext_stats = &conn->ext_stats;
+	ext_stats->vp_rx_pkts++;
 
 	/*
 	 * Set skb fields
@@ -244,16 +483,20 @@ bool netfn_tcpst_rx_vp4(struct ppe_vp_cb_info *info, void *cb_data)
 	skb->ip_summed = info->ip_summed;
 	skb->pkt_type = PACKET_HOST;
 
+	/*
+	 * Pull IP header as packet will be delivered to tcp stack.
+	 */
 	skb_reset_network_header(skb);
 	__skb_pull(skb, sizeof(struct iphdr));
 	skb_reset_transport_header(skb);
 
-	/*
-	 * Hand over to linux
-	 */
-	rcu_read_lock_bh();
-	netfn_tcpst_rx_conn(conn, skb);
-	rcu_read_unlock_bh();
+	gro_rcv = gro_state->head ? netfn_tcpst_rx_gro_add : netfn_tcpst_rx_gro_start;
+	if (!gro_rcv(conn, info->napi, skb)) {
+		rcu_read_lock_bh();
+		netfn_tcpst_rx_conn(conn, skb);
+		rcu_read_unlock_bh();
+	}
+
 	return true;
 }
 
@@ -263,7 +506,10 @@ bool netfn_tcpst_rx_vp4(struct ppe_vp_cb_info *info, void *cb_data)
  */
 bool netfn_tcpst_rx_vp6(struct ppe_vp_cb_info *info, void *cb_data)
 {
+	bool (*gro_rcv)(struct netfn_tcpst_conn *conn, struct napi_struct *napi, struct sk_buff *skb);
 	struct netfn_tcpst_ctx *ctx = (struct netfn_tcpst_ctx *)cb_data;
+	struct netfn_tcpst_gro_state *gro_state;
+	struct netfn_tcpst_stats_ext *ext_stats;
 	struct sk_buff *skb = info->skb;
 	struct netfn_tcpst_conn *conn;
 
@@ -279,7 +525,9 @@ bool netfn_tcpst_rx_vp6(struct ppe_vp_cb_info *info, void *cb_data)
 		return true;
 	}
 
-	conn->ext_stats.vp_rx_pkts++;
+	gro_state = &conn->gro_state;
+	ext_stats = &conn->ext_stats;
+	ext_stats->vp_rx_pkts++;
 
 	/*
 	 * Set skb fields
@@ -287,16 +535,20 @@ bool netfn_tcpst_rx_vp6(struct ppe_vp_cb_info *info, void *cb_data)
 	skb->ip_summed = info->ip_summed;
 	skb->pkt_type = PACKET_HOST;
 
+	/*
+	 * Pull IP header as packet will be deliverd to tcp stack.
+	 */
 	skb_reset_network_header(skb);
 	__skb_pull(skb, sizeof(struct ipv6hdr));
 	skb_reset_transport_header(skb);
 
-	/*
-	 * Hand over to linux
-	 */
-	rcu_read_lock_bh();
-	netfn_tcpst_rx_conn(conn, skb);
-	rcu_read_unlock_bh();
+	gro_rcv = gro_state->head ? netfn_tcpst_rx_gro_add : netfn_tcpst_rx_gro_start;
+	if (!gro_rcv(conn, info->napi, skb)) {
+		rcu_read_lock_bh();
+		netfn_tcpst_rx_conn(conn, skb);
+		rcu_read_unlock_bh();
+	}
+
 	return true;
 }
 
