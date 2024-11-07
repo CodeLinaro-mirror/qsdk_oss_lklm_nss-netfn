@@ -23,6 +23,9 @@
 #include <linux/ip.h>
 #include <linux/in6.h>
 #include <linux/debugfs.h>
+#include <linux/if_pppox.h>
+#include <linux/if_vlan.h>
+#include <linux/if_arp.h>
 #include <net/inet_sock.h>
 #include <netfn_flowmgr.h>
 #include <ppe_drv.h>
@@ -60,6 +63,112 @@ static bool netfn_tcpst_ppe_get_macaddr(struct dst_entry *dst, void *daddr, uint
 }
 
 /*
+ * netfn_tcpst_ppe_get_vlan()
+ *	Parse and fill VLAN information in create rule.
+ */
+static struct net_device *netfn_tcpst_ppe_get_vlan(struct net_device *dev, struct netfn_flowmgr_vlan_rule *orig, struct netfn_flowmgr_vlan_rule *reply)
+{
+	struct net_device *next_dev;
+
+	/*
+	 * Check if the next isn't null
+	 */
+	next_dev = vlan_dev_next_dev(dev);
+	if (!next_dev) {
+		pr_warn("Cannot find the physical net_device\n");
+		return NULL;
+	}
+
+	/*
+	 * We don't want next dev to be VLAN
+	 * Next dev should be ethernet device
+	 */
+	if (is_vlan_dev(next_dev) || (next_dev->type != ARPHRD_ETHER)) {
+		pr_warn("%px: QinQ or non-ethernet VLAN master (%s) is not supported\n", dev,
+				next_dev->name);
+		return NULL;
+	}
+
+	orig->inner.egress_vlan_tag = reply->inner.ingress_vlan_tag = vlan_dev_vlan_id(dev);
+	orig->inner.ingress_vlan_tag = reply->inner.egress_vlan_tag = 0xfff;
+	orig->outer.egress_vlan_tag = reply->outer.ingress_vlan_tag = 0xfff;
+	orig->outer.ingress_vlan_tag = reply->outer.egress_vlan_tag = 0xfff;
+
+	pr_debug("%px: VLAN rule configured with dev (%s) vlan_id(%u)\n", dev, dev->name, vlan_dev_vlan_id(dev));
+	return next_dev;
+}
+
+/*
+ * netfn_tcpst_ppe_get_pppoe()
+ *	Parse and fill PPPoE information in create rule
+ */
+static struct net_device *netfn_tcpst_ppe_get_pppoe(struct net_device *dev, struct netfn_flowmgr_pppoe_rule *orig, struct netfn_flowmgr_pppoe_rule *reply)
+{
+	struct ppp_channel *channel[1] = {NULL};
+	struct net_device *next_dev = NULL;
+	int px_proto, err = 0;
+	struct pppoe_opt opt;
+	int ppp_ch_count;
+
+	if (ppp_is_multilink(dev)) {
+		pr_warn("%px: channel is multilink PPP\n", dev);
+		return false;
+	}
+
+	ppp_ch_count = ppp_hold_channels(dev, channel, 1);
+	pr_debug("%px: PPP hold channel ret %d\n", dev, ppp_ch_count);
+	if (ppp_ch_count != 1) {
+		pr_warn("%px: hold channel for netdevice failed\n", dev);
+		return false;
+	}
+
+	px_proto = ppp_channel_get_protocol(channel[0]);
+	if (px_proto != PX_PROTO_OE) {
+		pr_warn("%px: session socket is not of type PX_PROTO_OE\n", dev);
+		goto release;
+	}
+
+	if (pppoe_channel_addressing_get(channel[0], &opt)) {
+		pr_warn("%px: failed to get pppoe options information\n", dev);
+		goto release;
+	}
+
+	/*
+	 * pppoe_channel_addressing_get returns held device.
+	 * And we are already holding parent device reference so release it.
+	 */
+	next_dev = opt.dev;
+	dev_put(next_dev);
+
+	/*
+	 * Update the PPPoE rule information and set PPPoE valid flag.
+	 */
+	orig->session_id = reply->session_id = ntohs((uint16_t)opt.pa.sid);
+	memcpy(orig->server_mac, opt.pa.remote, ETH_ALEN);
+	memcpy(reply->server_mac, opt.pa.remote, ETH_ALEN);
+
+	/*
+	 * PPPoE interface can be created on linux bridge, OVS bridge and LAG devices.
+	 * TCPST doesn't support these hierarchies.
+	 */
+	err += (next_dev->priv_flags & (IFF_EBRIDGE | IFF_OPENVSWITCH));
+	err += ((next_dev->flags & IFF_MASTER) && (next_dev->priv_flags & IFF_BONDING));
+	if (err) {
+		pr_warn("%px: PPPoE over Bridge/LAG unsupported, dev: %s next_dev: %s\n",
+				dev, dev->name, next_dev->name);
+		next_dev = NULL;
+		goto release;
+	}
+
+release:
+	ppp_release_channels(channel, 1);
+	pr_debug("%px: Update PPE PPPoE flow rule with session_id = %u, remote_mac = %pM\n",
+			dev, orig->session_id, orig->server_mac);
+
+	return next_dev;
+}
+
+/*
  * netfn_tcpst_ppe_accel()
  */
 bool netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_dev)
@@ -69,6 +178,7 @@ bool netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_dev)
 	struct netfn_flowmgr_create_rule reply = {0};
 	struct netfn_flowmgr_create_rule orig = {0};
 	netfn_flowmgr_ret_t status;
+	struct net_device *out_dev;
 	struct inet_sock *inet;
 	struct dst_entry *dst;
 
@@ -100,26 +210,69 @@ bool netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_dev)
 		orig.tuple.ip_version = 6;
 	}
 
+	out_dev = dst->dev;
 	orig.tuple.tuple_type = NETFN_TUPLE_5TUPLE;
 	orig_tuple->l4_src_ident = inet->inet_sport;;
 	orig_tuple->l4_dest_ident = inet->inet_dport;
 	orig_tuple->protocol = IPPROTO_TCP;
 
 	/*
+	 * If PPPoE is present, fill PPPoE specific information in create rule
+	 */
+	if (out_dev->type == ARPHRD_PPP) {
+		struct net_device *dev;
+
+		orig.rule_info.rule_valid_flags |= NETFN_FLOWMGR_VALID_RULE_FLAG_PPPOE;
+		reply.rule_info.rule_valid_flags |= NETFN_FLOWMGR_VALID_RULE_FLAG_PPPOE;
+
+		dev = netfn_tcpst_ppe_get_pppoe(out_dev,  &orig.rule_info.pppoe_rule, &reply.rule_info.pppoe_rule);
+		if (!dev) {
+			pr_warn("%px: Failed to configure pppoe\n", out_dev);
+
+			dst_release(dst);
+			return false;
+		}
+
+		out_dev = dev;
+	}
+
+	/*
+	 * If VLAN is present, fill VLAN specific information in create rule
+	 */
+	if (is_vlan_dev(out_dev)) {
+		struct net_device *dev;
+
+		orig.rule_info.rule_valid_flags |= NETFN_FLOWMGR_VALID_RULE_FLAG_VLAN;
+		reply.rule_info.rule_valid_flags |= NETFN_FLOWMGR_VALID_RULE_FLAG_VLAN;
+
+		dev = netfn_tcpst_ppe_get_vlan(out_dev, &orig.rule_info.vlan_rule, &reply.rule_info.vlan_rule);
+		if (!dev) {
+			pr_warn("%px: Unable to configure VLAN for dev(%s)\n", out_dev, out_dev->name);
+
+			dst_release(dst);
+			return false;
+		}
+
+		out_dev = dev;
+	}
+
+	/*
 	 * Fill original device info
 	 */
-	orig_info->out_dev = orig_info->top_outdev = dst->dev;
+	orig_info->out_dev = orig_info->top_outdev = out_dev;
 	orig_info->in_dev = orig_info->top_indev = vp_dev;
-	orig_info->flow_mtu = READ_ONCE(dst->dev->mtu);
+	orig_info->flow_mtu = READ_ONCE(out_dev->mtu);
 
-	memcpy(orig_info->flow_src_mac, dst->dev->dev_addr, ETH_ALEN);
-	status = netfn_tcpst_ppe_get_macaddr(dst, &orig_tuple->dest_ip, orig_info->flow_dest_mac);
-	dst_release(dst);
+	memcpy(orig_info->flow_src_mac, out_dev->dev_addr, ETH_ALEN);
 
-	if (!status) {
+	if (!netfn_tcpst_ppe_get_macaddr(dst, &orig_tuple->dest_ip, orig_info->flow_dest_mac)) {
 		pr_err("%px: Failed to get neigbour mac address\n", dst);
+
+		dst_release(dst);
 		return false;
 	}
+
+	dst_release(dst);
 
 	/*
 	 * Reply is exact reverse of original.
@@ -142,9 +295,6 @@ bool netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_dev)
 	reply_info->in_dev = reply_info->top_indev  = orig_info->out_dev;
 	reply_info->flow_mtu = orig_info->flow_mtu;
 
-	/*
-	 * TODO: Parse VLAN, PPPOE based on dst->dev
-	 */
 	orig.flow_flags |= NETFN_FLOWMGR_FLOW_FLAG_VP_FLOW;
 	reply.flow_flags |= NETFN_FLOWMGR_FLOW_FLAG_VP_FLOW;
 
