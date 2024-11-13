@@ -19,6 +19,6 @@
 #ifndef __NETFN_TCPST_PPE_H
 #define __NETFN_TCPST_PPE_H
 
-bool netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_dev);
-void netfn_tcpst_ppe_decel(struct sock *sk);
+struct net_device *netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_dev);
+void netfn_tcpst_ppe_decel(struct sock *sk, struct net_device *out_dev);
 #endif

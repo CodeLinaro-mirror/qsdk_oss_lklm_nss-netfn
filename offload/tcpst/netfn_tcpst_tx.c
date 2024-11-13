@@ -39,9 +39,10 @@ static enum hrtimer_restart netfn_tcpst_http_put_timeout(struct hrtimer *timer)
 	 * 1. When the offset timer expired
 	 * 2. When the duration timer expired
 	 */
+	netfn_tcpst_update_eth_stats(conn->eth_dev, stats);
 	stats->test_bytes.sent = (ext_stats->test_tx_bytes - stats->test_bytes.sent);
 
-	pr_debug("%px: Timer expired (offset(%d) duration (%d) state(%lxx)\n", conn, conn->offset, conn->duration, conn->timer_state);
+	pr_debug("%px: Timer expired (offset(%d) duration (%d) state(0x%lx)\n", conn, conn->offset, conn->duration, conn->timer_state);
 
 	/*
 	 * Check if offset timer expired
@@ -49,7 +50,6 @@ static enum hrtimer_restart netfn_tcpst_http_put_timeout(struct hrtimer *timer)
 	if (test_and_clear_bit(NETFN_TCPST_TIMER_FWD_BIT, &conn->timer_state)) {
 		stats->http.eom_time = ktime_get_real_ns();
 		set_bit(NETFN_TCPST_TIMER_COMP_BIT, &conn->timer_state);
-		pr_debug("%px: timer expired for duration (%d), conn timer_state(%ld)\n", conn, conn->duration, conn->timer_state);
 		return HRTIMER_NORESTART;
 	}
 
@@ -58,7 +58,6 @@ static enum hrtimer_restart netfn_tcpst_http_put_timeout(struct hrtimer *timer)
 	 */
 	set_bit(NETFN_TCPST_TIMER_FWD_BIT, &conn->timer_state);
 	hrtimer_forward_now(timer, ktime_set(conn->duration, 0));
-	pr_debug("%px: timer expired for duration (%d), conn timer_state(%lu)\n", conn, conn->offset, conn->timer_state);
 	return HRTIMER_RESTART;
 }
 
@@ -208,6 +207,8 @@ void netfn_tcpst_put_data(struct work_struct *work)
 		return;
 	}
 
+	pr_debug("%px: Not scheduling eom(%d) timeout(%d) abort(%d)\n", conn, eom, timeout, abort);
+
 	/*
 	 * Verify the received response for HTTP connection.
 	 */
@@ -236,8 +237,9 @@ void netfn_tcpst_put_data(struct work_struct *work)
 		return;
 	}
 
-	stats->test_bytes.sent = ext_stats->test_tx_bytes;
 	stats->http.eom_time = ktime_get_real_ns();
+	stats->test_bytes.sent = ext_stats->test_tx_bytes;
+	netfn_tcpst_update_eth_stats(conn->eth_dev, stats);
 	netfn_tcpst_state_set(conn->ctx, NETFN_TCPST_STATE_COMPLETED, NETFN_TCPST_STATE_INPROGRESS);
 	pr_debug("%px: Marking test completed\n", conn);
 
@@ -265,6 +267,11 @@ void netfn_tcpst_http_put_work(struct work_struct *work)
 	if (conn->duration) {
 		conn->hrtimer.function = netfn_tcpst_http_put_timeout;
 		hrtimer_start(&conn->hrtimer, ktime_set(conn->offset, 0), HRTIMER_MODE_REL);
+	} else {
+		/*
+		 * File based mode, update initial ethernet stats
+		 */
+		netfn_tcpst_update_eth_stats(conn->eth_dev, &conn->stats);
 	}
 
 	/*

@@ -75,10 +75,15 @@ static int netfn_tcpst_stats_show(struct seq_file *m, void __attribute__((unused
 	struct netfn_tcpst_ctx *ctx;
 	int cpu;
 
-	seq_printf(m, "NSS TCP SpeedTest stats:\n");
-
 	rcu_read_lock_bh();
 	ctx = rcu_dereference_bh(tcpst->ctx);
+	if (!ctx) {
+		pr_warn("%px: Test is not running\n", &g_tcpst);
+		rcu_read_unlock_bh();
+		return 0;
+	}
+
+	seq_printf(m, "NSS TCP SpeedTest stats:\n");
 
 	for_each_cpu(cpu, cpu_all_mask) {
 		struct netfn_tcpst_conn *conn = &ctx->conn[cpu];
@@ -109,7 +114,7 @@ static int netfn_tcpst_stats_show(struct seq_file *m, void __attribute__((unused
  */
 static int netfn_tcpst_stats_open(struct inode *inode, struct file *file)
 {
-        return single_open(file, netfn_tcpst_stats_show, inode->i_private);
+	return single_open(file, netfn_tcpst_stats_show, inode->i_private);
 }
 
 /*
@@ -117,9 +122,9 @@ static int netfn_tcpst_stats_open(struct inode *inode, struct file *file)
  */
 const struct file_operations netfn_tcpst_file_ops = {
 	.open = netfn_tcpst_stats_open,
-        .read = seq_read,
-        .llseek = seq_lseek,
-        .release = seq_release,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = seq_release,
 };
 
 /*
@@ -169,7 +174,15 @@ static struct netfn_tcpst_result *netfn_tcpst_get_result(struct netfn_tcpst_ctx 
 
 		stats->test_bytes.sent += conn_stats->test_bytes.sent;
 		stats->test_bytes.rcvd += conn_stats->test_bytes.rcvd;
+		stats->eth_bytes.sent += conn_stats->eth_bytes.sent;
+		stats->eth_bytes.rcvd += conn_stats->eth_bytes.rcvd;
 	}
+
+	/*
+	 * Average out the ethernet stats
+	 */
+	stats->eth_bytes.sent /= ctx->num_conns;
+	stats->eth_bytes.rcvd /= ctx->num_conns;
 
 	return result;
 }
@@ -189,7 +202,7 @@ static void netfn_tcpst_netdev_setup(struct net_device *dev)
 	dev->netdev_ops = NULL;
 	dev->priv_destructor = NULL;
 
-	memcpy((void*)dev->dev_addr, "\x00\x00\x00\x00\x00\x00", dev->addr_len);
+	memcpy((void *)dev->dev_addr, "\x00\x00\x00\x00\x00\x00", dev->addr_len);
 	memset(dev->broadcast, 0xff, dev->addr_len);
 	memcpy(dev->perm_addr, dev->dev_addr, dev->addr_len);
 
@@ -215,7 +228,7 @@ static void netfn_tcpst_conn_deinit_all(struct netfn_tcpst_ctx *ctx)
 		}
 
 		hrtimer_cancel(&conn->hrtimer);
-		netfn_tcpst_ppe_decel(conn->sock->sk);
+		netfn_tcpst_ppe_decel(conn->sock->sk, conn->eth_dev);
 		kernel_sock_shutdown(conn->sock, SHUT_RDWR);
 		sock_release(conn->sock);
 		vfree(conn->buf);
@@ -333,7 +346,8 @@ static enum netfn_tcpst_err netfn_tcpst_conn_init(struct netfn_tcpst_ctx *ctx, s
 	 */
 	stats->tcp_open.response_time = ktime_get_real_ns();
 
-	if (!netfn_tcpst_ppe_accel(sock->sk, ctx->vp_dev)) {
+	conn->eth_dev = netfn_tcpst_ppe_accel(sock->sk, ctx->vp_dev);
+	if (!conn->eth_dev) {
 		pr_err("%px: Failed to accelerate Rule", conn);
 		status = NETFN_TCPST_ERR_FLOW;
 		goto disconnect_sock;
@@ -364,7 +378,7 @@ free_sock:
  */
 static enum netfn_tcpst_err netfn_tcpst_conn_init_all(struct netfn_tcpst_ctx *ctx, struct netfn_tcpst_cfg *cfg)
 {
-	cpumask_t mask = {{cfg->core_mask}};
+	cpumask_t mask = { {cfg->core_mask} };
 	enum netfn_tcpst_err err;
 	int cpu;
 
@@ -519,7 +533,7 @@ enum netfn_tcpst_state netfn_tcpst_start(struct netfn_tcpst_cfg *cfg)
 	enum netfn_tcpst_state state = NETFN_TCPST_STATE_NOT_RUNNING;
 	void (*work_cb)(struct work_struct *w);
 	struct netfn_tcpst *tcpst = &g_tcpst;
-	cpumask_t mask = {{cfg->core_mask}};
+	cpumask_t mask = { {cfg->core_mask} };
 	struct netfn_tcpst_ctx *ctx;
 	int cpu;
 
@@ -609,6 +623,7 @@ enum netfn_tcpst_state netfn_tcpst_stop(netfn_tcpst_comp_t cb, void *app_data)
 		return NETFN_TCPST_STATE_NOT_RUNNING;
 	}
 
+	ctx->vp_dev->flags &= ~IFF_UP;
 	RCU_INIT_POINTER(tcpst->ctx, NULL);
 	mutex_unlock(&tcpst->lock);
 	synchronize_net();
@@ -624,6 +639,7 @@ enum netfn_tcpst_state netfn_tcpst_stop(netfn_tcpst_comp_t cb, void *app_data)
 			continue;
 		}
 
+		kernel_sock_shutdown(conn->sock, SHUT_RDWR);
 		cancel_work_sync(&conn->work);
 	}
 

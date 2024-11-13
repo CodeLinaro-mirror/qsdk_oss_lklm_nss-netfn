@@ -40,9 +40,10 @@ static enum hrtimer_restart netfn_tcpst_http_get_timeout(struct hrtimer *timer)
 	 * 1. When the offset timer expired
 	 * 2. When the duration timer expired
 	 */
+	netfn_tcpst_update_eth_stats(conn->eth_dev, stats);
 	stats->test_bytes.rcvd = (ext_stats->test_rx_bytes - stats->test_bytes.rcvd);
 
-	pr_debug("%px: Timer expired (offset(%d) duration (%d) state(%lxx)\n", conn, conn->offset, conn->duration, conn->timer_state);
+	pr_debug("%px: Timer expired (offset(%d) duration (%d) state(0x%lx)\n", conn, conn->offset, conn->duration, conn->timer_state);
 
 	/*
 	 * Check if offset timer expired
@@ -105,7 +106,7 @@ static inline void netfn_tcpst_rx_conn(struct netfn_tcpst_conn *conn, struct sk_
 	 * - First SKB length will be total length.
 	 * - All coalesced SKB length will become data length.
 	 */
-	if (likely(gro_state->frag_cnt)) {
+	if (likely(gro_state->head)) {
 		struct tcphdr *tcph = tcp_hdr(skb);
 		uint32_t head_len = skb->len;
 
@@ -120,12 +121,12 @@ static inline void netfn_tcpst_rx_conn(struct netfn_tcpst_conn *conn, struct sk_
 		 */
 		iph_set_totlen(ip_hdr(skb), skb->len);
 		tcp_flag_word(tcph) |= gro_state->flag_word;
-	}
 
-	/*
-	 * Restore SKB protocol as we changed to ETH_P_MAP.
-	 */
-	skb->protocol = gro_state->protocol;
+		/*
+		 * Restore SKB protocol as we changed to ETH_P_MAP.
+		 */
+		skb->protocol = gro_state->protocol;
+	}
 
 	/*
 	 * Reset local state.
@@ -360,7 +361,7 @@ static enum netfn_tcpst_err netfn_tcpst_http_get_resp(struct netfn_tcpst_conn *c
 		return NETFN_TCPST_ERR_CONNECT;
 	}
 
-	data += sizeof("Content-Length: ");
+	data += sizeof("Content-Length: ") - 1;
 	conn->http.file_sz = simple_strtol(data, NULL, 10);
 
 	/*
@@ -624,8 +625,9 @@ void netfn_tcpst_http_get_data(struct work_struct *work)
 	/*
 	 * Update the stats
 	 */
-	stats->test_bytes.rcvd = ext_stats->test_rx_bytes;
 	stats->http.eom_time = ktime_get_real_ns();
+	stats->test_bytes.rcvd = ext_stats->test_rx_bytes;
+	netfn_tcpst_update_eth_stats(conn->eth_dev, stats);
 	netfn_tcpst_state_set(conn->ctx, NETFN_TCPST_STATE_COMPLETED, NETFN_TCPST_STATE_INPROGRESS);
 	pr_debug("%px: EOM received, marking test completed\n", conn);
 	return;
@@ -638,13 +640,13 @@ void netfn_tcpst_http_get_data(struct work_struct *work)
 void netfn_tcpst_http_get_work(struct work_struct *work)
 {
 	struct netfn_tcpst_conn *conn = container_of(work, struct netfn_tcpst_conn, work);
-        enum netfn_tcpst_err err;
+	enum netfn_tcpst_err err;
 
-        if (!netfn_tcpst_http_get(conn)) {
-                pr_warn("%px: Error(%d) in connecting to HTTP server\n", work, err);
+	if (!netfn_tcpst_http_get(conn)) {
+		pr_warn("%px: Error(%d) in connecting to HTTP server\n", work, err);
 		netfn_tcpst_state_set(conn->ctx, NETFN_TCPST_STATE_ABORTED, netfn_tcpst_state_get(conn->ctx));
-                return;
-        }
+		return;
+	}
 
 	/*
 	 * Start the timer only if its time based test
@@ -652,15 +654,20 @@ void netfn_tcpst_http_get_work(struct work_struct *work)
 	if (conn->duration) {
 		conn->hrtimer.function = netfn_tcpst_http_get_timeout;
 		hrtimer_start(&conn->hrtimer, ktime_set(conn->offset, 0), HRTIMER_MODE_REL);
+	} else {
+		/*
+		 * File based mode, update initial ethernet stats
+		 */
+		netfn_tcpst_update_eth_stats(conn->eth_dev, &conn->stats);
 	}
 
 	/*
 	 * Override work function for HTTP data path
 	 */
-        INIT_WORK(work, netfn_tcpst_http_get_data);
+	INIT_WORK(work, netfn_tcpst_http_get_data);
 
-        /*
+	/*
 	 * Schedule the work to receive the HTTP Data
-         */
-        schedule_work_on(smp_processor_id(), work);
+	 */
+	schedule_work_on(smp_processor_id(), work);
 }

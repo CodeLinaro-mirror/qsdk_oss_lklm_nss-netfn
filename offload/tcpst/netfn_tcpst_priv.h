@@ -86,6 +86,7 @@ struct netfn_tcpst_gro_state {
  */
 struct netfn_tcpst_conn {
 	struct netfn_tcpst_ctx *ctx;		/* Pointer to context */
+	struct net_device *eth_dev;		/* Ethernet device for transmission */
 	struct socket *sock;			/* Socket used for this flow */
 	struct hrtimer hrtimer;			/* Speedtest control timer */
 	struct work_struct work;		/* Work */
@@ -146,6 +147,19 @@ static inline enum netfn_tcpst_state netfn_tcpst_state_set(struct netfn_tcpst_ct
 static inline enum netfn_tcpst_state netfn_tcpst_state_get(struct netfn_tcpst_ctx *ctx)
 {
 	return READ_ONCE(ctx->state);
+}
+
+/*
+ * netfn_tcpst_update_eth_stats()
+ * 	Updates the ethernet statistics
+ */
+static inline void netfn_tcpst_update_eth_stats(struct net_device *dev, struct netfn_tcpst_stats *stats)
+{
+	struct rtnl_link_stats64 rtnl_stats;
+
+	dev_get_stats(dev, &rtnl_stats);
+	stats->eth_bytes.rcvd = rtnl_stats.rx_bytes - stats->eth_bytes.rcvd;
+	stats->eth_bytes.sent = rtnl_stats.tx_bytes - stats->eth_bytes.sent;
 }
 
 #endif

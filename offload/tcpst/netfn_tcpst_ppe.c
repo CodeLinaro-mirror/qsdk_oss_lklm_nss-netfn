@@ -171,12 +171,13 @@ release:
 /*
  * netfn_tcpst_ppe_accel()
  */
-bool netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_dev)
+struct net_device *netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_dev)
 {
 	struct netfn_flowmgr_flow_info *orig_info, *reply_info;
 	struct netfn_tuple_5tuple *orig_tuple, *reply_tuple;
 	struct netfn_flowmgr_create_rule reply = {0};
 	struct netfn_flowmgr_create_rule orig = {0};
+	struct net_device *ret = NULL;
 	netfn_flowmgr_ret_t status;
 	struct net_device *out_dev;
 	struct inet_sock *inet;
@@ -193,7 +194,7 @@ bool netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_dev)
 	dst = sk_dst_get(sk);
 	if (!dst) {
 		pr_err("%px: Failed to get dst from socket\n", sk);
-		return false;
+		return NULL;
 	}
 
 	/*
@@ -220,46 +221,34 @@ bool netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_dev)
 	 * If PPPoE is present, fill PPPoE specific information in create rule
 	 */
 	if (out_dev->type == ARPHRD_PPP) {
-		struct net_device *dev;
-
-		orig.rule_info.rule_valid_flags |= NETFN_FLOWMGR_VALID_RULE_FLAG_PPPOE;
 		reply.rule_info.rule_valid_flags |= NETFN_FLOWMGR_VALID_RULE_FLAG_PPPOE;
 
-		dev = netfn_tcpst_ppe_get_pppoe(out_dev,  &orig.rule_info.pppoe_rule, &reply.rule_info.pppoe_rule);
-		if (!dev) {
-			pr_warn("%px: Failed to configure pppoe\n", out_dev);
-
-			dst_release(dst);
-			return false;
+		out_dev = netfn_tcpst_ppe_get_pppoe(out_dev,  &orig.rule_info.pppoe_rule, &reply.rule_info.pppoe_rule);
+		if (!out_dev) {
+			pr_warn("%px: Failed to configure pppoe\n", dst->dev);
+			goto release;
 		}
-
-		out_dev = dev;
 	}
 
 	/*
 	 * If VLAN is present, fill VLAN specific information in create rule
 	 */
 	if (is_vlan_dev(out_dev)) {
-		struct net_device *dev;
-
 		orig.rule_info.rule_valid_flags |= NETFN_FLOWMGR_VALID_RULE_FLAG_VLAN;
 		reply.rule_info.rule_valid_flags |= NETFN_FLOWMGR_VALID_RULE_FLAG_VLAN;
 
-		dev = netfn_tcpst_ppe_get_vlan(out_dev, &orig.rule_info.vlan_rule, &reply.rule_info.vlan_rule);
-		if (!dev) {
-			pr_warn("%px: Unable to configure VLAN for dev(%s)\n", out_dev, out_dev->name);
-
-			dst_release(dst);
-			return false;
+		out_dev = netfn_tcpst_ppe_get_vlan(out_dev, &orig.rule_info.vlan_rule, &reply.rule_info.vlan_rule);
+		if (!out_dev) {
+			pr_warn("%px: Failed to configure VLAN\n", dst->dev);
+			goto release;
 		}
-
-		out_dev = dev;
 	}
 
 	/*
 	 * Fill original device info
 	 */
-	orig_info->out_dev = orig_info->top_outdev = out_dev;
+	orig_info->out_dev = out_dev;
+	orig_info->top_outdev = dst->dev;
 	orig_info->in_dev = orig_info->top_indev = vp_dev;
 	orig_info->flow_mtu = READ_ONCE(out_dev->mtu);
 
@@ -267,12 +256,8 @@ bool netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_dev)
 
 	if (!netfn_tcpst_ppe_get_macaddr(dst, &orig_tuple->dest_ip, orig_info->flow_dest_mac)) {
 		pr_err("%px: Failed to get neigbour mac address\n", dst);
-
-		dst_release(dst);
-		return false;
+		goto release;
 	}
-
-	dst_release(dst);
 
 	/*
 	 * Reply is exact reverse of original.
@@ -291,8 +276,9 @@ bool netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_dev)
 	/*
 	 * Fill device.
 	 */
-	reply_info->out_dev = reply_info->top_outdev = orig_info->in_dev;
-	reply_info->in_dev = reply_info->top_indev  = orig_info->out_dev;
+	reply_info->in_dev = out_dev;
+	reply_info->top_indev  = dst->dev;
+	reply_info->out_dev = reply_info->top_outdev = vp_dev;
 	reply_info->flow_mtu = orig_info->flow_mtu;
 
 	orig.flow_flags |= NETFN_FLOWMGR_FLOW_FLAG_VP_FLOW;
@@ -301,16 +287,25 @@ bool netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_dev)
 	status = netfn_flowmgr_rule_accel(&orig, &reply, NETFN_FLOWMGR_ACCEL_MODE_PPE);
 	if (NETFN_FLOWMGR_GET_NETFN_ERROR_CODE(status) != NETFN_FLOWMGR_RET_SUCCESS) {
 		pr_err("%px: Failed to create flow rule status(%x)\n", sk, status);
-		return false;
+		goto release;
 	}
 
-	return true;
+	/*
+	 * Hold device reference as we are returning it to caller.
+	 * Deref: netfn_tcpst_ppe_decel()
+	 */
+	dev_hold(out_dev);
+	ret = out_dev;
+
+release:
+	dst_release(dst);
+	return ret;
 }
 
 /*
  * netfn_tcpst_ppe_decel()
  */
-void netfn_tcpst_ppe_decel(struct sock *sk)
+void netfn_tcpst_ppe_decel(struct sock *sk, struct net_device *out_dev)
 {
 	struct netfn_tuple_5tuple *reply_tuple, *orig_tuple;
 	struct netfn_flowmgr_destroy_rule reply = {0};
@@ -356,4 +351,9 @@ void netfn_tcpst_ppe_decel(struct sock *sk)
 	if (NETFN_FLOWMGR_GET_NETFN_ERROR_CODE(status) != NETFN_FLOWMGR_RET_SUCCESS) {
 		pr_err("%px: Failed to destroy flow rule status(%x)\n", sk, status);
 	}
+
+	/*
+	 * Ref: netfn_tcpst_ppe_accel()
+	 */
+	dev_hold(out_dev);
 }
