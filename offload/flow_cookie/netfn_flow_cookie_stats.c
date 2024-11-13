@@ -29,6 +29,29 @@ static const char *netfn_flow_cookie_stats_str[] = {
 };
 
 /*
+ * netfn_flow_cookie_stats_reset()
+ *	API to reset the Flow cookie DB stats
+ */
+static void netfn_flow_cookie_stats_reset(struct netfn_flow_cookie_db *db)
+{
+	int dwords, cpu;
+
+	dwords = (sizeof(struct netfn_flow_cookie_stats) / sizeof(uint64_t));
+
+	/*
+	 * All statistics are 64bit. So we can just iterate by words.
+	 */
+	for_each_possible_cpu(cpu) {
+		struct netfn_flow_cookie_stats *sp = per_cpu_ptr(db->stats, cpu);
+		uint64_t *sp_ptr = (uint64_t *)sp;
+		int i;
+
+		for (i = 0; i < dwords; i++, sp_ptr++)
+			*sp_ptr = 0;
+	}
+}
+
+/*
  * netfn_flow_cookie_stats_get()
  *	API to retrieve the Flow cookie stats DB specifically.
  *
@@ -53,6 +76,28 @@ static void netfn_flow_cookie_stats_get(struct netfn_flow_cookie_db *db, struct 
 		for (i = 0; i < dwords; i++, stats_ptr++, sp_ptr++)
 			*stats_ptr += *sp_ptr;
 	}
+}
+
+/*
+ * netfn_flow_cookie_stats_clear()
+ *	Clear Flow Cookie Stats
+ */
+static ssize_t netfn_flow_cookie_stats_clear(struct file *fp, const char __user *ubuf, size_t sz, loff_t *ppos)
+{
+	struct netfn_flow_cookie_db *db = fp->private_data;
+	uint32_t reset;
+
+	if (kstrtou32_from_user(ubuf, sz, 0, &reset)) {
+		return -EINVAL;
+	}
+
+	if (reset != 0) {
+		return -EINVAL;
+	}
+
+	netfn_flow_cookie_stats_reset(db);
+
+	return sz;
 }
 
 /*
@@ -108,6 +153,7 @@ const struct file_operations netfn_flow_cookie_stats_ops = {
 	.open = simple_open,
 	.llseek = default_llseek,
 	.read = netfn_flow_cookie_stats_print,
+	.write = netfn_flow_cookie_stats_clear,
 };
 
 /*

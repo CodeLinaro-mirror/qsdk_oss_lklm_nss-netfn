@@ -156,6 +156,32 @@ static int netfn_capwapmgr_tun_stats_print(struct seq_file *sf, void *ptr)
 }
 
 /*
+ * netfn_capwapmgr_tun_stats_write()
+ *	Clear netfn_capwapmgr_tun statistics.
+ *
+ * TODO: Add locks around context stats
+ */
+static ssize_t netfn_capwapmgr_tun_stats_write(struct file *filep, const char __user *buffer, size_t count, loff_t *ppos)
+{
+	struct seq_file *seq = filep->private_data;
+	struct netfn_capwapmgr_tun_ctx *ctx = (struct netfn_capwapmgr_tun_ctx *)seq->private;
+	int ret = 0;
+	uint32_t reset;
+
+	if (kstrtou32_from_user(buffer, count, 0, &reset)) {
+		return -EINVAL;
+	}
+
+	if (reset != 0) {
+		return -EINVAL;
+	}
+
+	memset(&ctx->stats, 0, sizeof(struct netfn_capwapmgr_flow_stats));
+
+	return count;
+}
+
+/*
  * netfn_capwapmgr_tun_stats_open
  *	Open file handler for tunnel statistics debugfs.
  */
@@ -171,6 +197,7 @@ static int netfn_capwapmgr_tun_stats_open(struct inode *inode, struct file *file
 const struct file_operations netfn_capwapmgr_tun_stats_ops = {
 	.open = netfn_capwapmgr_tun_stats_open,
 	.read = seq_read,
+	.write = netfn_capwapmgr_tun_stats_write,
 	.llseek = seq_lseek,
 	.release = seq_release,
 };

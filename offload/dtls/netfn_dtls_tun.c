@@ -38,8 +38,32 @@ module_param(netfn_dtls_core_id, int, 0644);
 MODULE_PARM_DESC(netfn_dtls_core_id, "DTLS receive core Map");
 
 /*
+ * netfn_dtls_tun_reset_stats()
+ *	Reset the tunnel summary stats.
+ */
+static void netfn_dtls_tun_reset_stats(struct netfn_dtls_tun *tun)
+{
+	int words;
+	int cpu;
+	int i;
+
+	words = (sizeof(struct netfn_dtls_tun_stats) / sizeof(uint64_t));
+
+	/*
+	 * All statistics are 64bit. So we can just iterate by words.
+	 */
+	for_each_possible_cpu(cpu) {
+		const struct netfn_dtls_tun_stats *sp = per_cpu_ptr(tun->stats_pcpu, cpu);
+		uint64_t *sp_ptr = (uint64_t *)sp;
+
+		for (i = 0; i < words; i++, sp_ptr++)
+			*sp_ptr = 0;
+	}
+}
+
+/*
  * netfn_dtls_tun_get_stats()
- *	Update the summary stats.
+ *	Update the tunnel summary stats.
  */
 static void netfn_dtls_tun_get_stats(struct netfn_dtls_tun *tun, struct netfn_dtls_tun_stats *stats)
 {
@@ -119,6 +143,28 @@ static ssize_t netfn_dtls_tun_print_stats(struct file *fp, char __user *ubuf, si
 	vfree(buf);
 
 	return len;
+}
+
+/*
+ * netfn_dtls_tun_print_stats()
+ *	Read device statistics.
+ */
+static ssize_t netfn_dtls_tun_clear_stats(struct file *fp, const char __user *ubuf, size_t sz, loff_t *ppos)
+{
+	struct netfn_dtls_tun *tun = fp->private_data;
+	uint32_t reset;
+
+	if (kstrtou32_from_user(ubuf, sz, 0, &reset)) {
+		return -EINVAL;
+	}
+
+	if (reset != 0) {
+		return -EINVAL;
+	}
+
+	netfn_dtls_tun_reset_stats(tun);
+
+	return sz;
 }
 
 /*
@@ -454,6 +500,7 @@ const struct file_operations netfn_dtls_tun_file_ops = {
 	.open = simple_open,
 	.llseek = default_llseek,
 	.read = netfn_dtls_tun_print_stats,
+	.write = netfn_dtls_tun_clear_stats
 };
 
 /*

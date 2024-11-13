@@ -173,7 +173,7 @@ static int netfn_flowmgr_debug_stats_show(struct seq_file *m, void __attribute__
 	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
 	struct netfn_flowmgr_debug_stats *ae_stats;
 	netfn_flowmgr_ae_type_t ae_type;
-	uint64_t stats_idx;
+	uint16_t stats_idx;
 
 	/*
 	 * For all AE type store and print the stats atomically.
@@ -193,6 +193,36 @@ static int netfn_flowmgr_debug_stats_show(struct seq_file *m, void __attribute__
 };
 
 /*
+ * netfn_flowmgr_stats_write()
+ *	Clear netfn_flowmgr statistics.
+ */
+static ssize_t netfn_flowmgr_stats_write(struct file *filep, const char __user *buffer, size_t count, loff_t *ppos)
+{
+	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
+	struct netfn_flowmgr_debug_stats *ae_stats;
+	netfn_flowmgr_ae_type_t ae_type;
+	uint64_t stats_idx;
+	uint32_t reset;
+
+	if (kstrtou32_from_user(buffer, count, 0, &reset)) {
+		return -EINVAL;
+	}
+
+	if (reset != 0) {
+		return -EINVAL;
+	}
+
+	for (ae_type = NETFN_FLOWMGR_AE_TYPE_SFE; ae_type < NETFN_FLOWMGR_AE_TYPE_MAX; ++ae_type) {
+		ae_stats = &f->stats[ae_type];
+		for (stats_idx = 0; stats_idx < sizeof(struct netfn_flowmgr_debug_stats) / sizeof(uint64_t); stats_idx++) {
+			atomic64_set((atomic64_t *)ae_stats + stats_idx, 0);
+		}
+	}
+
+	return count;
+}
+
+/*
  * netfn_flowmgr_stats_open()
  *	Netfn flowmgr stats open callback
  */
@@ -208,6 +238,7 @@ static int netfn_flowmgr_stats_open(struct inode *inode, struct file *file)
 const struct file_operations netfn_flowmgr_stats_file_ops = {
         .open = netfn_flowmgr_stats_open,
         .read = seq_read,
+	.write = netfn_flowmgr_stats_write,
         .llseek = seq_lseek,
         .release = seq_release,
 };
