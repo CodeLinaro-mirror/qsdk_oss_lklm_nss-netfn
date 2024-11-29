@@ -265,6 +265,14 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v6_rule(struct netfn_flowmgr_create
 		}
 
 		/*
+		 * Fill default NAT IP/Port which are same as non-NAT IP/Port
+		 */
+		memcpy(pd6rc->conn_rule.flow_ip_xlate, pd6rc->tuple.flow_ip, sizeof(uint32_t) * 4);
+		memcpy(pd6rc->conn_rule.return_ip_xlate, pd6rc->tuple.return_ip, sizeof(uint32_t) * 4);
+		pd6rc->conn_rule.flow_ident_xlate = pd6rc->tuple.flow_ident;
+		pd6rc->conn_rule.return_ident_xlate = pd6rc->tuple.return_ident;
+
+		/*
 		 * MTU info
 		 */
 		pd6rc->conn_rule.flow_mtu = original->flow_info.flow_mtu;
@@ -336,6 +344,17 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v6_rule(struct netfn_flowmgr_create
 
 	netfn_flowmgr_trace("org_rules = 0x%x\n", org_rules);
 	netfn_flowmgr_trace("reply_rules = 0x%x\n", reply_rules);
+
+	/*
+	 * IP translation rule
+	 */
+	if ((org_rules & NETFN_FLOWMGR_VALID_RULE_FLAG_SRC_NAT) || (org_rules & NETFN_FLOWMGR_VALID_RULE_FLAG_DST_NAT)
+			|| (reply_rules & NETFN_FLOWMGR_VALID_RULE_FLAG_SRC_NAT) || (reply_rules & NETFN_FLOWMGR_VALID_RULE_FLAG_DST_NAT)) {
+		/*
+		 * We don't expect these flags to be set for IPv6 until NPTv6 is enabled for flowmgr
+		 */
+		WARN_ON(1);
+	}
 
 	/*
 	 * VLAN rule
@@ -474,6 +493,10 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v6_rule(struct netfn_flowmgr_create
                                 "return_mac: %pM\n"
                                 "flow_mtu: %u\n"
                                 "return_mtu: %u\n"
+				"flow_ip_xlate: %pI6\n"
+				"return_ip_xlate: %pI6\n"
+				"flow_ident_xlate: %u\n"
+				"return_ident_xlate: %u\n"
                                 "ingress_inner_vlan_tag: 0x%x\n"
                                 "egress_inner_vlan_tag: 0x%x\n"
                                 "ingress_outer_vlan_tag: 0x%x\n"
@@ -495,6 +518,10 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v6_rule(struct netfn_flowmgr_create
                                 pd6rc->conn_rule.return_mac,
                                 pd6rc->conn_rule.flow_mtu,
                                 pd6rc->conn_rule.return_mtu,
+				&pd6rc->conn_rule.flow_ip_xlate,
+				&pd6rc->conn_rule.return_ip_xlate,
+				pd6rc->conn_rule.flow_ident_xlate,
+				pd6rc->conn_rule.return_ident_xlate,
                                 pd6rc->vlan_rule.primary_vlan.ingress_vlan_tag,
                                 pd6rc->vlan_rule.primary_vlan.egress_vlan_tag,
                                 pd6rc->vlan_rule.secondary_vlan.ingress_vlan_tag,
