@@ -597,6 +597,7 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_dtls_enable(struct netfn_capwap
 		goto fail;
 	}
 
+	netfn_capwap_tun_config_dtls(ctx->capwap_dev, true);
 	memcpy(&ctx->cfg.ext_cfg.enc, enc, sizeof(struct netfn_dtls_cfg));
 	memcpy(&ctx->cfg.ext_cfg.dec, dec, sizeof(struct netfn_dtls_cfg));
 
@@ -696,6 +697,7 @@ static netfn_capwapmgr_ret_t netfn_capwapmgr_tun_dtls_disable(struct netfn_capwa
 		netfn_capwapmgr_warn("%px:Failed to re-create flow rule when enabling dtls\n", ctx);
 	}
 
+	netfn_capwap_tun_config_dtls(ctx->capwap_dev, false);
 	return status;
 }
 

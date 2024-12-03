@@ -160,4 +160,14 @@ void netfn_capwap_tun_enable_flow_db(struct net_device *dev, struct netfn_flow_c
  * @return: void.
  */
 void netfn_capwap_tun_disable_flow_db(struct net_device *dev);
+
+/*
+ * netfn_capwap_tun_config_dtls()
+ *	Enable/disable DTLS feature
+ *
+ * @dev: Netdevice
+ * @bool: DTLS enabled/disabled
+ * @return: void
+ */
+void netfn_capwap_tun_config_dtls(struct net_device *dev, bool enable);
 #endif /* __NETFN_CAPWAP_H */

@@ -254,7 +254,7 @@ struct net_device *netfn_capwap_tunid_alloc(ssize_t pvt_sz)
 	/*
 	 * Allocate a new device for tunnel.
 	 */
-	dev = alloc_netdev(sizeof(*ncti) + pvt_sz, "netfn_capwap%d", NET_NAME_ENUM, netfn_capwap_tunid_setup);
+	dev = alloc_netdev(sizeof(*ncti) + pvt_sz, "nsscapwap%d", NET_NAME_ENUM, netfn_capwap_tunid_setup);
 	if (!dev) {
 		pr_warn("%p: failed to allocate capwap dummy device\n", &global_nc);
 		return NULL;
