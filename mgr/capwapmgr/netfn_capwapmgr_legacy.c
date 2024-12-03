@@ -427,8 +427,8 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		cfg->capwap.enc.csum_cov = sizeof(struct udphdr);
 	}
 
-	cfg->capwap.dec.max_frags = capwap_rule->decap.max_fragments;
-	cfg->capwap.dec.max_payload_sz = capwap_rule->decap.max_buffer_size;
+	cfg->capwap.dec.max_frags = ntohs(capwap_rule->decap.max_fragments);
+	cfg->capwap.dec.max_payload_sz = ntohs(capwap_rule->decap.max_buffer_size);
 
 	/*
 	 * If DTLS is enabled, convert the dtls rule as well.
