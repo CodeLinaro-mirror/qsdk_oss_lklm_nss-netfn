@@ -182,8 +182,8 @@ static struct netfn_tcpst_result *netfn_tcpst_get_result(struct netfn_tcpst_ctx 
 	/*
 	 * Average out the ethernet stats
 	 */
-	stats->eth_bytes.sent /= ctx->num_conns;
-	stats->eth_bytes.rcvd /= ctx->num_conns;
+	stats->eth_bytes.sent = div_u64(stats->eth_bytes.sent, ctx->num_conns);
+	stats->eth_bytes.rcvd = div_u64(stats->eth_bytes.rcvd, ctx->num_conns);
 
 	return result;
 }

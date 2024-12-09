@@ -562,7 +562,9 @@ void netfn_tcpst_http_get_data(struct work_struct *work)
 	struct netfn_tcpst_conn *conn = container_of(work, struct netfn_tcpst_conn, work);
 	struct netfn_tcpst_stats_ext *ext_stats = &conn->ext_stats;
 	struct netfn_tcpst_stats *stats = &conn->stats;
+	struct netfn_tcpst_ctx *ctx = conn->ctx;
 	bool resched, eom, timeout, abort;
+	enum netfn_tcpst_state state;
 	struct msghdr msg = {0};
 	struct kvec iov = {0};
 	int rx_bytes;
@@ -602,13 +604,20 @@ void netfn_tcpst_http_get_data(struct work_struct *work)
 	}
 
 	pr_debug("%px: Not scheduling eom(%d) timeout(%d) abort(%d)\n", conn, eom, timeout, abort);
+	state = netfn_tcpst_state_get(ctx);
+
+	/*
+	 * Mark state as completed only if all connections are done
+	 */
+	if (atomic_inc_return(&ctx->comp_conn) == ctx->num_conns)
+		state = NETFN_TCPST_STATE_COMPLETED;
 
 	/*
 	 * Check if duration timer has expired. For timebound test
 	 * the stats are captured in timer callback.
 	 */
-	if (test_bit(NETFN_TCPST_TIMER_COMP_BIT, &conn->timer_state)) {
-		netfn_tcpst_state_set(conn->ctx, NETFN_TCPST_STATE_COMPLETED, NETFN_TCPST_STATE_INPROGRESS);
+	if (timeout) {
+		netfn_tcpst_state_set(conn->ctx, state, NETFN_TCPST_STATE_INPROGRESS);
 		pr_debug("%px: Timeout occured, marking test completed\n", conn);
 		return;
 	}
@@ -623,12 +632,21 @@ void netfn_tcpst_http_get_data(struct work_struct *work)
 	}
 
 	/*
+	 * Abort the test if EOM is not received in file based test
+	 */
+	if (!eom) {
+		netfn_tcpst_state_set(conn->ctx, NETFN_TCPST_STATE_ABORTED, netfn_tcpst_state_get(conn->ctx));
+                pr_debug("%px: EOM is not received, marking test aborted\n", conn);
+                return;
+        }
+
+	/*
 	 * Update the stats
 	 */
 	stats->http.eom_time = ktime_get_real_ns();
 	stats->test_bytes.rcvd = ext_stats->test_rx_bytes;
 	netfn_tcpst_update_eth_stats(conn->eth_dev, stats);
-	netfn_tcpst_state_set(conn->ctx, NETFN_TCPST_STATE_COMPLETED, NETFN_TCPST_STATE_INPROGRESS);
+	netfn_tcpst_state_set(conn->ctx, state, NETFN_TCPST_STATE_INPROGRESS);
 	pr_debug("%px: EOM received, marking test completed\n", conn);
 	return;
 }
@@ -643,8 +661,11 @@ void netfn_tcpst_http_get_work(struct work_struct *work)
 	enum netfn_tcpst_err err;
 
 	if (!netfn_tcpst_http_get(conn)) {
+		struct netfn_tcpst_ctx *ctx = conn->ctx;
+
 		pr_warn("%px: Error(%d) in connecting to HTTP server\n", work, err);
-		netfn_tcpst_state_set(conn->ctx, NETFN_TCPST_STATE_ABORTED, netfn_tcpst_state_get(conn->ctx));
+		netfn_tcpst_state_set(ctx, NETFN_TCPST_STATE_ABORTED, netfn_tcpst_state_get(ctx));
+		atomic_inc(&ctx->comp_conn);
 		return;
 	}
 

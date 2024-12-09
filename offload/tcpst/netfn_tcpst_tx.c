@@ -160,8 +160,10 @@ void netfn_tcpst_put_data(struct work_struct *work)
 	struct netfn_tcpst_stats_ext *ext_stats = &conn->ext_stats;
 	struct netfn_tcpst_stats *stats = &conn->stats;
 	struct netfn_tcpst_http *http = &conn->http;
+	struct netfn_tcpst_ctx *ctx = conn->ctx;
 	struct netfn_tcpst *tcpst = &g_tcpst;
 	bool resched, eom, timeout, abort;
+	enum netfn_tcpst_state state;
 	struct msghdr msg = {0};
 	struct kvec iov = {0};
 	uint64_t tx_bytes;
@@ -185,7 +187,8 @@ void netfn_tcpst_put_data(struct work_struct *work)
 	len = kernel_sendmsg(READ_ONCE(conn->sock), &msg, &iov, 1, tx_bytes);
 	if (len < 0) {
 		pr_warn("%px: Error in kernel_sendmsg error(%d) aborting on cpu(%d)\n", tcpst, len, smp_processor_id());
-		netfn_tcpst_state_set(conn->ctx, NETFN_TCPST_STATE_ABORTED, netfn_tcpst_state_get(conn->ctx));
+		netfn_tcpst_state_set(ctx, NETFN_TCPST_STATE_ABORTED, netfn_tcpst_state_get(ctx));
+		atomic_inc(&ctx->comp_conn);
 		return;
 	}
 
@@ -201,20 +204,27 @@ void netfn_tcpst_put_data(struct work_struct *work)
 	 */
 	eom = !http->file_sz;
 	timeout = test_bit(NETFN_TCPST_TIMER_COMP_BIT, &conn->timer_state);
-	abort = (netfn_tcpst_state_get(conn->ctx) == NETFN_TCPST_STATE_ABORTED);
+	abort = (netfn_tcpst_state_get(ctx) == NETFN_TCPST_STATE_ABORTED);
 	resched = (!timeout && !eom && !abort);
 	if (likely(resched) && likely(schedule_work_on(smp_processor_id(), work))) {
 		return;
 	}
 
 	pr_debug("%px: Not scheduling eom(%d) timeout(%d) abort(%d)\n", conn, eom, timeout, abort);
+	state = netfn_tcpst_state_get(ctx);
+
+	/*
+	 * Mark state as completed only if all connections are done
+	 */
+	if (atomic_inc_return(&ctx->comp_conn) == ctx->num_conns)
+		state = NETFN_TCPST_STATE_COMPLETED;
 
 	/*
 	 * Verify the received response for HTTP connection.
 	 */
 	if (eom && !netfn_tcpst_http_put_resp(conn)) {
 		pr_debug("%px: Invalid response received\n", conn);
-		netfn_tcpst_state_set(conn->ctx, NETFN_TCPST_STATE_ABORTED, netfn_tcpst_state_get(conn->ctx));
+		netfn_tcpst_state_set(ctx, NETFN_TCPST_STATE_ABORTED, netfn_tcpst_state_get(ctx));
 		return;
 	}
 
@@ -222,9 +232,9 @@ void netfn_tcpst_put_data(struct work_struct *work)
 	 * Check if duration timer has expired. For timebound test
 	 * the stats are captured in timer callback.
 	 */
-	if (test_bit(NETFN_TCPST_TIMER_COMP_BIT, &conn->timer_state)) {
-		netfn_tcpst_state_set(conn->ctx, NETFN_TCPST_STATE_COMPLETED, NETFN_TCPST_STATE_INPROGRESS);
+	if (timeout) {
 		pr_debug("%px: Timeout occured, marking test completed\n", conn);
+		netfn_tcpst_state_set(ctx, state, NETFN_TCPST_STATE_INPROGRESS);
 		return;
 	}
 
@@ -232,15 +242,25 @@ void netfn_tcpst_put_data(struct work_struct *work)
 	 * If EOM is received and its timebound test then we abort.
 	 */
 	if (eom && conn->duration) {
-		netfn_tcpst_state_set(conn->ctx, NETFN_TCPST_STATE_ABORTED, netfn_tcpst_state_get(conn->ctx));
+		netfn_tcpst_state_set(ctx, NETFN_TCPST_STATE_ABORTED, netfn_tcpst_state_get(ctx));
 		pr_debug("%px: EOM received before timeout, marking test aborted\n", conn);
+		return;
+	}
+
+	/*
+	 * Abort the test if EOM is not received in file based test
+	 */
+	if (!eom) {
+		netfn_tcpst_state_set(ctx, NETFN_TCPST_STATE_ABORTED, netfn_tcpst_state_get(ctx));
+		pr_debug("%px: EOM is not received, marking test aborted\n", conn);
 		return;
 	}
 
 	stats->http.eom_time = ktime_get_real_ns();
 	stats->test_bytes.sent = ext_stats->test_tx_bytes;
 	netfn_tcpst_update_eth_stats(conn->eth_dev, stats);
-	netfn_tcpst_state_set(conn->ctx, NETFN_TCPST_STATE_COMPLETED, NETFN_TCPST_STATE_INPROGRESS);
+	netfn_tcpst_state_set(ctx, state, NETFN_TCPST_STATE_INPROGRESS);
+
 	pr_debug("%px: Marking test completed\n", conn);
 
 	return;
@@ -256,8 +276,11 @@ void netfn_tcpst_http_put_work(struct work_struct *work)
 	enum netfn_tcpst_err err;
 
 	if (!netfn_tcpst_http_put(conn)) {
+		struct netfn_tcpst_ctx *ctx = conn->ctx;
+
 		pr_warn("%px: Error(%d) in connecting to HTTP server\n", conn, err);
-		netfn_tcpst_state_set(conn->ctx, NETFN_TCPST_STATE_ABORTED, netfn_tcpst_state_get(conn->ctx));
+		netfn_tcpst_state_set(ctx, NETFN_TCPST_STATE_ABORTED, netfn_tcpst_state_get(ctx));
+		atomic_inc(&ctx->comp_conn);
 		return;
 	}
 

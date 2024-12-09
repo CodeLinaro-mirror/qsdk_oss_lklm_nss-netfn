@@ -115,6 +115,7 @@ struct netfn_tcpst_ctx {
 	struct net_device *vp_dev;		/* VP netdev */
 	ppe_vp_num_t vp_num;			/* VP number associated with netdev */
 	int num_conns;				/* Total connections started */
+	atomic_t comp_conn;			/* Number of connections completed */
 };
 
 /*
