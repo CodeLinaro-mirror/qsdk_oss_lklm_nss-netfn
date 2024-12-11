@@ -165,7 +165,6 @@ static ssize_t netfn_capwapmgr_tun_stats_write(struct file *filep, const char __
 {
 	struct seq_file *seq = filep->private_data;
 	struct netfn_capwapmgr_tun_ctx *ctx = (struct netfn_capwapmgr_tun_ctx *)seq->private;
-	int ret = 0;
 	uint32_t reset;
 
 	if (kstrtou32_from_user(buffer, count, 0, &reset)) {
