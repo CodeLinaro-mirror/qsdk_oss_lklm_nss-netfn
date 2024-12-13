@@ -63,6 +63,38 @@ static enum hrtimer_restart netfn_tcpst_http_get_timeout(struct hrtimer *timer)
 }
 
 /*
+ * netfn_tcpst_rx_free()
+ *	Free the SKB.
+ */
+static int netfn_tcpst_rx_free(struct sock *sk, struct sk_buff *skb)
+{
+	struct sk_buff *segs = skb_shinfo(skb)->frag_list;
+	int len = skb->len;
+
+	/*
+	 * Release all socket state like destructor, socket memory.
+	 */
+	tcp_eat_skb(sk, skb);
+	skb_orphan(skb);
+
+	/*
+	 * Recyler doesn't recycle SKB with frag_list, So de-link the list here
+	 * to recycle the SKBs.
+	 */
+	skb_shinfo(skb)->frag_list = NULL;
+	while (segs) {
+		struct sk_buff *cur = segs;
+		segs = segs->next;
+
+		cur->next =  NULL;
+		consume_skb(cur);
+	}
+
+	consume_skb(skb);
+	return len;
+}
+
+/*
  * netfn_tcpst_rx_conn()
  *	Flush the packets to linux TCP stack
  */
@@ -567,7 +599,11 @@ void netfn_tcpst_http_get_data(struct work_struct *work)
 	enum netfn_tcpst_state state;
 	struct msghdr msg = {0};
 	struct kvec iov = {0};
+	struct socket *sock;
+	struct sock *sk;
+	long timeo = 0;
 	int rx_bytes;
+	int ret;
 
 	/*
 	 * Initialize the msg
@@ -576,15 +612,24 @@ void netfn_tcpst_http_get_data(struct work_struct *work)
 	iov.iov_base = conn->buf;
 	iov.iov_len = NETFN_TCPST_BUF_LEN;
 
+	sock = READ_ONCE(conn->sock);
+	sk = sock->sk;
+
 	/*
 	 * Read the data from socket
 	 */
-	rx_bytes = kernel_recvmsg(READ_ONCE(conn->sock), &msg, &iov, 1, NETFN_TCPST_BUF_LEN, msg.msg_flags);
-	if (rx_bytes < 0) {
+	lock_sock(sk);
+	ret = sk_wait_data(sk, &timeo, NULL);
+	if (ret < 0) {
 		pr_warn("%px: Error in kernel_recvmsg aborting on cpu(%d)\n", conn, smp_processor_id());
 		netfn_tcpst_state_set(conn->ctx, NETFN_TCPST_STATE_ABORTED, netfn_tcpst_state_get(conn->ctx));
+
+		release_sock(sk);
 		return;
 	}
+
+	rx_bytes = tcp_read_skb(sk, netfn_tcpst_rx_free);
+	release_sock(sk);
 
 	/*
 	 * Increment the bytes and pkt counter
