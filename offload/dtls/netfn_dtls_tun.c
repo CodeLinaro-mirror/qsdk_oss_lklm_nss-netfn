@@ -795,7 +795,7 @@ struct net_device *netfn_dtls_tun_alloc(ssize_t pvt_sz)
 	/*
 	 * Netdevice allocation.
 	 */
-	dev = alloc_netdev(sizeof(*tun) + pvt_sz, "dtlstun%d", NET_NAME_ENUM, netfn_dtls_tun_setup);
+	dev = alloc_netdev(sizeof(*tun) + pvt_sz, "dtls%d", NET_NAME_ENUM, netfn_dtls_tun_setup);
 	if (!dev) {
 		pr_err("%px: Failed to allocate DTLS device\n", drv);
 		return NULL;

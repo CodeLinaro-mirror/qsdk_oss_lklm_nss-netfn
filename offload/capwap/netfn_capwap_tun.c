@@ -1033,3 +1033,24 @@ void *netfn_capwap_tun_pvt_get(struct net_device *dev)
 	return nct->pvt;
 }
 EXPORT_SYMBOL(netfn_capwap_tun_pvt_get);
+
+/*
+ * netfn_capwap_tun_config_dtls()
+ *	Enables/disables dtls feature for capwap
+ */
+void netfn_capwap_tun_config_dtls(struct net_device *dev, bool enable)
+{
+	struct netfn_capwap_tun *nct = netdev_priv(dev);
+
+	/*
+	 * Set enabled features for capwap if dtls is enabled
+	 */
+	if (enable) {
+		nct->enc.features |= NETFN_CAPWAP_FEATURES_DTLS;
+		nct->dec.features |= NETFN_CAPWAP_FEATURES_DTLS;
+	} else {
+		nct->enc.features &= ~NETFN_CAPWAP_FEATURES_DTLS;
+		nct->dec.features &= ~NETFN_CAPWAP_FEATURES_DTLS;
+	}
+}
+EXPORT_SYMBOL(netfn_capwap_tun_config_dtls);

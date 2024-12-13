@@ -248,6 +248,7 @@ static inline void netfn_capwap_enc_80211(struct netfn_capwap_enc *enc, struct s
 	 */
 	ether_addr_copy(src_mac, eth->h_source);
 	ether_addr_copy(dst_mac, eth->h_dest);
+	skb->protocol = eth->h_proto;
 
 	/*
 	 * Insert trustsec if enabled.
@@ -531,7 +532,7 @@ bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc
 	struct netfn_capwap_enc_hdr *hdr = &enc->hdr;
 
 	ether_addr_copy(&enc->bssid, cfg->bssid);
-	enc->outer_hdr_len = ETH_HLEN;
+	enc->outer_hdr_len = 0;
 	enc->features = nct->features;
 
 	/*

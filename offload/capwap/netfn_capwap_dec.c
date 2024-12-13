@@ -22,7 +22,6 @@
 #include <linux/debugfs.h>
 #include <linux/ieee80211.h>
 #include <linux/if_ether.h>
-#include <linux/if_trustsec.h>
 #include <linux/ip.h>
 
 #include <net/protocol.h>
@@ -705,7 +704,7 @@ static bool netfn_capwap_dec(struct netfn_capwap_dec *dec, struct sk_buff *skb, 
 	struct netfn_capwap_prehdr preh = {0};
 	struct netfn_capwap_hdr_mdata *mdata;
 	uint8_t *start, *next_hdr;
-	uint8_t exception = 0;
+	uint16_t exception = 0;
 
 	preh.tunnel_id = dec->id;
 	start = next_hdr = skb->data;
