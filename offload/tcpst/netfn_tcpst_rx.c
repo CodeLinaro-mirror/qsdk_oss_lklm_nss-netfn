@@ -26,10 +26,10 @@
 #include "netfn_tcpst_priv.h"
 
 /*
- * netfn_tcpst_http_get_timeout()
- *	Handles HTTP test timeout and offset
+ * netfn_tcpst_rx_timeout()
+ *	Handles rx test timeout and offset
  */
-static enum hrtimer_restart netfn_tcpst_http_get_timeout(struct hrtimer *timer)
+static enum hrtimer_restart netfn_tcpst_rx_timeout(struct hrtimer *timer)
 {
 	struct netfn_tcpst_conn *conn = container_of(timer, struct netfn_tcpst_conn, hrtimer);
 	struct netfn_tcpst_stats_ext *ext_stats = &conn->ext_stats;
@@ -49,7 +49,7 @@ static enum hrtimer_restart netfn_tcpst_http_get_timeout(struct hrtimer *timer)
 	 * Check if offset timer expired
 	 */
 	if (test_and_clear_bit(NETFN_TCPST_TIMER_FWD_BIT, &conn->timer_state)) {
-		stats->http.eom_time = ktime_get_real_ns();
+		stats->test.eom_time = ktime_get_real_ns();
 		set_bit(NETFN_TCPST_TIMER_COMP_BIT, &conn->timer_state);
 		return HRTIMER_NORESTART;
 	}
@@ -438,7 +438,7 @@ static bool netfn_tcpst_http_get(struct netfn_tcpst_conn *conn)
 	 * Send a GET command to request the contents of the file and
 	 * record current timestamp as ROMTime.
 	 */
-	stats->http.rom_time = ktime_get_real_ns();
+	stats->test.rom_time = ktime_get_real_ns();
 
 	err = netfn_tcpst_http_get_resp(conn);
 	if (err != NETFN_TCPST_ERR_NONE) {
@@ -449,7 +449,7 @@ static bool netfn_tcpst_http_get(struct netfn_tcpst_conn *conn)
 	/*
 	 * Increment bom_time for first response only
 	 */
-	stats->http.bom_time = ktime_get_real_ns();
+	stats->test.bom_time = ktime_get_real_ns();
 	return true;
 }
 
@@ -586,10 +586,10 @@ bool netfn_tcpst_rx_vp6(struct ppe_vp_cb_info *info, void *cb_data)
 }
 
 /*
- * netfn_tcpst_http_get_data()
- *	HTTP TCP receive data
+ * netfn_tcpst_rx_data()
+ *	TCP receive data
  */
-void netfn_tcpst_http_get_data(struct work_struct *work)
+void netfn_tcpst_rx_data(struct work_struct *work)
 {
 	struct netfn_tcpst_conn *conn = container_of(work, struct netfn_tcpst_conn, work);
 	struct netfn_tcpst_stats_ext *ext_stats = &conn->ext_stats;
@@ -640,7 +640,7 @@ void netfn_tcpst_http_get_data(struct work_struct *work)
 	/*
 	 * Reschedule work if we haven't received all data or no timeout received
 	 */
-	eom = (ext_stats->test_rx_bytes >= conn->http.file_sz);
+	eom = (ext_stats->test_rx_bytes >= conn->test_bytes);
 	timeout = test_bit(NETFN_TCPST_TIMER_COMP_BIT, &conn->timer_state);
 	abort = (netfn_tcpst_state_get(conn->ctx) == NETFN_TCPST_STATE_ABORTED);
 	resched = (!eom && !timeout && !abort);
@@ -688,7 +688,7 @@ void netfn_tcpst_http_get_data(struct work_struct *work)
 	/*
 	 * Update the stats
 	 */
-	stats->http.eom_time = ktime_get_real_ns();
+	stats->test.eom_time = ktime_get_real_ns();
 	stats->test_bytes.rcvd = ext_stats->test_rx_bytes;
 	netfn_tcpst_update_eth_stats(conn->eth_dev, stats);
 	netfn_tcpst_state_set(conn->ctx, state, NETFN_TCPST_STATE_INPROGRESS);
@@ -697,17 +697,26 @@ void netfn_tcpst_http_get_data(struct work_struct *work)
 }
 
 /*
- * netfn_tcpst_http_get_work()
+ * netfn_tcpst_rx_work()
  *	TCP download support
  */
-void netfn_tcpst_http_get_work(struct work_struct *work)
+void netfn_tcpst_rx_work(struct work_struct *work)
 {
 	struct netfn_tcpst_conn *conn = container_of(work, struct netfn_tcpst_conn, work);
+	struct netfn_tcpst_stats *stats = &conn->stats;
+	struct netfn_tcpst_ctx *ctx = conn->ctx;
 	enum netfn_tcpst_err err;
 
-	if (!netfn_tcpst_http_get(conn)) {
-		struct netfn_tcpst_ctx *ctx = conn->ctx;
+	/*
+	 * Capture the rom and bom time for raw mode.
+	 * It will be overridden for HTTP case
+	 */
+	stats->test.rom_time = stats->test.bom_time = ktime_get_real_ns();
 
+	/*
+	 * If in HTTP test mode then perform HTTP GET
+	 */
+	if (netfn_tcpst_is_http(ctx) && !netfn_tcpst_http_get(conn)) {
 		pr_warn("%px: Error(%d) in connecting to HTTP server\n", work, err);
 		netfn_tcpst_state_set(ctx, NETFN_TCPST_STATE_ABORTED, netfn_tcpst_state_get(ctx));
 		atomic_inc(&ctx->comp_conn);
@@ -715,10 +724,15 @@ void netfn_tcpst_http_get_work(struct work_struct *work)
 	}
 
 	/*
+	 * Initialize test bytes
+	 */
+	conn->test_bytes = netfn_tcpst_is_http(ctx) ? conn->http.file_sz : conn->raw.max_bytes;
+
+	/*
 	 * Start the timer only if its time based test
 	 */
 	if (conn->duration) {
-		conn->hrtimer.function = netfn_tcpst_http_get_timeout;
+		conn->hrtimer.function = netfn_tcpst_rx_timeout;
 		hrtimer_start(&conn->hrtimer, ktime_set(conn->offset, 0), HRTIMER_MODE_REL);
 	} else {
 		/*
@@ -728,12 +742,12 @@ void netfn_tcpst_http_get_work(struct work_struct *work)
 	}
 
 	/*
-	 * Override work function for HTTP data path
+	 * Override work function for rx data path
 	 */
-	INIT_WORK(work, netfn_tcpst_http_get_data);
+	INIT_WORK(work, netfn_tcpst_rx_data);
 
 	/*
-	 * Schedule the work to receive the HTTP Data
+	 * Schedule the work to receive the tx Data
 	 */
 	schedule_work_on(smp_processor_id(), work);
 }

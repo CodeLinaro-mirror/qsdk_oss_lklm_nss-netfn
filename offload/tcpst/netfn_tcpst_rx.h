@@ -21,7 +21,7 @@
 
 bool netfn_tcpst_rx_vp4(struct ppe_vp_cb_info *info, void *cb_data);
 bool netfn_tcpst_rx_vp6(struct ppe_vp_cb_info *info, void *cb_data);
-void netfn_tcpst_http_get_work(struct work_struct *work);
+void netfn_tcpst_rx_work(struct work_struct *work);
 int netfn_tcpst_rx_gro_comp(struct sk_buff *skb, int thoff);
 
 #endif

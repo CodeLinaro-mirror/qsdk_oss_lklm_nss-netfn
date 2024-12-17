@@ -25,10 +25,10 @@
 #include "netfn_tcpst_priv.h"
 
 /*
- * netfn_tcpst_http_put_timeout()
- *	Handles HTTP test timeout and offset.
+ * netfn_tcpst_tx_timeout()
+ *	Handles TCP test timeout and offset.
  */
-static enum hrtimer_restart netfn_tcpst_http_put_timeout(struct hrtimer *timer)
+static enum hrtimer_restart netfn_tcpst_tx_timeout(struct hrtimer *timer)
 {
 	struct netfn_tcpst_conn *conn = container_of(timer, struct netfn_tcpst_conn, hrtimer);
 	struct netfn_tcpst_stats_ext *ext_stats = &conn->ext_stats;
@@ -48,7 +48,7 @@ static enum hrtimer_restart netfn_tcpst_http_put_timeout(struct hrtimer *timer)
 	 * Check if offset timer expired
 	 */
 	if (test_and_clear_bit(NETFN_TCPST_TIMER_FWD_BIT, &conn->timer_state)) {
-		stats->http.eom_time = ktime_get_real_ns();
+		stats->test.eom_time = ktime_get_real_ns();
 		set_bit(NETFN_TCPST_TIMER_COMP_BIT, &conn->timer_state);
 		return HRTIMER_NORESTART;
 	}
@@ -132,7 +132,7 @@ static bool netfn_tcpst_http_put(struct netfn_tcpst_conn *conn)
 	 * Send a PUT command to request the sending of a file and
 	 * set ROMTime to the current time value
 	 */
-	stats->http.rom_time = ktime_get_real_ns();
+	stats->test.rom_time = ktime_get_real_ns();
 
 	/*
 	 * Send HTTP PUT request to server
@@ -146,20 +146,19 @@ static bool netfn_tcpst_http_put(struct netfn_tcpst_conn *conn)
 	/*
 	 * Record the bom_Time
 	 */
-	stats->http.bom_time = ktime_get_real_ns();
+	stats->test.bom_time = ktime_get_real_ns();
 	return true;
 }
 
 /*
- * netfn_tcpst_put_data()
- *	HTTP TCP transmit data
+ * netfn_tcpst_tx_data()
+ *	TCP transmit data
  */
-void netfn_tcpst_put_data(struct work_struct *work)
+void netfn_tcpst_tx_data(struct work_struct *work)
 {
 	struct netfn_tcpst_conn *conn = container_of(work, struct netfn_tcpst_conn, work);
 	struct netfn_tcpst_stats_ext *ext_stats = &conn->ext_stats;
 	struct netfn_tcpst_stats *stats = &conn->stats;
-	struct netfn_tcpst_http *http = &conn->http;
 	struct netfn_tcpst_ctx *ctx = conn->ctx;
 	struct netfn_tcpst *tcpst = &g_tcpst;
 	bool resched, eom, timeout, abort;
@@ -170,16 +169,16 @@ void netfn_tcpst_put_data(struct work_struct *work)
 	int len;
 
 	/*
-	 * Prepare the HTTP PUT
+	 * Prepare the TCP tx msg
 	 */
 	msg.msg_flags |= MSG_MORE;
 	iov.iov_base = conn->buf;
 	iov.iov_len = NETFN_TCPST_BUF_LEN;
 
 	/*
-	 * We send minimum of http->file_sz or NETFN_TCPST_BUF_LEN
+	 * We send minimum of conn->test_bytes or NETFN_TCPST_BUF_LEN
 	 */
-	tx_bytes = (http->file_sz < NETFN_TCPST_BUF_LEN) ? http->file_sz : NETFN_TCPST_BUF_LEN;
+	tx_bytes = (conn->test_bytes < NETFN_TCPST_BUF_LEN) ? conn->test_bytes : NETFN_TCPST_BUF_LEN;
 
 	/*
 	 * Send dummy buffer
@@ -197,12 +196,12 @@ void netfn_tcpst_put_data(struct work_struct *work)
 	 */
 	ext_stats->test_tx_bytes += len;
 	ext_stats->test_tx_pkts += !!len;
-	http->file_sz -= len;
+	conn->test_bytes -= len;
 
 	/*
 	 * Reschedule work if we haven't sent all data or no timeout received
 	 */
-	eom = !http->file_sz;
+	eom = !conn->test_bytes;
 	timeout = test_bit(NETFN_TCPST_TIMER_COMP_BIT, &conn->timer_state);
 	abort = (netfn_tcpst_state_get(ctx) == NETFN_TCPST_STATE_ABORTED);
 	resched = (!timeout && !eom && !abort);
@@ -222,7 +221,7 @@ void netfn_tcpst_put_data(struct work_struct *work)
 	/*
 	 * Verify the received response for HTTP connection.
 	 */
-	if (eom && !netfn_tcpst_http_put_resp(conn)) {
+	if (netfn_tcpst_is_http(ctx) && eom && !netfn_tcpst_http_put_resp(conn)) {
 		pr_debug("%px: Invalid response received\n", conn);
 		netfn_tcpst_state_set(ctx, NETFN_TCPST_STATE_ABORTED, netfn_tcpst_state_get(ctx));
 		return;
@@ -256,7 +255,7 @@ void netfn_tcpst_put_data(struct work_struct *work)
 		return;
 	}
 
-	stats->http.eom_time = ktime_get_real_ns();
+	stats->test.eom_time = ktime_get_real_ns();
 	stats->test_bytes.sent = ext_stats->test_tx_bytes;
 	netfn_tcpst_update_eth_stats(conn->eth_dev, stats);
 	netfn_tcpst_state_set(ctx, state, NETFN_TCPST_STATE_INPROGRESS);
@@ -267,15 +266,26 @@ void netfn_tcpst_put_data(struct work_struct *work)
 }
 
 /*
- * netfn_tcpst_http_put_work()
- *	HTTP TCP upload support
+ * netfn_tcpst_tx_work()
+ *	TCP upload support
  */
-void netfn_tcpst_http_put_work(struct work_struct *work)
+void netfn_tcpst_tx_work(struct work_struct *work)
 {
 	struct netfn_tcpst_conn *conn = container_of(work, struct netfn_tcpst_conn, work);
+	struct netfn_tcpst_stats *stats = &conn->stats;
+	struct netfn_tcpst_ctx *ctx = conn->ctx;
 	enum netfn_tcpst_err err;
 
-	if (!netfn_tcpst_http_put(conn)) {
+	/*
+	 * Capture the rom and bom time for raw mode.
+	 * It will be overridden for HTTP case
+	 */
+	stats->test.rom_time = stats->test.bom_time = ktime_get_real_ns();
+
+	/*
+	 * If in HTTP test mode then perform HTTP PUT
+	 */
+	if (netfn_tcpst_is_http(ctx) && !netfn_tcpst_http_put(conn)) {
 		struct netfn_tcpst_ctx *ctx = conn->ctx;
 
 		pr_warn("%px: Error(%d) in connecting to HTTP server\n", conn, err);
@@ -285,10 +295,15 @@ void netfn_tcpst_http_put_work(struct work_struct *work)
 	}
 
 	/*
+	 * Initialize test bytes
+	 */
+	conn->test_bytes = netfn_tcpst_is_http(ctx) ? conn->http.file_sz : conn->raw.max_bytes;
+
+	/*
 	 * Start the timer only if its time based test
 	 */
 	if (conn->duration) {
-		conn->hrtimer.function = netfn_tcpst_http_put_timeout;
+		conn->hrtimer.function = netfn_tcpst_tx_timeout;
 		hrtimer_start(&conn->hrtimer, ktime_set(conn->offset, 0), HRTIMER_MODE_REL);
 	} else {
 		/*
@@ -300,7 +315,7 @@ void netfn_tcpst_http_put_work(struct work_struct *work)
 	/*
 	 * Override work function for HTTP data path
 	 */
-	INIT_WORK(work, netfn_tcpst_put_data);
+	INIT_WORK(work, netfn_tcpst_tx_data);
 
 	/*
 	 * Schedule the work again

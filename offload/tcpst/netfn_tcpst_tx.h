@@ -19,5 +19,5 @@
 #ifndef __NETFN_TCPST_TX_H
 #define __NETFN_TCPST_TX_H
 
-void netfn_tcpst_http_put_work(struct work_struct *work);
+void netfn_tcpst_tx_work(struct work_struct *work);
 #endif

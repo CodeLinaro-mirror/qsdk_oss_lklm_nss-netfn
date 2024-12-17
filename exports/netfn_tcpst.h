@@ -36,7 +36,7 @@ struct netfn_tcpst_stats {
 		uint64_t rom_time;		/* Request of message */
 		uint64_t bom_time;		/* Beginning of message */
 		uint64_t eom_time;		/* End of message */
-	} http;
+	} test;
 
 	struct {
 		uint64_t sent;			/* Test bytes sent in upload case */
@@ -145,7 +145,7 @@ struct netfn_tcpst_http {
  *	Raw TCP based speed test
  */
 struct netfn_tcpst_raw {
-	uint64_t max_bytes;			/* Maximum bytes to be transferred */
+	size_t max_bytes;			/* Maximum bytes to be transferred */
 };
 
 /*

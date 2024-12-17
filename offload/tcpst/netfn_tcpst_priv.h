@@ -99,6 +99,7 @@ struct netfn_tcpst_conn {
 	struct netfn_tcpst_gro_state gro_state;	/* Connection GRO state */
 	struct netfn_tcpst_stats_ext ext_stats;	/* Extended debug statistcs per connection */
 	unsigned long timer_state;		/* Maintains state of timer */
+	uint64_t test_bytes;			/* Maximum test bytes to be tx/rx */
 	uint16_t offset;			/* Offset duration for test */
 	uint16_t duration;			/* Duration of the test */
 	char *buf;				/* Buffer for tx/rx */
@@ -111,6 +112,7 @@ struct netfn_tcpst_conn {
 struct netfn_tcpst_ctx {
 	struct netfn_tcpst_conn conn[NR_CPUS];	/* Connections */
 	enum netfn_tcpst_state state;		/* State of the test */
+	enum netfn_tcpst_test test;		/* Test mode */
 	struct workqueue_struct *wq;		/* Workqueue for all workers */
 	struct net_device *vp_dev;		/* VP netdev */
 	ppe_vp_num_t vp_num;			/* VP number associated with netdev */
@@ -163,4 +165,12 @@ static inline void netfn_tcpst_update_eth_stats(struct net_device *dev, struct n
 	stats->eth_bytes.sent = rtnl_stats.tx_bytes - stats->eth_bytes.sent;
 }
 
+/*
+ * netfn_tcpst_is_http()
+ *	Returns true if we running http test
+ */
+static inline bool netfn_tcpst_is_http(struct netfn_tcpst_ctx *ctx)
+{
+	return (ctx->test == NETFN_TCPST_TEST_HTTP_UPLOAD || ctx->test == NETFN_TCPST_TEST_HTTP_DOWNLOAD);
+}
 #endif

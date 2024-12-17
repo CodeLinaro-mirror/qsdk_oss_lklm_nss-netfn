@@ -141,8 +141,8 @@ static struct netfn_tcpst_result *netfn_tcpst_get_result(struct netfn_tcpst_ctx 
 	result->error = NETFN_TCPST_ERR_NONE;
 	result->state = netfn_tcpst_state_get(ctx);
 
-	stats->http.bom_time = U64_MAX;
-	stats->http.rom_time = U64_MAX;
+	stats->test.bom_time = U64_MAX;
+	stats->test.rom_time = U64_MAX;
 
 	for_each_cpu(cpu, cpu_all_mask) {
 		struct netfn_tcpst_conn *conn = &ctx->conn[cpu];
@@ -169,9 +169,9 @@ static struct netfn_tcpst_result *netfn_tcpst_get_result(struct netfn_tcpst_ctx 
 		 * bom_time & rom_time should be of first connection connected.
 		 * eom_time should be of last connection completed.
 		 */
-		stats->http.bom_time = min(stats->http.bom_time, conn_stats->http.bom_time);
-		stats->http.rom_time = min(stats->http.rom_time, conn_stats->http.rom_time);
-		stats->http.eom_time = max(stats->http.eom_time, conn_stats->http.eom_time);
+		stats->test.bom_time = min(stats->test.bom_time, conn_stats->test.bom_time);
+		stats->test.rom_time = min(stats->test.rom_time, conn_stats->test.rom_time);
+		stats->test.eom_time = max(stats->test.eom_time, conn_stats->test.eom_time);
 
 		stats->test_bytes.sent += conn_stats->test_bytes.sent;
 		stats->test_bytes.rcvd += conn_stats->test_bytes.rcvd;
@@ -557,11 +557,13 @@ enum netfn_tcpst_state netfn_tcpst_start(struct netfn_tcpst_cfg *cfg)
 
 	switch (cfg->test) {
 	case NETFN_TCPST_TEST_HTTP_UPLOAD:
-		work_cb = netfn_tcpst_http_put_work;
+	case NETFN_TCPST_TEST_RAW_UPLOAD:
+		work_cb = netfn_tcpst_tx_work;
 		break;
 
 	case NETFN_TCPST_TEST_HTTP_DOWNLOAD:
-		work_cb = netfn_tcpst_http_get_work;
+	case NETFN_TCPST_TEST_RAW_DOWNLOAD:
+		work_cb = netfn_tcpst_rx_work;
 		break;
 
 	default:
@@ -580,6 +582,7 @@ enum netfn_tcpst_state netfn_tcpst_start(struct netfn_tcpst_cfg *cfg)
 		goto unlock;
 	}
 
+	ctx->test = cfg->test;
 	netfn_tcpst_state_set(ctx, NETFN_TCPST_STATE_INPROGRESS, NETFN_TCPST_STATE_NOT_RUNNING);
 	state = netfn_tcpst_state_get(ctx);
 	rcu_assign_pointer(tcpst->ctx, ctx);
