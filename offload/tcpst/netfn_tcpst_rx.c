@@ -95,6 +95,43 @@ static int netfn_tcpst_rx_free(struct sock *sk, struct sk_buff *skb)
 }
 
 /*
+ * netfn_tcpst_rx_except)
+ *	Exception the packets to Linux
+ */
+static void netfn_tcpst_rx_except(struct netfn_tcpst_conn *conn, struct sk_buff *skb)
+{
+	struct netfn_tcpst_gro_state *gro_state = &conn->gro_state;
+
+	/*
+	 * Link the first SKB with the chain
+	 */
+	skb->next = gro_state->first_frag;
+
+	do {
+		uint32_t proto = skb->protocol;
+		struct sk_buff *next;
+
+		next = skb->next;
+		skb->next = NULL;
+		skb->dev = conn->eth_dev;
+
+		/*
+		 * Reset the headers and protocol
+		 */
+		skb_push(skb, skb_network_header_len(skb));
+		if (proto == htons(ETH_P_MAP)) {
+			skb->protocol = gro_state->protocol;
+		}
+
+		netif_receive_skb(skb);
+		skb = next;
+
+	} while (skb);
+
+	*gro_state = (struct netfn_tcpst_gro_state){0};
+}
+
+/*
  * netfn_tcpst_rx_conn()
  *	Flush the packets to linux TCP stack
  */
@@ -108,11 +145,11 @@ static inline void netfn_tcpst_rx_conn(struct netfn_tcpst_conn *conn, struct sk_
 	struct sock *sk;
 
 	/*
-	 * Check if socket exists if not consume skb and return
+	 * Check if socket exists if not flush skb to Linux and return
 	 */
 	sock = READ_ONCE(conn->sock);
 	if (!sock) {
-		dev_kfree_skb(skb);
+		netfn_tcpst_rx_except(conn, skb);
 		pr_err("%px: Socket is destroyed already\n", conn);
 		return;
 	}
@@ -125,7 +162,7 @@ static inline void netfn_tcpst_rx_conn(struct netfn_tcpst_conn *conn, struct sk_
 	 */
 	dst = dst ? dst_check(dst, sk->sk_rx_dst_cookie) : NULL;
 	if (!dst) {
-		dev_kfree_skb(skb);
+		netfn_tcpst_rx_except(conn, skb);
 		conn->ext_stats.dst_miss_pkts += !dst;
 		return;
 	}
