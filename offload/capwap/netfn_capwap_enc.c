@@ -532,7 +532,7 @@ bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc
 	struct netfn_capwap_enc_hdr *hdr = &enc->hdr;
 
 	ether_addr_copy(&enc->bssid, cfg->bssid);
-	enc->outer_hdr_len = 0;
+	enc->outer_hdr_len = sizeof(struct netfn_capwap_winfo);
 	enc->features = nct->features;
 
 	/*

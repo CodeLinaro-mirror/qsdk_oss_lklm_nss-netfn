@@ -39,7 +39,7 @@ uint32_t netfn_flow_cookie_db_hash(struct netfn_flow_cookie_db *db, struct netfn
 {
 
 	switch (t->tuple_type) {
-	case NETFN_TUPLE_5TUPLE:
+	case NETFN_TUPLE_5TUPLE: {
 		struct netfn_tuple_5tuple *t5 = &t->tuples.tuple_5;
 		uint32_t hash = 0;
 
@@ -66,6 +66,8 @@ uint32_t netfn_flow_cookie_db_hash(struct netfn_flow_cookie_db *db, struct netfn
 
 		pr_debug("%p: Hash computed - %x\n", t, hash);
 		return hash;
+
+	}
 
 	default:
 		pr_warn("%p: Unsupported tuple format(%d)\n", t, t->tuple_type);
