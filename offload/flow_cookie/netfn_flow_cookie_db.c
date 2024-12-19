@@ -99,7 +99,7 @@ static bool netfn_flow_cookie_db_match(struct netfn_flow_cookie_db_entry *entry,
 	uint8_t status = 0;
 
 	switch (t->tuple_type) {
-	case NETFN_TUPLE_5TUPLE:
+	case NETFN_TUPLE_5TUPLE: {
 
 		struct netfn_tuple_5tuple *s1 = &m->tuples.tuple_5;
 		struct netfn_tuple_5tuple *d1 = &t->tuples.tuple_5;
@@ -116,6 +116,8 @@ static bool netfn_flow_cookie_db_match(struct netfn_flow_cookie_db_entry *entry,
 		status += !!((s1->l4_src_ident) ^ (d1->l4_src_ident));
 		status += !!((s1->l4_dest_ident) ^ (d1->l4_dest_ident));
 		break;
+	}
+
 	default:
 		status = 1;
 		pr_warn("%p: Unsupported tuple format(%d)\n", t, t->tuple_type);
