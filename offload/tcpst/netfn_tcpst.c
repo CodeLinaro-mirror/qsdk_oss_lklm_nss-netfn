@@ -583,14 +583,18 @@ enum netfn_tcpst_state netfn_tcpst_start(struct netfn_tcpst_cfg *cfg)
 	}
 
 	ctx->test = cfg->test;
-	netfn_tcpst_state_set(ctx, NETFN_TCPST_STATE_INPROGRESS, NETFN_TCPST_STATE_NOT_RUNNING);
-	state = netfn_tcpst_state_get(ctx);
 	rcu_assign_pointer(tcpst->ctx, ctx);
 
 	/*
 	 * Register GRO offload handler.
 	 */
 	dev_add_offload(&gro_offload);
+
+	/*
+	 * Mark test in progress only after everything initialized
+	 */
+	netfn_tcpst_state_set(ctx, NETFN_TCPST_STATE_INPROGRESS, NETFN_TCPST_STATE_NOT_RUNNING);
+	state = netfn_tcpst_state_get(ctx);
 
 	/*
 	 * Schedule the Tx/Rx work.

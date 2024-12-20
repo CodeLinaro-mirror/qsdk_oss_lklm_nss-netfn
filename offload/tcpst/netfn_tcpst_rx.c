@@ -531,6 +531,15 @@ bool netfn_tcpst_rx_vp4(struct ppe_vp_cb_info *info, void *cb_data)
 	struct sk_buff *skb = info->skb;
 	struct netfn_tcpst_conn *conn;
 
+	/*
+	 * Test is not running
+	 */
+	if (netfn_tcpst_state_get(ctx) != NETFN_TCPST_STATE_INPROGRESS) {
+		dev_kfree_skb(skb);
+		pr_debug_ratelimited("%px: Test is not running\n", ctx);
+		return true;
+	}
+
 	conn = &ctx->conn[smp_processor_id()];
 
 	/*
@@ -582,6 +591,15 @@ bool netfn_tcpst_rx_vp6(struct ppe_vp_cb_info *info, void *cb_data)
 	struct netfn_tcpst_stats_ext *ext_stats;
 	struct sk_buff *skb = info->skb;
 	struct netfn_tcpst_conn *conn;
+
+	/*
+	 * Test is not running
+	 */
+	if (netfn_tcpst_state_get(ctx) != NETFN_TCPST_STATE_INPROGRESS) {
+		dev_kfree_skb(skb);
+		pr_debug_ratelimited("%px: Test is not running\n", ctx);
+		return true;
+	}
 
 	conn = &ctx->conn[smp_processor_id()];
 
