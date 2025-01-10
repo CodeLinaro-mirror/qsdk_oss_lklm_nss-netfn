@@ -2,7 +2,7 @@
  * netfn_tcpst.h
  *	Network function's TCP Speedtest public object definitions.
  *
- * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -28,25 +28,25 @@
  */
 struct netfn_tcpst_stats {
 	struct {
-		uint64_t request_time;		/* TCP connection opening time */
-		uint64_t response_time;		/* TCP connection eastablish time */
-	} tcp_open;
+		uint64_t request_time;		/* Timestamp, in nanoseconds, captured before socket connection. */
+		uint64_t response_time;		/* Timestamp, in nanoseconds, captured after socket connection. */
+	} tcp_open;				/* Timestamp captured during TCP socket connect */
 
 	struct {
-		uint64_t rom_time;		/* Request of message */
-		uint64_t bom_time;		/* Beginning of message */
-		uint64_t eom_time;		/* End of message */
-	} test;
+		uint64_t rom_time;		/* Timestamp, in nanoseconds, captured before sending the HTTP request. */
+		uint64_t bom_time;		/* Timestamp, in nanoseconds, captured before sending the first test byte. */
+		uint64_t eom_time;		/* Timestamp, in nanoseconds, captured after sending the last test byte. */
+	} test;					/* Timestamps captured during test data exchange. */
 
 	struct {
 		uint64_t sent;			/* Test bytes sent in upload case */
 		uint64_t rcvd;			/* Test bytes received in download case */
-	} test_bytes;
+	} test_bytes;				/* TCP Data (L4) bytes sent and received during the test. */
 
 	struct {
 		uint64_t sent;			/* Ethernet sent in upload case */
 		uint64_t rcvd;			/* Ethernet received in download case */
-	} eth_bytes;
+	} eth_bytes;				/* Ethernet data (L2) byte sent and received during the test. */
 };
 
 /*
@@ -124,7 +124,7 @@ struct netfn_tcpst_server {
 	union {
 		struct in_addr v4;		/* IPv4 addr */
 		struct in6_addr v6;		/* IPv6 addr */
-	} ip;
+	} ip;					/* Server ip address */
 
 	uint16_t port;				/* Port number */
 	uint8_t ip_version;			/* IPv4 or IPv6 socket */
