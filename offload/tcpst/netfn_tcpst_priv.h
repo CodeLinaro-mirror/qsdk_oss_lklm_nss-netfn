@@ -2,7 +2,7 @@
  * netfn_tcpst_priv.h
  *	Netfn TCP Speedtest private header
  *
- * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -31,7 +31,6 @@
 #include <ppe_vp_public.h>
 
 #define NETFN_TCPST_HTTP_RESPONSE_LEN 8192	/* Max response length expected */
-#define NETFN_TCPST_BUF_LEN (128 * 1024)	/* Buffer length used for tx/rx */
 #define NETFN_TCPST_TIMER_FWD_BIT 1		/* Indicates if timer is forwarded or not */
 #define NETFN_TCPST_TIMER_COMP_BIT 2		/* Indicates if timer has completed or not */
 

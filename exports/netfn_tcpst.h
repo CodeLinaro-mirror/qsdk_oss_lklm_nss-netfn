@@ -21,6 +21,7 @@
 
 #define NETFN_TCPST_HTTP_HDR_MAX 256 		/* Max size of HTTP header */
 #define NETFN_TCPST_CONN_MAX 4			/* Max number of connections supported */
+#define NETFN_TCPST_BUF_LEN (128 * 1024)	/* Buffer length used for tx/rx */
 
 /*
  * netfn_tcpst_stats
