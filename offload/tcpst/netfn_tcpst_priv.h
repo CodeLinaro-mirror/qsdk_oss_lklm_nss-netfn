@@ -102,6 +102,7 @@ struct netfn_tcpst_conn {
 	uint16_t offset;			/* Offset duration for test */
 	uint16_t duration;			/* Duration of the test */
 	char *buf;				/* Buffer for tx/rx */
+	uint64_t buf_len;			/* Buffer length to configure */
 };
 
 /*
