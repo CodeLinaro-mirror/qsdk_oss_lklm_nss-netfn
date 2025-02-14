@@ -2,7 +2,7 @@
  * netfn_tcpst_rx.c
  *	Netfn TCP Speedtest receive file
  *
- * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -652,20 +652,11 @@ void netfn_tcpst_rx_data(struct work_struct *work)
 	struct netfn_tcpst_ctx *ctx = conn->ctx;
 	bool resched, eom, timeout, abort;
 	enum netfn_tcpst_state state;
-	struct msghdr msg = {0};
-	struct kvec iov = {0};
 	struct socket *sock;
 	struct sock *sk;
 	long timeo = 0;
 	int rx_bytes;
 	int ret;
-
-	/*
-	 * Initialize the msg
-	 */
-	msg.msg_flags |= (MSG_WAITALL | MSG_TRUNC);
-	iov.iov_base = conn->buf;
-	iov.iov_len = NETFN_TCPST_BUF_LEN;
 
 	sock = READ_ONCE(conn->sock);
 	sk = sock->sk;

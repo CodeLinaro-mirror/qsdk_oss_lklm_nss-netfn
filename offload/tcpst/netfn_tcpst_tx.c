@@ -2,7 +2,7 @@
  * netfn_tcpst_tx.c
  *	Netfn TCP Speedtest Transmit file
  *
- * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -173,12 +173,12 @@ void netfn_tcpst_tx_data(struct work_struct *work)
 	 */
 	msg.msg_flags |= MSG_MORE;
 	iov.iov_base = conn->buf;
-	iov.iov_len = NETFN_TCPST_BUF_LEN;
+	iov.iov_len = conn->buf_len;
 
 	/*
-	 * We send minimum of conn->test_bytes or NETFN_TCPST_BUF_LEN
+	 * We send minimum of conn->test_bytes or conn->buf_len
 	 */
-	tx_bytes = (conn->test_bytes < NETFN_TCPST_BUF_LEN) ? conn->test_bytes : NETFN_TCPST_BUF_LEN;
+	tx_bytes = (conn->test_bytes < conn->buf_len) ? conn->test_bytes : conn->buf_len;
 
 	/*
 	 * Send dummy buffer

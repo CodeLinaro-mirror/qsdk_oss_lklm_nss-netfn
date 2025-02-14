@@ -2,7 +2,7 @@
  * netfn_tcpst.c
  *	Netfn TCP Speedtest Driver file
  *
- * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -257,7 +257,9 @@ static enum netfn_tcpst_err netfn_tcpst_conn_init(struct netfn_tcpst_ctx *ctx, s
 	 * Allocate memory for dummy buffer used for tx/rx
 	 */
 	cfg->buf_len = !cfg->buf_len ? NETFN_TCPST_BUF_LEN : cfg->buf_len;
-	conn->buf = vzalloc(cfg->buf_len);
+	conn->buf_len = cfg->buf_len;
+
+	conn->buf = vzalloc(conn->buf_len);
 	if (!conn->buf) {
 		pr_err("%px: Failed to allocate dummy buffer\n", conn);
 		return NETFN_TCPST_ERR_NOMEM;
