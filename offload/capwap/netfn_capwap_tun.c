@@ -2,7 +2,7 @@
  * netfn_capwap_tun.c
  *	Network function's CAPWAP offload tunnel configuration.
  *
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -41,6 +41,8 @@
 
 #define NETFN_CAPWAP_MAX_STRLEN 25
 #define NETFN_CAPWAP_TUN_STATS_MAX (sizeof(struct netfn_capwap_pkt_stats) / sizeof(uint64_t))
+
+void netfn_capwap_tun_tx_cb(struct netfn_pkt_steer *tx_steer, struct sk_buff_head *q_head);
 
 /*
  * Tunnel statistics strings
@@ -180,6 +182,19 @@ static netdev_tx_t netfn_capwap_tun_tx(struct sk_buff *skb, struct net_device *d
 				phdr, phdr->nwireless, NETFN_CAPWAP_MAX_NWIRELESS);
 		NETFN_CAPWAP_TUN_STATS_INC(&stats->err_nwireless_len);
 		goto fail;
+	}
+
+	/*
+	 * Don't RPS if we are already in capwap core
+	 */
+	if (smp_processor_id() == capwap_core) {
+		struct sk_buff_head q_temp;
+
+		skb_queue_head_init(&q_temp);
+		__skb_queue_head(&q_temp, skb);
+
+		netfn_capwap_tun_tx_cb(&nct->tx_steer, &q_temp);
+		return NETDEV_TX_OK;
 	}
 
 	/*
@@ -638,7 +653,7 @@ static void netfn_capwap_tun_vp_detach(struct net_device *dev)
  * netfn_capwap_tun_tx_cb()
  *	Tx packet steering callback
  */
-static void netfn_capwap_tun_tx_cb(struct netfn_pkt_steer *tx_steer, struct sk_buff_head *q_head)
+void netfn_capwap_tun_tx_cb(struct netfn_pkt_steer *tx_steer, struct sk_buff_head *q_head)
 {
 	struct netfn_capwap_tun *nct = container_of(tx_steer, struct netfn_capwap_tun, tx_steer);
 	struct netfn_capwap_pkt_stats *stats = &nct->stats;
