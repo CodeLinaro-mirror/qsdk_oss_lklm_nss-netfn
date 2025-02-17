@@ -2,7 +2,7 @@
  * netfn_capwap.c
  *	Network function's CAPWAP offload initialization.
  *
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -86,14 +86,6 @@ void netfn_capwap_frags_add(struct netfn_capwap_frags *frags, struct sk_buff *sk
 int __init netfn_capwap_init(void)
 {
 	struct netfn_capwap *nc = &global_nc;
-
-	/*
-	 * Check for overlapping core configuration.
-	 */
-	if (fwd_cores_mask & BIT_MASK(capwap_core)) {
-		pr_warn("Overlapping cores found.\n");
-		return -EINVAL;
-	}
 
 	spin_lock_init(&nc->lock);
 
