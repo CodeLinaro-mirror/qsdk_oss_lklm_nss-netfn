@@ -2,7 +2,7 @@
  * netfn_capwap_enc.h
  *	Network function's CAPWAP offload encapsulation definitions.
  *
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -52,6 +52,7 @@ struct netfn_capwap_enc_hdr {
  *	Encapsulation state
  */
 struct netfn_capwap_enc {
+	struct netfn_capwap_tun *nct;	/* Back pointer to parent. */
 	struct net_device *dev;		/* Device pointer for tunnel. */
 	struct netfn_capwap_enc_stats stats;	/* Encap tunnel stats. */
 

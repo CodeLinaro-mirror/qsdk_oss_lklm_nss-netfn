@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -23,6 +23,7 @@
 #include <linux/list.h>
 #include <linux/completion.h>
 #include <linux/skbuff.h>
+#include <linux/log2.h>
 
 #include "netfn_pkt_steer_priv.h"
 
@@ -78,16 +79,24 @@ static inline void netfn_pkt_steer_add_stats(struct netfn_pkt_steer_stats *src, 
  */
 static void netfn_pkt_steer_flush(struct netfn_pkt_steer_pcpu *pcpu)
 {
-	int i, cpu;
+	int i, cpu, tx_cpu;
 
 	for_each_online_cpu(cpu) {
-		struct netfn_pkt_steer_fifo *fifo = &pcpu->fifo[cpu];
+		struct netfn_pkt_steer_fifo *fifo = rcu_dereference_protected(pcpu->fifo[cpu], 1);
 
-		for (i = 0; i < NETFN_PKT_STEER_QUEUE_DEPTH; i++) {
-			struct sk_buff *skb = xchg(&fifo->skbs[i], NULL);
+		if (!fifo)
+			continue;
+
+		RCU_INIT_POINTER(pcpu->fifo[tx_cpu], NULL);
+		synchronize_rcu();
+
+		for (i = 0; i < fifo->len; i++) {
+			struct sk_buff *skb = xchg(&(fifo->skbs[i]), NULL);
 			if (skb)
 				consume_skb(skb);
 		}
+
+		kfree(fifo);
 	}
 }
 
@@ -105,8 +114,9 @@ static int netfn_pkt_steer_reap_fifo(struct netfn_pkt_steer_fifo *fifo, struct s
 	prod = atomic64_read(&fifo->prod);
 	cons = atomic64_read(&fifo->cons);
 
-	avail = NETFN_PKT_STEER_AVAIL_COUNT(prod, cons);
+	avail = NETFN_PKT_STEER_AVAIL_COUNT(prod, cons, fifo->len);
 	if (!avail) {
+		fifo->stats.fifo_empty++;
 		return 0;
 	}
 
@@ -115,7 +125,7 @@ static int netfn_pkt_steer_reap_fifo(struct netfn_pkt_steer_fifo *fifo, struct s
 
 	while (avail--) {
 		skb = xchg(&fifo->skbs[cons], NULL);
-		cons = NETFN_PKT_STEER_INC(cons);
+		cons = NETFN_PKT_STEER_INC(cons, fifo->len);
 		if (likely(avail)) {
 			struct sk_buff *nskb = fifo->skbs[cons];
 			prefetch(nskb);
@@ -129,6 +139,7 @@ static int netfn_pkt_steer_reap_fifo(struct netfn_pkt_steer_fifo *fifo, struct s
 
 	atomic64_set(&fifo->cons, cons);
 
+	fifo->stats.fifo_empty += !!(budget - processed);
 	fifo->stats.fifo_dq += processed;
 	return processed;
 }
@@ -141,18 +152,27 @@ static int netfn_pkt_steer_rcv_poll(struct napi_struct *napi, int budget)
 {
 	struct netfn_pkt_steer_pcpu *pcpu = container_of(napi, struct netfn_pkt_steer_pcpu, napi);
 	struct sk_buff_head skb_head;
-	uint32_t processed = 0;
+	uint32_t processed;
 	int cpu;
 
+reap_again:
+	processed = 0;
 	skb_queue_head_init(&skb_head);
+
+	rcu_read_lock_bh();
 
 	/*
 	 * TODO: Implement Fair Reap budget.
 	 */
 	for_each_online_cpu(cpu) {
-		struct netfn_pkt_steer_fifo *fifo = &pcpu->fifo[cpu];
+		struct netfn_pkt_steer_fifo *fifo = rcu_dereference(pcpu->fifo[cpu]);
+
+		if (!fifo)
+			continue;
 		processed += netfn_pkt_steer_reap_fifo(fifo, &skb_head, budget - processed);
 	}
+
+	rcu_read_unlock_bh();
 
 	/*
 	 * Callback to remote handler.
@@ -162,6 +182,12 @@ static int netfn_pkt_steer_rcv_poll(struct napi_struct *napi, int budget)
 
 	atomic_sub(processed, &pcpu->queued);
 	if (processed < budget) {
+		/*
+		 * Reap again, if we have queued packet after last reap and budget is left
+		 */
+		if (atomic_read(&pcpu->queued)) {
+			goto reap_again;
+		}
 
 		napi_complete(napi);
 		atomic_set(&pcpu->ipi_masked, 0);
@@ -206,8 +232,7 @@ static void netfn_pkt_steer_rcv_ipi(void *info)
  */
 int netfn_pkt_steer_send_list(struct netfn_pkt_steer *ps, struct sk_buff_head *head, int cpu, uint64_t *tx_bytes)
 {
-	struct netfn_pkt_steer_pcpu *ps_pcpu;
-	struct netfn_pkt_steer_pcpu *pcpu;
+	struct netfn_pkt_steer_pcpu *pcpu = &ps->pcpu[cpu];
 	uint32_t qlen = skb_queue_len(head);
 	struct netfn_pkt_steer_fifo *fifo;
 	int cur_cpu = smp_processor_id();
@@ -215,15 +240,12 @@ int netfn_pkt_steer_send_list(struct netfn_pkt_steer *ps, struct sk_buff_head *h
 	uint64_t prod, cons;
 
 	rcu_read_lock_bh();
-	ps_pcpu = rcu_dereference(ps->pcpu);
-	if (unlikely(!ps_pcpu)) {
+	fifo = rcu_dereference(pcpu->fifo[cur_cpu]);
+	if (unlikely(!fifo)) {
 		rcu_read_unlock_bh();
 		return 0;
 	}
 
-	pcpu = per_cpu_ptr(ps_pcpu, cpu);
-
-	fifo = &pcpu->fifo[cur_cpu];
 	prod = atomic64_read(&fifo->prod);
 	cons = atomic64_read(&fifo->cons);
 	*tx_bytes = 0;
@@ -231,7 +253,7 @@ int netfn_pkt_steer_send_list(struct netfn_pkt_steer *ps, struct sk_buff_head *h
 	/*
 	 * Fetch available length.
 	 */
-	avail = NETFN_PKT_STEER_AVAIL_COUNT(cons, prod + 1);
+	avail = NETFN_PKT_STEER_AVAIL_COUNT(cons, prod + 1, fifo->len);
 	if (!avail) {
 		goto done;
 	}
@@ -244,7 +266,7 @@ int netfn_pkt_steer_send_list(struct netfn_pkt_steer *ps, struct sk_buff_head *h
 		*tx_bytes += skb->len;
 
 		xchg(&fifo->skbs[prod], skb);
-		prod = NETFN_PKT_STEER_INC(prod);
+		prod = NETFN_PKT_STEER_INC(prod, fifo->len);
 	}
 
 	atomic64_set(&fifo->prod, prod);
@@ -265,36 +287,32 @@ EXPORT_SYMBOL(netfn_pkt_steer_send_list);
  */
 int netfn_pkt_steer_send(struct netfn_pkt_steer *ps, struct sk_buff *skb, int cpu)
 {
-	struct netfn_pkt_steer_pcpu *ps_pcpu;
-	struct netfn_pkt_steer_pcpu *pcpu;
+	struct netfn_pkt_steer_pcpu *pcpu = &ps->pcpu[cpu];
 	struct netfn_pkt_steer_fifo *fifo;
 	int cur_cpu = smp_processor_id();
 	int ret = 0;
 	uint64_t prod, cons;
 
 	rcu_read_lock_bh();
-	ps_pcpu = rcu_dereference(ps->pcpu);
-	if (unlikely(!ps_pcpu)) {
+	fifo = rcu_dereference(pcpu->fifo[cur_cpu]);
+	if (unlikely(!fifo)) {
 		rcu_read_unlock_bh();
 		return 0;
 	}
 
-	pcpu = per_cpu_ptr(ps_pcpu, cpu);
-
-	fifo = &pcpu->fifo[cur_cpu];
 	prod = atomic64_read(&fifo->prod);
 	cons = atomic64_read(&fifo->cons);
 
 	/*
 	 * Fetch available length.
 	 */
-	if (!NETFN_PKT_STEER_AVAIL_COUNT(cons, prod + 1)) {
+	if (!NETFN_PKT_STEER_AVAIL_COUNT(cons, prod + 1, fifo->len)) {
 		fifo->stats.fifo_full++;
 		goto done;
 	}
 
 	xchg(&fifo->skbs[prod], skb);
-	prod = NETFN_PKT_STEER_INC(prod);
+	prod = NETFN_PKT_STEER_INC(prod, fifo->len);
 
 	atomic64_set(&fifo->prod, prod);
 
@@ -315,27 +333,24 @@ EXPORT_SYMBOL(netfn_pkt_steer_send);
  */
 void netfn_pkt_steer_get_stats(struct netfn_pkt_steer *ps, struct netfn_pkt_steer_stats *stats)
 {
-	struct netfn_pkt_steer_pcpu *ps_pcpu;
-	int cpu, fifo_idx;
+	int cpu, tx_cpu;
 
 	memset(stats, 0, sizeof(*stats));
 
 	rcu_read_lock_bh();
-	ps_pcpu = rcu_dereference(ps->pcpu);
-	if (!ps_pcpu) {
-		goto done;
-	}
 
 	for_each_online_cpu(cpu) {
-		struct netfn_pkt_steer_pcpu *pcpu = per_cpu_ptr(ps_pcpu, cpu);
+		struct netfn_pkt_steer_pcpu *pcpu = &ps->pcpu[cpu];
 
-		for_each_online_cpu(fifo_idx) {
-			struct netfn_pkt_steer_fifo *fifo = &pcpu->fifo[fifo_idx];
+		for_each_online_cpu(tx_cpu) {
+			struct netfn_pkt_steer_fifo *fifo = rcu_dereference(pcpu->fifo[tx_cpu]);
+
+			if (!fifo)
+				continue;
 			netfn_pkt_steer_add_stats(&fifo->stats, stats);
 		}
 	}
 
-done:
 	rcu_read_unlock_bh();
 }
 EXPORT_SYMBOL(netfn_pkt_steer_get_stats);
@@ -348,20 +363,40 @@ EXPORT_SYMBOL(netfn_pkt_steer_get_stats);
 bool netfn_pkt_steer_enable(struct netfn_pkt_steer *ps)
 {
 	struct netfn_pkt_steer_info *info = &ps->info;
-	struct netfn_pkt_steer_pcpu *ps_pcpu;
 	int cpu;
 
 	/*
-	 * Allocated steer context for each CPU.
+	 * Check if FIFO len is power of 2
 	 */
-	ps_pcpu = alloc_percpu_gfp(struct netfn_pkt_steer_pcpu, GFP_KERNEL | __GFP_ZERO);
-	if (!ps_pcpu) {
-		pr_err("%p: failed to allocate context for each CPU\n", ps);
+	if (!is_power_of_2(info->fifo_len)) {
+		pr_info("%px: FIFO len is not power of 2\n", ps);
 		return false;
 	}
 
-	for_each_online_cpu(cpu) {
-		struct netfn_pkt_steer_pcpu *pcpu = per_cpu_ptr(ps_pcpu, cpu);
+	/*
+	 * Allocate per CPU context
+	 */
+	for_each_cpu(cpu, &info->receiver_mask) {
+		struct netfn_pkt_steer_pcpu *pcpu = &ps->pcpu[cpu];
+		int tx_cpu;
+
+		/*
+		 * Allocate memory for fifo
+		 */
+		for_each_cpu(tx_cpu, &info->sender_mask) {
+			struct netfn_pkt_steer_fifo *fifo;
+			size_t alloc_sz = sizeof(*fifo) + NETFN_PKT_STEER_FIFO_SZ(info->fifo_len);
+
+			fifo = kzalloc(alloc_sz, GFP_KERNEL);
+			if (!fifo) {
+				pr_warn("%px: Unable to allocate memory for FIFO[cpu(%d) fifo(%d)]\n", pcpu, cpu, tx_cpu);
+				return false;
+			}
+
+			fifo->len = info->fifo_len;
+			rcu_assign_pointer(pcpu->fifo[tx_cpu], fifo);
+			pr_info("%px: Allocated FIFO for sender CPU(%u) on core(%u)\n", pcpu, tx_cpu, cpu);
+		}
 
 		pcpu->ps = ps;
 		pcpu->cb = info->cb;
@@ -384,7 +419,6 @@ bool netfn_pkt_steer_enable(struct netfn_pkt_steer *ps)
 		pr_info("%s:Enabled pkt_steer for cpu(%u)\n", info->dev->name, cpu);
 	}
 
-	rcu_assign_pointer(ps->pcpu, ps_pcpu);
 	return true;
 }
 EXPORT_SYMBOL(netfn_pkt_steer_enable);
@@ -395,24 +429,20 @@ EXPORT_SYMBOL(netfn_pkt_steer_enable);
  */
 void netfn_pkt_steer_disable(struct netfn_pkt_steer *ps)
 {
-	struct netfn_pkt_steer_pcpu *ps_pcpu;
+	struct netfn_pkt_steer_info *info = &ps->info;
 	int cpu;
 
 	/*
 	 * NOTE: Caller should not call multiple Packet Steer API(s) at same time.
 	 */
-	ps_pcpu = rcu_dereference_protected(ps->pcpu, 1);
-	RCU_INIT_POINTER(ps->pcpu, NULL);
-	synchronize_rcu();
+	for_each_cpu(cpu, &info->receiver_mask) {
+		struct netfn_pkt_steer_pcpu *pcpu = &ps->pcpu[cpu];
 
-	for_each_online_cpu(cpu) {
-		struct netfn_pkt_steer_pcpu *pcpu = per_cpu_ptr(ps_pcpu, cpu);
 		napi_disable(&pcpu->napi);
 		netif_napi_del(&pcpu->napi);
 		netfn_pkt_steer_flush(pcpu);
 	}
 
-	free_percpu(ps_pcpu);
 }
 EXPORT_SYMBOL(netfn_pkt_steer_disable);
 
@@ -443,7 +473,7 @@ EXPORT_SYMBOL(netfn_pkt_steer_deinit);
  */
 int __init netfn_pkt_steer_init_module(void)
 {
-	pr_info("NETFN packet steer module loaded with Queue size(%u) %s\n", NETFN_PKT_STEER_QUEUE_DEPTH, NSS_NETFN_BUILD_ID);
+	pr_info("NETFN packet steer module loaded %s\n", NSS_NETFN_BUILD_ID);
 	return 0;
 }
 
