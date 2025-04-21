@@ -33,6 +33,8 @@ static const char *netfn_sk_offload_stats_str[] __attribute__((unused)) = {
 	"Rx Bytes",			/* Rx bytes received */
 	"Tx Packets",			/* Tx pkts sent */
 	"Tx Bytes",			/* Tx bytes sent */
+	"Ctx retrieve failures",	/* Context retrieve failures */
+	"Total packets dropped",	/* Total pkts dropped */
 };
 
 /*
@@ -45,6 +47,11 @@ static const char *netfn_sk_offload_stats_ctx_str[] __attribute__((unused)) = {
 	"Dst miss packets",			/* Destination failure packets */
 	"Tx packets",				/* Tx pkts sent */
 	"Tx Bytes",				/* Tx Bytes sent */
+	"Coalesced packets",			/* Total pkts coalesced to head */
+	"Coalesced start packets",		/* Total pkts started coalesced */
+	"Coalesce failed packets",		/* Total pkts failed to coalesced */
+	"Coalesce start failed packets",	/* Total pkts failed to coalesced start */
+	"Napi flush packets",			/* GRO flushed by Linux Napi complete */
 };
 
 /*

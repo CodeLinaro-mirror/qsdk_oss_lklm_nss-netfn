@@ -9,13 +9,535 @@
  * netfn_sk_offload_rx.c
  *      Network Sock Offload Receive Processing.
  */
-#include <linux/in.h>
-#include <linux/in6.h>
+#include <linux/ip.h>
 #include <linux/module.h>
 #include <linux/debugfs.h>
 #include <net/protocol.h>
+#include <net/udp.h>
+#include <net/gro.h>
 
 #include "netfn_sk_offload_priv.h"
+
+
+#define __is_cache_empty(gro_state) (!((gro_state)->head_cache.skb))
+
+/*
+ * __rx_gro_udp_check
+ *	Coalesce check for UDP
+ */
+static enum netfn_sk_offload_rx_action __rx_gro_udp_check(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
+{
+	/*
+	 * TODO:
+	 * Add the relevant changes here once
+	 * finalized for UDP.
+	 */
+
+	BUG_ON(1);
+
+	return NETFN_SK_OFFLOAD_RX_GRO_NONE;
+}
+
+/*
+ * __rx_gro_tcp_check
+ *	Coalesce check for TCP
+ */
+static enum netfn_sk_offload_rx_action __rx_gro_tcp_check(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
+{
+	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
+	struct netfn_sk_offload_stats_ctx *stats;
+	struct tcphdr *tcph = tcp_hdr(skb);
+	uint32_t skip_merge = 0;
+	uint32_t hlen;
+	__be32 flags;
+
+	stats = this_cpu_ptr(ctx->stats);
+	flags = tcp_flag_word(tcph);
+	hlen = tcph->doff * 4;
+
+	if (__is_cache_empty(gro_state)) {
+		/*
+		 * Don't Coalesce if flag other then ACK is set,
+		 * or checksum is not verified by EDMA.
+		 * or this is pure ack (No data is present).
+		 */
+		skip_merge += !!((tcp_flag_word(tcph) & htonl(GENMASK(23,16))) & ~TCP_FLAG_ACK);
+		skip_merge += !!(skb->ip_summed ^ CHECKSUM_UNNECESSARY);
+		skip_merge += !!(skb->len <= hlen);
+
+		if (!skip_merge) return NETFN_SK_OFFLOAD_RX_GRO_START;
+
+		stats->fail_start_coalesce++;
+		return NETFN_SK_OFFLOAD_RX_GRO_SKIP;
+	}
+
+#define TCP_SKIP_FLAGS ~((__be32)(TCP_FLAG_FIN | TCP_FLAG_PSH))
+
+	/*
+	 * TCP Flags must be the same as previous, Allow coalesce for FIN & PSH.
+	 */
+	skip_merge += !!((flags ^ gro_state->tcp.flag_word) & TCP_SKIP_FLAGS);
+
+	/*
+	 * TCP sequence check.
+	 */
+	skip_merge += !!(tcph->ack_seq ^ gro_state->tcp.ack_seq);
+	skip_merge += !!(ntohl(tcph->seq) ^ gro_state->tcp.next_seq);
+
+	/*
+	 * Data offset has to be same.
+	 */
+	skip_merge += !!(hlen ^ gro_state->tcp.hlen);
+
+	/*
+	 * Checksum and payload check;
+	 * If, we can't coalesce the new SKB then flush the previous list
+	 * and Deliver current packet without GRO
+	 */
+	skip_merge += !!(skb->ip_summed ^ CHECKSUM_UNNECESSARY);
+	skip_merge += !!(skb->len <= hlen);
+	if (skip_merge) {
+		stats->fail_coalesce++;
+		return NETFN_SK_OFFLOAD_RX_GRO_SKIP;
+	}
+
+	/*
+	 * If FIN and PSH was set, then end the chain with this packet.
+	 */
+	return !!(flags & TCP_SKIP_FLAGS) ? NETFN_SK_OFFLOAD_RX_GRO_QUEUE : NETFN_SK_OFFLOAD_RX_GRO_FLUSH;
+}
+
+/*
+ * __rx_except
+ *      Exception the packets to Linux
+ */
+static void __rx_except(struct netfn_sk_offload_ctx *ctx, struct sk_buff_head *head)
+{
+	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
+	struct sk_buff *tmp, *skb;
+
+	/*
+	 * De-queue all packets from the frag queue and notify Linux
+	 */
+	skb_queue_walk_safe(head, skb, tmp) {
+		skb_unlink(skb, head);
+
+		/*
+		 * Reset the headers and protocol
+		 */
+		skb_push(skb, skb_network_header_len(skb));
+		netif_receive_skb(skb);
+	}
+
+	/*
+	 * Reset local state.
+	 */
+	memset(gro_state, 0, sizeof(*gro_state));
+	__skb_queue_head_init(&gro_state->frag_q);
+}
+
+/*
+ * __rx_get_dst
+ *	Fetch the dst from socket
+ */
+static struct dst_entry *__rx_get_dst(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
+{
+	struct dst_entry *dst;
+	struct sock *sk = NULL;
+
+	sk = ctx->sk;
+	dst = rcu_dereference(sk->sk_rx_dst);
+
+	/*
+	 * Check if dst cache is obsolete
+	 */
+	return dst ? dst_check(dst, sk->sk_rx_dst_cookie) : NULL;
+
+}
+
+/*
+ * __rx_gro_flush
+ *	Flush the SKB
+ */
+static void __rx_gro_flush(struct netfn_sk_offload_ctx *ctx)
+{
+	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
+	struct sk_buff *first_frag = skb_peek(&gro_state->frag_q);
+	uint8_t ip_proto = ctx->tuple.tuples.tuple_5.protocol;
+	struct sk_buff **p_skb, *iter, *h_skb;
+	struct sk_buff *last_frag;
+	struct dst_entry *dst;
+	uint32_t head_len;
+
+	h_skb =	gro_state->head_cache.skb;
+	BUG_ON(!h_skb);
+
+	head_len = h_skb->len;
+
+	dst = __rx_get_dst(ctx, h_skb);
+	if (!dst) {
+		struct netfn_sk_offload_stats_ctx *stats;
+
+		stats = this_cpu_ptr(ctx->stats);
+		stats->dst_miss_pkts++;
+
+		/*
+		 * Link the first SKB with the frag chain
+		 */
+		__skb_queue_head(&gro_state->frag_q, h_skb);
+		__rx_except(ctx, &gro_state->frag_q);
+		return;
+	}
+
+	skb_dst_set_noref(h_skb, dst);
+
+	/*
+	 * If this is GRO'd SKB, We need to update head SKB.
+	 * - First SKB's original length will become head length
+	 * - First SKB length will be total length.
+	 * - All coalesced SKB length will become data length.
+	 */
+
+	p_skb = &skb_shinfo(h_skb)->frag_list;
+
+	h_skb->len = gro_state->head_cache.len;
+	h_skb->truesize = gro_state->head_cache.truesize;
+	h_skb->data_len = gro_state->head_cache.len - head_len;
+
+	/*
+	 * We may receive jumbo packet as frag_list for head SKB itself.
+	 * Hence, Add Gro'd SKB to end of frag_list
+	 */
+	skb_walk_frags(h_skb, iter) {
+		if (!iter->next) {
+			p_skb = &iter->next;
+			break;
+		}
+	}
+
+	*p_skb = first_frag;
+
+	last_frag = skb_peek_tail(&gro_state->frag_q);
+	if (last_frag) {
+		last_frag->next = NULL;
+	}
+
+	/*
+	 * Reset local state.
+	 */
+	memset(gro_state, 0, sizeof(*gro_state));
+	__skb_queue_head_init(&gro_state->frag_q);
+
+	/*
+	 * Correct headers.
+	 * We are not correcting checksum as we are directly giving SKB to TCP/UDP Protocol stack.
+	 */
+	if (h_skb->protocol == htons(ETH_P_IP)) {
+		struct net_protocol *proto4 = rcu_dereference(inet_protos[ip_proto]);
+		iph_set_totlen(ip_hdr(h_skb), h_skb->len + ip_hdrlen(h_skb));
+		proto4->handler(h_skb);
+	} else {
+		struct inet6_protocol *proto6 = rcu_dereference(inet6_protos[ip_proto]);
+		ipv6_hdr(h_skb)->payload_len = htons(h_skb->len);
+		proto6->handler(h_skb);
+	}
+}
+
+/*
+ * __rx_gro_purge
+ *	Clear the GRO list
+ */
+void __rx_gro_purge(struct netfn_sk_offload_ctx *ctx)
+{
+	struct netfn_sk_offload_rx_state *gro_state;
+	struct netfn_sk_offload *so = &g_sk_offload;
+	struct netfn_sk_offload_stats *stats;
+	struct sk_buff *h_skb;
+	int count;
+
+	stats = this_cpu_ptr(so->stats);
+
+	gro_state = &ctx->gro_state;
+	h_skb = gro_state->head_cache.skb;
+
+	/*
+	 * If, nothing is present in GRO queue, return
+	 */
+	if (!h_skb) return;
+
+	__skb_queue_head(&gro_state->frag_q, h_skb);
+	count = skb_queue_len(&gro_state->frag_q);
+	stats->pkts_dropped += count;
+
+	pr_warn_ratelimited("%px: Socket already destroyed, purge remaining packet(%d)\n", ctx, count);
+
+	__skb_queue_purge(&gro_state->frag_q);
+
+	memset(gro_state, 0, sizeof(*gro_state));
+	__skb_queue_head_init(&gro_state->frag_q);
+}
+
+/*
+ * __rx_tcp_completion
+ *      NAPI completion callback to
+ *      flush the GROed TCP packets
+ */
+static void __rx_tcp_completion(void *info)
+{
+	struct netfn_sk_offload_rx_state *gro_state;
+	struct netfn_sk_offload_ctx *ctx = info;
+	struct netfn_sk_offload_stats_ctx *stats;
+	struct sk_buff *skb;
+	struct tcphdr *tcph;
+
+	stats = this_cpu_ptr(ctx->stats);
+	gro_state = &ctx->gro_state;
+
+	/*
+	 * We may have flushed the head before
+	 * NAPI completion (i.e TCP PSH)
+	 */
+	if (__is_cache_empty(gro_state)) {
+		return;
+	}
+
+	skb = gro_state->head_cache.skb;
+
+	tcph = tcp_hdr(skb);
+	tcp_flag_word(tcph) |= gro_state->tcp.flag_word;
+
+	stats->napi_flush++;
+	__rx_gro_flush(ctx);
+}
+
+/*
+ * __rx_udp_completion
+ *      NAPI completion callback to
+ *      flush the GROed UDP packets
+ */
+static void __rx_udp_completion(void *info)
+{
+	struct netfn_sk_offload_rx_state *gro_state;
+	struct netfn_sk_offload_ctx *ctx = info;
+	struct netfn_sk_offload_stats_ctx *stats;
+
+	/*
+	 * We maye have flushed the head before
+	 * NAPI completion
+	 */
+	gro_state = &ctx->gro_state;
+	if (__is_cache_empty(gro_state)) {
+		return;
+	}
+
+	stats = this_cpu_ptr(ctx->stats);
+	stats->napi_flush++;
+	__rx_gro_flush(ctx);
+
+}
+
+/*
+ * __rx_deliver
+ *	Deliver the NON GRO packet
+ */
+static void __rx_deliver(struct netfn_sk_offload_ctx *ctx,  struct sk_buff *skb)
+{
+	uint8_t ip_proto = ctx->tuple.tuples.tuple_5.protocol;
+	struct dst_entry *dst = __rx_get_dst(ctx, skb);
+
+	if (!dst) {
+		struct netfn_sk_offload_stats_ctx *stats;
+		struct sk_buff_head head;
+
+		__skb_queue_head_init(&head);
+		__skb_queue_tail(&head, skb);
+
+		stats = this_cpu_ptr(ctx->stats);
+		stats->dst_miss_pkts++;
+		__rx_except(ctx, &head);
+		return;
+	}
+
+	skb_dst_set_noref(skb, dst);
+
+	/*
+	 * Hand over to linux
+	 */
+	if (skb->protocol == htons(ETH_P_IP)) {
+		struct net_protocol *proto4 = rcu_dereference(inet_protos[ip_proto]);
+		proto4->handler(skb);
+	} else {
+		struct inet6_protocol *proto6 = rcu_dereference(inet6_protos[ip_proto]);
+		proto6->handler(skb);
+	}
+}
+
+/*
+ * __rx_gro_queue
+ *	Merge SKB into current GRO state
+ */
+static void __rx_gro_queue(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
+{
+	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
+	struct netfn_sk_offload_stats_ctx *stats;
+
+	stats = this_cpu_ptr(ctx->stats);
+
+	/*
+	 * Update the head cache for the current fragment
+	 */
+	gro_state->head_cache.len += skb->len;
+	gro_state->head_cache.truesize +=  skb->truesize;
+
+	__skb_queue_tail(&gro_state->frag_q, skb);
+	stats->coalesce++;
+
+}
+
+/*
+ * __rx_gro_state_init
+ *	Initialise GRO head
+ */
+static void __rx_gro_state_init(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
+{
+	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
+	struct netfn_sk_offload_stats_ctx *stats;
+
+	stats = this_cpu_ptr(ctx->stats);
+
+	dev_napi_notify_completion(&ctx->napi_info);
+
+	/*
+	 * Reset GRO field
+	 */
+	*(u32 *)&NAPI_GRO_CB(skb)->zeroed = 0;
+
+	/*
+	 * Reset our local state for coalesce,
+	 */
+	__skb_queue_head_init(&gro_state->frag_q);
+
+	/* Save the current SKB as the new head */
+	gro_state->head_cache.len = skb->len;
+	gro_state->head_cache.truesize = skb->truesize;
+	gro_state->head_cache.skb = skb;
+
+	stats->start_coalesce++;
+}
+
+/*
+ * __rx_tcp
+ *	Perform GRO on TCP packets
+ */
+static void __rx_tcp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
+{
+	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
+	struct tcphdr *tcph = tcp_hdr(skb);
+	int gro_action;
+	uint32_t hlen;
+	__be32 flags;
+
+	hlen = tcph->doff * 4;
+	flags = tcp_flag_word(tcph);
+
+	gro_action = __rx_gro_tcp_check(ctx, skb);
+
+	switch (gro_action) {
+	case NETFN_SK_OFFLOAD_RX_GRO_START:
+		/*
+		 * We shouldn't be holding any chain.
+		 */
+		WARN_ON(!__is_cache_empty(gro_state));
+
+		/*
+		 * Start a new chain with received packet.
+		 * Update TCP specific data in gro_state
+		 */
+		gro_state->tcp.hlen = hlen;
+		gro_state->tcp.flag_word = flags;
+		gro_state->tcp.ack_seq = tcph->ack_seq;
+		gro_state->tcp.next_seq = ntohl(tcph->seq) + (skb->len - hlen);
+
+		__rx_gro_state_init(ctx, skb);
+		break;
+
+	case NETFN_SK_OFFLOAD_RX_GRO_QUEUE:
+		/*
+		 * We are going to coalesce data, Pull TCP header as well.
+		 */
+		__skb_pull(skb, hlen);
+
+		/*
+		 * Update GRO state for next packet.
+		 */
+		gro_state->tcp.flag_word |= (flags & (TCP_FLAG_FIN | TCP_FLAG_PSH));
+		gro_state->tcp.next_seq += skb->len;
+
+		/*
+		 * Queue the packet to existing chain and continue.
+		 */
+		__rx_gro_queue(ctx, skb);
+		break;
+
+	case NETFN_SK_OFFLOAD_RX_GRO_FLUSH:
+		/*
+		 * We are going to coalesce data, Pull TCP header as well.
+		 */
+		__skb_pull(skb, hlen);
+
+		/*
+		 * Save TCP header state
+		 */
+		gro_state->tcp.flag_word |= (flags & (TCP_FLAG_FIN | TCP_FLAG_PSH));
+		gro_state->tcp.next_seq += skb->len;
+
+		/*
+		 * Queue the packet to existing chain and Flush it to Linux.
+		 */
+		__rx_gro_queue(ctx, skb);
+
+		/*
+		 * Restore the TCP flags in Head SKB.
+		 * (PSH/FIN Packet could have modified it).
+		 */
+		tcph = tcp_hdr(gro_state->head_cache.skb);
+		tcp_flag_word(tcph) |= gro_state->tcp.flag_word;
+
+		__rx_gro_flush(ctx);
+		break;
+
+	case NETFN_SK_OFFLOAD_RX_GRO_SKIP:
+	      	/*
+		 * If we have active GRO chain, flush it
+		 */
+		if (!__is_cache_empty(gro_state))  {
+			tcph = tcp_hdr(gro_state->head_cache.skb);
+			tcp_flag_word(tcph) |= gro_state->tcp.flag_word;
+			__rx_gro_flush(ctx);
+		}
+
+		/*
+		 * Packet can't be GRO'd deliver as it is
+		 */
+		__rx_deliver(ctx, skb);
+	}
+}
+
+/*
+ * __rx_udp
+ *      Perform GRO on UDP packets
+ */
+static void __rx_udp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
+{
+	int gro_action;
+
+	gro_action = __rx_gro_udp_check(ctx, skb);
+
+	/*
+	 * TODO: UDP GRO
+	 */
+	BUG_ON(1);
+}
 
 /*
  * netfn_sk_offload_rx()
@@ -23,15 +545,67 @@
  */
 bool netfn_sk_offload_rx(struct ppe_vp_cb_info *info, void *cb_data)
 {
-	int ret = 0;
+	struct netfn_sk_offload *so = &g_sk_offload;
+	struct netfn_sk_offload_ctx *ctx = NULL;
+	struct netfn_sk_offload_stats_ctx *stats;
+	struct netfn_sk_offload_stats *so_stats;
+	uint16_t flow_idx = info->flow_idx;
+	struct sk_buff *skb = info->skb;
+
+	rcu_read_lock_bh();
+
+	so_stats = this_cpu_ptr(so->stats);
 
 	/*
-	 * TODO:
-	 * Invoke the appropriate callback API
-	 * as set during Rx Init.
+	 * Fetch the ctx using flow entry
 	 */
+	ctx = netfn_sk_offload_db_get_ctx(flow_idx);
+	if (!ctx) {
+		pr_warn_ratelimited("%d: Connection already destroyed\n", flow_idx);
+		so_stats->rx_fail_ctx++;
+		rcu_read_unlock_bh();
+		goto drop;
+	}
 
-	return ret;
+	skb->protocol = ctx->etype;
+
+	stats = this_cpu_ptr(ctx->stats);
+
+	/*
+	 * Update the global and context stats
+	 */
+	so_stats->rx_pkts++;
+	so_stats->rx_bytes += skb->len;
+	stats->rx_pkts++;
+	stats->rx_bytes += skb->len;
+
+	/*
+	 * Set skb fields
+	 */
+	skb->ip_summed = info->ip_summed;
+	skb->pkt_type = PACKET_HOST;
+
+	/*
+	 * Pull IP header as packet will be delivered to TCP stack.
+	 */
+	skb_reset_network_header(skb);
+	__skb_pull(skb, ctx->iphdr_sz);
+	skb_reset_transport_header(skb);
+
+	if (!ctx->gro_rcv) {
+		rcu_read_unlock_bh();
+		goto drop;
+	}
+
+	ctx->gro_rcv(ctx, skb);
+	rcu_read_unlock_bh();
+
+	return true;
+
+drop:
+	so_stats->pkts_dropped++;
+	dev_kfree_skb(skb);
+	return true;
 }
 
 /*
@@ -40,29 +614,31 @@ bool netfn_sk_offload_rx(struct ppe_vp_cb_info *info, void *cb_data)
  */
 void netfn_sk_offload_rx_init(struct netfn_sk_offload_ctx *ctx)
 {
-	int (*proto_handler)(struct sk_buff *skb);
+	void *napi_notify, *gro_rcv;
 	struct sock *sk = ctx->sk;
-	u16 proto = sk->sk_protocol;
-	unsigned short family = sk->sk_family;
 
-	rcu_read_lock();
-	switch (proto) {
+	ctx->iphdr_sz = (sk->sk_family == AF_INET) ? sizeof(struct iphdr) : sizeof(struct ipv6hdr);
+	ctx->etype = (sk->sk_family == AF_INET) ? htons(ETH_P_IP) : htons(ETH_P_IPV6);
+
+	switch (sk->sk_protocol) {
 	case IPPROTO_TCP:
+		gro_rcv = __rx_tcp;
+		napi_notify = __rx_tcp_completion;
+		break;
 	case IPPROTO_UDP:
-		if (family == AF_INET) {
-			struct net_protocol *proto4 = rcu_dereference(inet_protos[proto]);
-			proto_handler = proto4->handler;
-		} else {
-			struct inet6_protocol * proto6 = rcu_dereference(inet6_protos[proto]);
-			proto_handler = proto6->handler;
-		}
-
-		ctx->gro_rcv = NULL;
-		ctx->kernel_proto_handler = proto_handler;
+		gro_rcv = __rx_udp;
+		napi_notify = __rx_udp_completion;
 		break;
 	default:
-		pr_err("Unhandled protocol (%d) for Socket offload\n", proto);
-		break;
+		WARN_ON(1);
+		return;
 	}
-	rcu_read_unlock();
+
+	ctx->gro_rcv = gro_rcv;
+
+	/*
+	 * Initialise the NAPI completion callback
+	 */
+	napi_notifier_info_init(&ctx->napi_info, napi_notify, ctx);
+
 }

@@ -31,6 +31,8 @@ struct netfn_sk_offload_stats {
 	uint64_t rx_bytes;			/* Rx bytes received */
 	uint64_t tx_pkts;			/* Tx pkts sent */
 	uint64_t tx_bytes;			/* Tx bytes sent */
+	uint64_t rx_fail_ctx;			/* Total ctx retrieve failures */
+	uint64_t pkts_dropped;                  /* Total packets dropped */
 };
 
 /*
@@ -43,6 +45,11 @@ struct netfn_sk_offload_stats_ctx {
 	uint64_t dst_miss_pkts;			/* Total times dst wasn't found */
 	uint64_t tx_pkts;			/* Tx pkts sent */
 	uint64_t tx_bytes;			/* Tx bytes sent */
+	uint64_t coalesce;                      /* Total pkts coalesced to head */
+	uint64_t start_coalesce;                /* Total pkts started coalesced */
+	uint64_t fail_coalesce;                 /* Total pkts failed to coalesced */
+	uint64_t fail_start_coalesce;           /* Total pkts failed to coalesced start */
+	uint64_t napi_flush;                    /* GRO flushed by Linux Napi complete */
 };
 
 /*

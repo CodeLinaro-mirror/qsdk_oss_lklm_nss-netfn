@@ -63,15 +63,17 @@ struct netfn_sk_offload_ctx {
 	struct netfn_tuple tuple;		/* Context tuple */
 	void (*gro_rcv)(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb);
 						/* GRO receive */
-        int (*kernel_proto_handler)(struct sk_buff *skb);
-						/* Protocol Handler */
+	struct netfn_sk_offload_rx_state gro_state;     /* GRO state */
 	uint16_t flow_idx;			/* Flow Index */
 	uint16_t db_idx : __builtin_ctz(NETFN_SK_OFFLOAD_MAX_CONNS);
 						/* DB Index */
-
 	/*
 	 * TODO: Add CPU ID.
 	 */
+
+	struct napi_notifier_info napi_info;	/* NAPI completion info */
+	uint8_t iphdr_sz;               /* IP header size */
+	__be16 etype;			/* Ethernet type */
 };
 
 #endif /*__NETFN_SK_OFFLOAD_PRIV_H */
