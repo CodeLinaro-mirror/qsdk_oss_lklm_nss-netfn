@@ -2,7 +2,7 @@
  * netfn_capwap_types.h
  *	Network function's CAPWAP public object definitions.
  *
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -119,6 +119,13 @@ struct netfn_capwap_dec_stats {
 	uint64_t err_malformed;			/**< Error packet because of malformed packet. */
 	uint64_t err_excess_len;		/**< Error packet if frag size exceeds total len. */
 	uint64_t err_nwireless_len;		/**< Error packets because of invalid nwireless len. */
+	/*
+	 * Fifo stats
+	 */
+	uint64_t fifo_full;			/**< Fifo full */
+	uint64_t fifo_enq;			/**< Fifo enqueue */
+	uint64_t fifo_dq;			/**< Fifo dequeue */
+	uint64_t fifo_empty;			/**< Fifo empty */
 	uint64_t reserve[2];			/**< Reserve for future use. */
 };
 
@@ -140,6 +147,13 @@ struct netfn_capwap_enc_stats {
 	uint64_t err_direct_dtls;		/**< Error packets because of DTLS packet. */
 	uint64_t err_nwireless_len;		/**< Error packets because of invalid nwireless len. */
 	uint64_t err_insufficient_hroom;	/**< Error packets because of insufficent headroom. */
+	/*
+	 * Fifo stats
+	 */
+	uint64_t fifo_full;			/**< Fifo full */
+	uint64_t fifo_enq;			/**< Fifo enqueue */
+	uint64_t fifo_dq;			/**< Fifo dequeue */
+	uint64_t fifo_empty;			/**< Fifo empty */
 	uint64_t reserve[2];			/**< Reserve for future use. */
 };
 

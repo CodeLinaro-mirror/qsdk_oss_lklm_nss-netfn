@@ -2,7 +2,7 @@
  * netfn_capwap_dec.c
  *	Network function's CAPWAP offload decapsulation.
  *
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -57,6 +57,10 @@ static int8_t *g_dec_stats_str[] = {
 	"err_malformed",
 	"err_excess_len",
 	"err_nwireless_len",
+	"fifo_full",
+	"fifo_enq",
+	"fifo_dq",
+	"fifo_empty",
 	"res1",
 	"res2",
 };
@@ -789,6 +793,7 @@ static ssize_t netfn_capwap_dec_stats_show(struct file *fp, char __user *ubuf, s
 {
 	struct netfn_capwap_dec *dec = fp->private_data;
 	uint64_t *stats = (uint64_t *)&dec->stats;
+	struct netfn_pkt_steer_stats ps_stats;
 	size_t dec_stats_sz, stats_sz;
 	ssize_t bytes_read = 0;
 	size_t size_wr = 0;
@@ -803,6 +808,15 @@ static ssize_t netfn_capwap_dec_stats_show(struct file *fp, char __user *ubuf, s
 		pr_warn("%px: Unable to allocate memory for stats.\n", fp);
 		return -ENOMEM;
 	}
+
+	/*
+	 * Get pkt steer stats
+	 */
+	netfn_pkt_steer_get_stats(&dec->nct->rx_steer, &ps_stats);
+	dec->stats.fifo_full = ps_stats.fifo_full;
+	dec->stats.fifo_enq = ps_stats.fifo_enq;
+	dec->stats.fifo_dq = ps_stats.fifo_dq;
+	dec->stats.fifo_empty = ps_stats.fifo_empty;
 
 	/*
 	 * Print decap stats.
@@ -1003,6 +1017,7 @@ bool netfn_capwap_dec_init(struct netfn_capwap_dec *dec, struct netfn_capwap_dec
 	dec->max_payload_sz = cfg->max_payload_sz;
 	dec->features = nct->features;
 	dec->id = nct->id;
+	dec->nct = nct;
 
 	/*
 	 * TODO: Remove this once inner sgt is enabled.

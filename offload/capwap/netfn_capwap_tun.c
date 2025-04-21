@@ -782,6 +782,7 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, stru
 {
 	struct netfn_pkt_steer_info info = {0};
 	struct netfn_capwap *nc = &global_nc;
+	unsigned long capwap_core_mask;
 	struct netfn_capwap_tun *nct;
 	struct net_device *dev;
 	int err;
@@ -860,6 +861,8 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, stru
 		goto fail;
 	}
 
+	capwap_core_mask = (1 << capwap_core);
+
 	/*
 	 * Allocate tx data pkt steering object.
 	 */
@@ -867,6 +870,9 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, stru
 	info.budget = tx_napi_budget;
 	info.weight = 1;
 	info.dev = dev;
+	info.sender_mask = *(to_cpumask(&fwd_cores_mask));
+	info.receiver_mask = *(to_cpumask(&capwap_core_mask));
+	info.fifo_len = ps_queue_len;
 	netfn_pkt_steer_init(&nct->tx_steer, &info);
 
 	/*
@@ -876,6 +882,9 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, stru
 	info.budget = rx_napi_budget;
 	info.weight = 1;
 	info.dev = dev;
+	info.sender_mask = *(to_cpumask(&capwap_core_mask));
+	info.receiver_mask = *(to_cpumask(&fwd_cores_mask));
+	info.fifo_len = ps_queue_len;
 	netfn_pkt_steer_init(&nct->rx_steer, &info);
 
 	/*
@@ -885,6 +894,9 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, stru
 	info.budget = rx_napi_budget;
 	info.weight = 1;
 	info.dev = dev;
+	info.sender_mask = *(to_cpumask(&capwap_core_mask));
+	info.receiver_mask = *(to_cpumask(&fwd_cores_mask));
+	info.fifo_len = ps_queue_len;
 	netfn_pkt_steer_init(&nct->rx_steer_pri, &info);
 
 	pr_info("%px: Successfully allocated tunnel(%s)\n", nct, dev->name);
