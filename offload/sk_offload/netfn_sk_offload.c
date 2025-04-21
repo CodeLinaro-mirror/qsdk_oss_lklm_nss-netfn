@@ -376,9 +376,16 @@ static void netfn_sk_offload_disable(struct sock *sk)
 
 	netfn_sk_offload_rule_destroy(ctx);
 	netfn_sk_offload_db_del(ctx);
+
+	/*
+	 * Free the outstanding skbs in GRO queue
+	 */
+	__rx_gro_purge(ctx);
+
 	free_percpu(ctx->stats);
 
 	kfree(ctx);
+	module_put(THIS_MODULE);
 
 	stats->ctx_dealloc++;
 	atomic_dec(&so->num_conns);
@@ -405,6 +412,12 @@ static bool netfn_sk_offload_enable(struct sock *sk)
 	if (!ctx) {
 		pr_err("%px: Failed to Allocate Context for the socket", sk);
 		stats->ctx_alloc_fail_nomem++;
+		return false;
+	}
+
+	if (!try_module_get(THIS_MODULE)) {
+		pr_warn("Module is unloading\n");
+		kfree(ctx);
 		return false;
 	}
 
@@ -461,6 +474,8 @@ fail2:
 	free_percpu(ctx->stats);
 fail1:
         kfree(ctx);
+	module_put(THIS_MODULE);
+
 	return false;
 }
 
@@ -578,6 +593,80 @@ static struct notifier_block netfn_sk_offload_notifier __attribute__((unused)) =
 };
 
 /*
+ * netfn_sk_offload_netdev_setup()
+ *      Netdev setup function.
+ */
+static void netfn_sk_offload_netdev_setup(struct net_device *dev)
+{
+	dev->addr_len = ETH_ALEN;
+	dev->mtu = ETH_DATA_LEN;
+	dev->type = ARPHRD_VOID;
+	dev->ethtool_ops = NULL;
+	dev->header_ops = NULL;
+	dev->netdev_ops = NULL;
+	dev->priv_destructor = NULL;
+
+	memcpy((void *)dev->dev_addr, "\x00\x00\x00\x00\x00\x00", dev->addr_len);
+	memset(dev->broadcast, 0xff, dev->addr_len);
+	memcpy(dev->perm_addr, dev->dev_addr, dev->addr_len);
+
+	/*
+	 * Mark the device UP for VP path.
+	 * Device will not participate in any Linux datapath and hence We dont want to register with Linux using dev_open.
+	 */
+	dev->flags |= IFF_UP;
+}
+
+/*
+ * netfn_sk_offload_vp_alloc
+ * 	Allocate VP to offload flows
+ */
+static inline bool netfn_sk_offload_vp_alloc(void)
+{
+	struct netfn_sk_offload *so = &g_sk_offload;
+	struct ppe_vp_ai vpai = {0};
+
+	so->vp_dev = alloc_netdev(0, "skdev", NET_NAME_ENUM, netfn_sk_offload_netdev_setup);
+	if (!so->vp_dev) {
+		pr_err("%p:Failed to allocate netdevice\n", so);
+		return false;
+	}
+
+	/*
+	 * Allocate PPE VP
+	 */
+	vpai.type = PPE_VP_TYPE_SW_L3;
+	vpai.usr_type = PPE_VP_USER_TYPE_ACTIVE;
+	vpai.core_mask = netfn_sk_offload_core_mask;
+	vpai.dst_cb_data = so;
+	vpai.src_cb = NULL;
+	vpai.src_cb_data = NULL;
+	vpai.dst_cb = netfn_sk_offload_rx;
+
+	so->vp_num = ppe_vp_alloc(so->vp_dev, &vpai);
+	if (so->vp_num < 0) {
+		pr_err("%px: Failed to allocate VP, err(%d).\n", so, vpai.status);
+		free_netdev(so->vp_dev);
+		return false;
+	}
+
+	return true;
+}
+
+/*
+ * netfn_sk_offload_vp_dealloc
+ *      Deallocate the VP
+ */
+static inline void netfn_sk_offload_vp_dealloc(void)
+{
+	struct netfn_sk_offload *so = &g_sk_offload;
+
+	ppe_vp_free(so->vp_num);
+	free_netdev(so->vp_dev);
+
+}
+
+/*
  * netfn_sk_offload_exit_module()
  *      Netfn Sock Offload Module exit function
  */
@@ -599,10 +688,7 @@ void __exit netfn_sk_offload_exit_module(void)
 		return;
 	}
 
-	/*
-	 * TODO:
-	 * 2. De-allocate the VP.
-	 */
+	netfn_sk_offload_vp_dealloc();
 
 	free_percpu(so->stats);
 	netfn_sk_offload_stats_deinit();
@@ -619,18 +705,19 @@ int __init netfn_sk_offload_init_module(void)
 	struct netfn_sk_offload *so = &g_sk_offload;
 	int ret = 0;
 
+	if (!netfn_sk_offload_vp_alloc()) {
+		pr_err("%px: Failed to allocate PPE VP\n", so);
+		return -1;
+	}
+
 	pr_info("Netfn Sock Offload Module loaded: (%s)\n", NSS_NETFN_BUILD_ID);
 
 	ret = sock_notify_register(&netfn_sk_offload_notifier);
 	if (ret) {
 		pr_err("Failed to register to AF_INET Socket Offload Notifier, ret:%d\n", ret);
+		netfn_sk_offload_vp_dealloc();
 		return ret;
 	}
-
-	/*
-	 * TODO:
-	 * 2. Allocate the VP.
-	 */
 
 	so->dentry = debugfs_create_dir("qca-nss-netfn-sk-offload", NULL);
 	if (!so->dentry) {

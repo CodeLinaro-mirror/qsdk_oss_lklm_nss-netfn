@@ -24,5 +24,4 @@ struct netfn_sk_offload_db_entry {
  */
 bool netfn_sk_offload_db_add(struct netfn_sk_offload_ctx *ctx, uint16_t flow_idx);
 void netfn_sk_offload_db_del(struct netfn_sk_offload_ctx *ctx);
-
 struct netfn_sk_offload_ctx *netfn_sk_offload_db_get_ctx(uint16_t flow_idx);
