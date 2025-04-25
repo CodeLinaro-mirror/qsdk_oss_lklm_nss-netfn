@@ -382,9 +382,9 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_dscp_pri_add(struct netfn_flowmgr_dscp_pri
 	/*
 	 * Bind the ACL rule to the WAN port
 	 */
-	acl_rule->stype = PPE_ACL_RULE_SRC_TYPE_DEV;
+	acl_rule->dev_type = PPE_ACL_RULE_DEV_TYPE_SRC_DEV;
 
-	strlcpy(acl_rule->src.dev_name, netdev->name, IFNAMSIZ);
+	strlcpy(acl_rule->dev.dev_name, netdev->name, IFNAMSIZ);
 
 	/*
 	 * tos_tc_val in dscpinfo takes full 8-bit value:
