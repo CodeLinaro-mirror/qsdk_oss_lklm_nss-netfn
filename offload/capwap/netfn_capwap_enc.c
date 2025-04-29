@@ -2,7 +2,7 @@
  * netfn_capwap_enc.c
  *	Network function's CAPWAP offload encapsulation.
  *
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -356,7 +356,11 @@ static inline bool netfn_capwap_enc_frag(struct netfn_capwap_enc *enc, struct sk
 
 		skb = netdev_alloc_skb_fast(NULL, skb_size);
 		if (!skb) {
+#ifdef CONFIG_64BIT
 			pr_warn_ratelimited("%px: Unable to allocate memory for fragment len(%ld).\n", enc, skb_size);
+#else
+			pr_warn_ratelimited("%px: Unable to allocate memory for fragment len(%d).\n", enc, skb_size);
+#endif
 			NETFN_CAPWAP_TUN_STATS_INC(&stats->drop_mem_alloc);
 			return false;
 		}
