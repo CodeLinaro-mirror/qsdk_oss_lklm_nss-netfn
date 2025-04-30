@@ -843,7 +843,7 @@ int netfn_auto_flowmgr_rule_add(struct sk_buff *skb, struct genl_info *info)
 	 * netfn_flowmgr_rule_accel() api
 	 */
 	ret = netfn_flowmgr_rule_accel(&original, &reply, accel_mode);
-	if (ret) {
+	if (NETFN_FLOWMGR_GET_NETFN_ERROR_CODE(ret) || NETFN_FLOWMGR_GET_AE_ERROR_CODE(ret)) {
 		netfn_auto_info_always("Flowmgr rule add failed with return: 0x%x\n", ret);
 		goto fail;
 	}

@@ -17,7 +17,9 @@
 #define __NETFN_FLOWMGR_H
 
 /* External typedef for return type */
-typedef uint16_t netfn_flowmgr_ret_t;
+typedef uint32_t netfn_flowmgr_ret_t;
+
+#define NETFN_FLOWMGR_FLOW_IDX_MAX 65535
 
 /* Define a macro to get  netfn flowmgr specific error */
 #define NETFN_FLOWMGR_GET_NETFN_ERROR_CODE(error_code) \
@@ -27,11 +29,16 @@ typedef uint16_t netfn_flowmgr_ret_t;
 #define NETFN_FLOWMGR_GET_AE_ERROR_CODE(error_code) \
 		(((error_code) >> 8) & 0xFF)
 
+/* Define a macro to get  netfn flowmgr specific value */
+#define NETFN_FLOWMGR_GET_FLOW_IDX(error_code) \
+		(((error_code) >> 16) & 0xFFFF)
+
 /* Flow flags */
 #define NETFN_FLOWMGR_FLOW_FLAG_BRIDGE_FLOW				0x0001  /**< Bridge flow */
 #define NETFN_FLOWMGR_FLOW_FLAG_DS_FLOW					0x0002  /**< Flow type flag for DS flow */
 #define NETFN_FLOWMGR_FLOW_FLAG_VP_FLOW					0x0004  /**< Flow type flag for VP flow */
 #define NETFN_FLOWMGR_FLOW_FLAG_SRC_MAC					0x0008  /**< Source MAC is valid for MAC rule */
+#define NETFN_FLOWMGR_FLOW_SW_MDATA_VALID				0x0010  /**< Flow_idx is valid for offloading rule */
 
 /*
  * Rule valid flags
@@ -128,6 +135,7 @@ typedef enum netfn_flowmgr_ret_status {
 	NETFN_FLOWMGR_RET_GET_STATS_NOT_REGISTERED,		/**< Failure due to get stats not registered */
 	NETFN_FLOWMGR_RET_GET_PPE_STATS_FAILED,			/**< Failure due to ppe stats get failed */
 	NETFN_FLOWMGR_RET_GET_SFE_STATS_FAILED,			/**< Failure due to sfe stats get failed */
+	NETFN_FLOWMGR_RET_MAX,					/**< Max limit */
 } netfn_flowmgr_ret_status_t;
 
 /**
