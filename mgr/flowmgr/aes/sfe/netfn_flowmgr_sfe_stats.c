@@ -237,7 +237,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_v4_get_stats(struct netfn_flowmgr_flow_con
 					sfe_stats.tuple.flow_ident,
 					sfe_stats.tuple.return_ident);
 		netfn_flowmgr_stats_inc(&stats->v4_get_stats_fail);
-		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_GET_SFE_STATS_FAILED, sfe_status);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_GET_SFE_STATS_FAILED, (uint8_t)sfe_status);
 	}
 
 	/*
@@ -270,7 +270,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_v4_get_stats(struct netfn_flowmgr_flow_con
 	conn_stats->conn_stats.reply_tx_byte_count = sfe_stats.rx_byte_count;
 	conn_stats->conn_stats.reply_rx_byte_count = sfe_stats.tx_byte_count;
 
-	return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_SUCCESS, sfe_status);
+	return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_SUCCESS, (uint8_t)sfe_status);
 }
 
 /*
@@ -538,7 +538,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_v6_get_stats(struct netfn_flowmgr_flow_con
 					sfe_stats.tuple.flow_ident,
 					sfe_stats.tuple.return_ident);
 		netfn_flowmgr_stats_inc(&stats->v6_get_stats_fail);
-		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_GET_SFE_STATS_FAILED, sfe_status);
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_GET_SFE_STATS_FAILED, (uint8_t)sfe_status);
 	}
 
 	/*
@@ -571,7 +571,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_sfe_v6_get_stats(struct netfn_flowmgr_flow_con
 	conn_stats->conn_stats.reply_tx_byte_count = sfe_stats.rx_byte_count;
 	conn_stats->conn_stats.reply_rx_byte_count = sfe_stats.tx_byte_count;
 
-	return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_SUCCESS, sfe_status);
+	return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_SUCCESS, (uint8_t)sfe_status);
 }
 
 /*

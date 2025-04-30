@@ -84,7 +84,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_rule_accel(struct netfn_flowmgr_create_rule *o
 	 * will contain both errors (AE specific error and Netfn error)
 	 */
 	status = f->ae_ops[mode]->create_rule(original, reply);
-	if (status)
+	if (NETFN_FLOWMGR_GET_NETFN_ERROR_CODE(status) || NETFN_FLOWMGR_GET_AE_ERROR_CODE(status))
 		netfn_flowmgr_warn("Create rule failed\n");
 
 	return status;
