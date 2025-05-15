@@ -24,6 +24,16 @@ enum netfn_sk_offload_rx_action {
 };
 
 /*
+ * iperf_hdr
+ * 	IPerf header data
+ */
+struct iperf_hdr {
+	uint32_t sec;		/* Time in seconds */
+	uint32_t usec;		/* Time in micro seconds */
+	uint32_t seq;		/* Sequence number */
+};
+
+/*
  * netfn_sk_offload_rx_state
  *  GRO state per connection
  */
@@ -45,8 +55,8 @@ struct netfn_sk_offload_rx_state {
 		} tcp;
 
 		struct {
-			uint16_t data_len;	/* UDP Payload length */
-			uint16_t next_seq;	/* Payload sequence number if available */
+			uint16_t len;		/* UDP length */
+			uint32_t next_seq;	/* Payload sequence number if available */
 		} udp;
 	};
 };

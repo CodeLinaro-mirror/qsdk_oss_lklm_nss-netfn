@@ -20,6 +20,15 @@
 
 
 #define __is_cache_empty(gro_state) (!((gro_state)->head_cache.skb))
+#define UDP_GRO_MAX_LEN (64 * 1024)
+#define UDP_GRO_MAX_SEGS 64
+
+static uint32_t iperf_get_seq(struct sk_buff *skb)
+{
+	struct iperf_hdr *hdr = (struct iperf_hdr *)(skb_transport_header(skb) + sizeof(struct udphdr));
+
+	return ntohl(hdr->seq);
+}
 
 /*
  * __rx_gro_udp_check
@@ -27,15 +36,58 @@
  */
 static enum netfn_sk_offload_rx_action __rx_gro_udp_check(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
 {
+	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
+	struct netfn_sk_offload_stats_ctx *stats;
+	uint32_t skip_merge = 0, udp_len;
+	struct udphdr *udph;
+
+	udph = udp_hdr(skb);
+	udp_len = ntohs(udph->len);
+
+	stats = this_cpu_ptr(ctx->stats);
+
+	if (__is_cache_empty(gro_state)) {
+		/*
+		 * Don't Coalesce if checksum is not verified by EDMA
+		 * or no data is present.
+		 */
+		skip_merge += !!(skb->ip_summed ^ CHECKSUM_UNNECESSARY);
+		skip_merge += !!(skb->len <= sizeof(*udph));
+
+		if (skip_merge) {
+			stats->fail_start_coalesce++;
+			return NETFN_SK_OFFLOAD_RX_GRO_SKIP;
+		}
+
+		return NETFN_SK_OFFLOAD_RX_GRO_START;
+	}
+
 	/*
-	 * TODO:
-	 * Add the relevant changes here once
-	 * finalized for UDP.
+	 * Dont coalesce if there is payload length mismatch
+	 * or sequence number mismatch
+	 * or total length will exceed the maximum buffer length
+	 * or if checksum is not verified by EDMA
+	 * or no data is present
 	 */
+	skip_merge += !!(udp_len != gro_state->udp.len);
 
-	BUG_ON(1);
+	skip_merge += !!(gro_state->udp.next_seq != iperf_get_seq(skb));
+	skip_merge += !!(skb->ip_summed ^ CHECKSUM_UNNECESSARY);
+	skip_merge += !!((gro_state->head_cache.len + skb->len) > UDP_GRO_MAX_LEN);
 
-	return NETFN_SK_OFFLOAD_RX_GRO_NONE;
+	if (skip_merge) {
+		stats->fail_coalesce++;
+		return NETFN_SK_OFFLOAD_RX_GRO_SKIP;
+	}
+
+	/*
+	 * Check the max limit of segments including the head and current SKB
+	 */
+	if ((skb_queue_len(&gro_state->frag_q) + 2) == UDP_GRO_MAX_SEGS) {
+		return NETFN_SK_OFFLOAD_RX_GRO_FLUSH;
+	}
+
+	return NETFN_SK_OFFLOAD_RX_GRO_QUEUE;
 }
 
 /*
@@ -320,6 +372,10 @@ static void __rx_udp_completion(void *info)
 	struct netfn_sk_offload_rx_state *gro_state;
 	struct netfn_sk_offload_ctx *ctx = info;
 	struct netfn_sk_offload_stats_ctx *stats;
+	struct sk_buff *skb;
+	struct udphdr *udph;
+
+	gro_state = &ctx->gro_state;
 
 	/*
 	 * We maye have flushed the head before
@@ -331,6 +387,21 @@ static void __rx_udp_completion(void *info)
 	}
 
 	stats = this_cpu_ptr(ctx->stats);
+	skb = gro_state->head_cache.skb;
+
+	/*
+	 * Update GSO fields
+	 */
+	skb_shinfo(skb)->gso_type |= SKB_GSO_UDP_L4;
+	skb_shinfo(skb)->gso_size = gro_state->udp.len - sizeof(*udph);
+	skb_shinfo(skb)->gso_segs = skb_queue_len(&gro_state->frag_q) + 1;
+
+	/*
+	 * Correct udp payload len
+	 */
+	udph = udp_hdr(skb);
+	udph->len = htons(gro_state->head_cache.len);
+
 	stats->napi_flush++;
 	__rx_gro_flush(ctx);
 
@@ -529,14 +600,86 @@ static void __rx_tcp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
  */
 static void __rx_udp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
 {
+	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
+	struct udphdr *udph;
 	int gro_action;
+
+	udph = udp_hdr(skb);
 
 	gro_action = __rx_gro_udp_check(ctx, skb);
 
-	/*
-	 * TODO: UDP GRO
-	 */
-	BUG_ON(1);
+	switch (gro_action) {
+	case NETFN_SK_OFFLOAD_RX_GRO_START:
+		/*
+		 * We shouldn't be holding any chain.
+		 */
+		WARN_ON(!__is_cache_empty(gro_state));
+
+		/*
+		 * Start a new chain with received packet.
+		 * Update UDP specific data in gro_state
+		 */
+		gro_state->udp.len = ntohs(udph->len);
+		gro_state->udp.next_seq = iperf_get_seq(skb) + 1;
+
+		__rx_gro_state_init(ctx, skb);
+		break;
+
+	case NETFN_SK_OFFLOAD_RX_GRO_QUEUE:
+		/*
+		 * We are going to coalesce data, Pull UDP header as well.
+		 */
+		__skb_pull(skb, sizeof(*udph));
+
+		/*
+		 * Update GRO state for next packet.
+		 */
+		gro_state->udp.next_seq = iperf_get_seq(skb) + 1;
+
+		/*
+		 * Queue the packet to existing chain and continue.
+		 */
+		__rx_gro_queue(ctx, skb);
+		break;
+
+	case NETFN_SK_OFFLOAD_RX_GRO_FLUSH:
+		__skb_pull(skb, sizeof(*udph));
+		gro_state->udp.next_seq = iperf_get_seq(skb) + 1;
+
+		/*
+		 * End the current chain and Flush it to Linux
+		 * Correct GRO state for Linux
+		 * Correct UDP header length.
+		 */
+		__rx_gro_queue(ctx, skb);
+		skb_shinfo(gro_state->head_cache.skb)->gso_type |= SKB_GSO_UDP_L4;
+		skb_shinfo(gro_state->head_cache.skb)->gso_size = gro_state->udp.len - sizeof(*udph);
+		skb_shinfo(gro_state->head_cache.skb)->gso_segs = skb_queue_len(&gro_state->frag_q) + 1;
+
+		udph->len = htons(gro_state->head_cache.len);
+		__rx_gro_flush(ctx);
+		break;
+
+	case NETFN_SK_OFFLOAD_RX_GRO_SKIP:
+		/*
+		 * If we have active GRO chain, flush it.
+		 */
+		if (!__is_cache_empty(gro_state))  {
+			udph = udp_hdr(gro_state->head_cache.skb);
+
+			skb_shinfo(gro_state->head_cache.skb)->gso_type |= SKB_GSO_UDP_L4;
+			skb_shinfo(gro_state->head_cache.skb)->gso_size = gro_state->udp.len - sizeof(*udph);
+			skb_shinfo(gro_state->head_cache.skb)->gso_segs = skb_queue_len(&gro_state->frag_q) + 1;
+
+			udph->len = htons(gro_state->head_cache.len);
+			__rx_gro_flush(ctx);
+		}
+
+		/*
+		 * Packet can't be GRO'd deliver as it is
+		 */
+		__rx_deliver(ctx, skb);
+	}
 }
 
 /*
