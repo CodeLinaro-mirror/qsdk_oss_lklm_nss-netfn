@@ -35,28 +35,9 @@
  */
 struct netfn_capwap global_nc;
 
-/*
- * Core configuration.
- */
-ulong fwd_cores_mask = NETFN_CAPWAP_FWD_CORES_MASK;	/* 0100 represents core 2 */
-module_param(fwd_cores_mask, ulong, S_IRUSR);
-MODULE_PARM_DESC(fwd_cores_mask, "Core mask to be used for pkt forwarding.");
-
 ulong capwap_core = NETFN_CAPWAP_CORE;			/* 3 represents core 3 */
 module_param(capwap_core, ulong, S_IRUSR);
 MODULE_PARM_DESC(capwap_core, "Core marked for processing CAPWAP pkts.");
-
-int tx_napi_budget = NETFN_CAPWAP_TX_BUDGET;
-module_param(tx_napi_budget, int, S_IRUSR);
-MODULE_PARM_DESC(tx_napi_budget, "Budget for Transmit side Packet Steer");
-
-int rx_napi_budget = NETFN_CAPWAP_RX_BUDGET;
-module_param(rx_napi_budget, int, S_IRUSR);
-MODULE_PARM_DESC(rx_napi_budget, "Budget for Receive side Packet Steer");
-
-int ps_queue_len = NETFN_CAPWAP_FIFO_LEN;
-module_param(ps_queue_len, int, S_IRUSR);
-MODULE_PARM_DESC(ps_queue_len, "Length of FIFO needed for packet steer queues");
 
 /*
  * netfn_capwap_frags_add()

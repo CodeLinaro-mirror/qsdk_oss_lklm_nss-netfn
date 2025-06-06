@@ -42,7 +42,8 @@
 #define NETFN_CAPWAP_MAX_STRLEN 25
 #define NETFN_CAPWAP_TUN_STATS_MAX (sizeof(struct netfn_capwap_pkt_stats) / sizeof(uint64_t))
 
-void netfn_capwap_tun_tx_cb(struct netfn_pkt_steer *tx_steer, struct sk_buff_head *q_head);
+static void netfn_capwap_tun_enc(struct netfn_capwap_tun *nct, struct sk_buff *skb);
+static void netfn_capwap_tun_rx_deliver(struct netfn_capwap_tun *nct, struct sk_buff_head *q_head);
 
 /*
  * Tunnel statistics strings
@@ -64,11 +65,10 @@ static int8_t *g_tun_stats_str[] = {
  * netfn_capwap_tun_rx()
  *	Common rx handling for dev rx handler and VP handler.
  */
-static bool netfn_capwap_tun_rx(struct netfn_capwap_tun *nct, struct sk_buff *skb)
+static void netfn_capwap_tun_rx(struct netfn_capwap_tun *nct, struct sk_buff *skb)
 {
 	struct netfn_capwap_dec_stats *stats = &nct->dec.stats;
 	struct sk_buff_head q_head;
-	uint64_t rx_bytes = 0;
 
 	skb_queue_head_init(&q_head);
 	__skb_queue_head(&q_head, skb);
@@ -82,13 +82,13 @@ static bool netfn_capwap_tun_rx(struct netfn_capwap_tun *nct, struct sk_buff *sk
 	}
 
 	/*
-	 * RPS the data packet to forwarding core.
+	 * Deliver packet to rx handler.
 	 */
-	netfn_pkt_steer_send_list(&nct->rx_steer, &q_head, NETFN_CAPWAP_RPS_CORE, &rx_bytes);
-	NETFN_CAPWAP_TUN_STATS_ADD(&stats->drop_queue_full, skb_queue_len(&q_head));
+	netfn_capwap_tun_rx_deliver(nct, &q_head);
+	return;
 fail:
 	dev_kfree_skb_list_fast(&q_head);
-	return true;
+	return;
 }
 
 /*
@@ -184,27 +184,7 @@ static netdev_tx_t netfn_capwap_tun_tx(struct sk_buff *skb, struct net_device *d
 		goto fail;
 	}
 
-	/*
-	 * Don't RPS if we are already in capwap core
-	 */
-	if (smp_processor_id() == capwap_core) {
-		struct sk_buff_head q_temp;
-
-		skb_queue_head_init(&q_temp);
-		__skb_queue_head(&q_temp, skb);
-
-		netfn_capwap_tun_tx_cb(&nct->tx_steer, &q_temp);
-		return NETDEV_TX_OK;
-	}
-
-	/*
-	 * IPI packet to desired core.
-	 */
-	if (!netfn_pkt_steer_send(&nct->tx_steer, skb, capwap_core)) {
-		NETFN_CAPWAP_TUN_STATS_INC(&stats->drop_queue_full);
-		goto fail;
-	}
-
+	netfn_capwap_tun_enc(nct, skb);
 	return NETDEV_TX_OK;
 fail:
 	/*
@@ -225,30 +205,12 @@ static int netfn_capwap_tun_open(struct net_device *dev)
 	int i;
 
 	/*
-	 * Enable tx and rx pkt steering.
-	 */
-	if (!netfn_pkt_steer_enable(&nct->tx_steer)) {
-		pr_warn("%px: Unable to enable tx data pkt steering.\n", nct);
-		return -ENOMEM;
-	}
-
-	if (!netfn_pkt_steer_enable(&nct->rx_steer)) {
-		pr_warn("%px: Unable to enable rx data pkt steering.\n", nct);
-		goto fail_rx_steer;
-	}
-
-	if (!netfn_pkt_steer_enable(&nct->rx_steer_pri)) {
-		pr_warn("%px: Unable to enable rx control pkt steering.\n", nct);
-		goto fail_rx_steer_pri;
-	}
-
-	/*
 	 * Open and close are protected by rtnl_lock()
 	 */
 	ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
 	if (!ctx) {
 		pr_warn("%px: Unable to allocate memory for reassembly context.\n", nct);
-		goto fail_ctx;
+		return -ENOMEM;
 	}
 
 	/*
@@ -262,14 +224,6 @@ static int netfn_capwap_tun_open(struct net_device *dev)
 	rcu_assign_pointer(nct->dec.ctx, ctx);
 	netif_start_queue(dev);
 	return 0;
-
-fail_ctx:
-	netfn_pkt_steer_disable(&nct->rx_steer_pri);
-fail_rx_steer_pri:
-	netfn_pkt_steer_disable(&nct->rx_steer);
-fail_rx_steer:
-	netfn_pkt_steer_disable(&nct->tx_steer);
-	return -ENOMEM;
 }
 
 /*
@@ -303,13 +257,6 @@ static int netfn_capwap_tun_stop(struct net_device *dev)
 	}
 
 	kfree(ctx);
-
-	/*
-	 * Disable the tx and rx steer.
-	 */
-	netfn_pkt_steer_disable(&nct->tx_steer);
-	netfn_pkt_steer_disable(&nct->rx_steer);
-	netfn_pkt_steer_disable(&nct->rx_steer_pri);
 	return 0;
 }
 
@@ -405,13 +352,6 @@ static void netfn_capwap_tun_destructor(struct net_device *dev)
 	struct netfn_capwap_tun *nct = netdev_priv(dev);
 
 	pr_info("%px: Freeing the tunnel(%s)\n", &global_nc, dev->name);
-
-	/*
-	 * Deinit pkt steer objects.
-	 */
-	netfn_pkt_steer_deinit(&nct->tx_steer);
-	netfn_pkt_steer_deinit(&nct->rx_steer);
-	netfn_pkt_steer_deinit(&nct->rx_steer_pri);
 
 	debugfs_remove_recursive(nct->dentry);
 	free_netdev(dev);
@@ -553,10 +493,9 @@ bool netfn_capwap_tun_vp_err(struct ppe_vp_cb_info *info, void *cb_data)
  * netfn_capwap_tun_list_rx()
  *     Common rx handling for dev rx handler and VP handler.
  */
-static bool netfn_capwap_tun_list_rx(struct netfn_capwap_tun *nct, struct sk_buff_head *q_head)
+static void netfn_capwap_tun_list_rx(struct netfn_capwap_tun *nct, struct sk_buff_head *q_head)
 {
 	struct netfn_capwap_dec_stats *stats = &nct->dec.stats;
-	uint64_t rx_bytes = 0;
 
 	/*
 	 * Decapsulate and reassemble the skb
@@ -567,14 +506,13 @@ static bool netfn_capwap_tun_list_rx(struct netfn_capwap_tun *nct, struct sk_buf
 	}
 
 	/*
-	 * RPS the data packet to forwarding core.
+	 * Deliver packet to rx handler.
 	 */
-	netfn_pkt_steer_send_list(&nct->rx_steer, q_head, NETFN_CAPWAP_RPS_CORE, &rx_bytes);
-	NETFN_CAPWAP_TUN_STATS_ADD(&stats->drop_queue_full, skb_queue_len(q_head));
-
+	netfn_capwap_tun_rx_deliver(nct, q_head);
+	return;
 fail:
 	dev_kfree_skb_list_fast(q_head);
-	return true;
+	return;
 }
 
 /*
@@ -650,38 +588,31 @@ static void netfn_capwap_tun_vp_detach(struct net_device *dev)
 }
 
 /*
- * netfn_capwap_tun_tx_cb()
- *	Tx packet steering callback
+ * netfn_capwap_tun_enc()
+ *	Encapsulate with CAPWAP Header
  */
-void netfn_capwap_tun_tx_cb(struct netfn_pkt_steer *tx_steer, struct sk_buff_head *q_head)
+void netfn_capwap_tun_enc(struct netfn_capwap_tun *nct, struct sk_buff *skb)
 {
-	struct netfn_capwap_tun *nct = container_of(tx_steer, struct netfn_capwap_tun, tx_steer);
 	struct netfn_capwap_pkt_stats *stats = &nct->stats;
 	struct sk_buff_head q_frags;
-	struct sk_buff *skb, *nskb;
-
-	skb_queue_head_init(&q_frags);
+	struct sk_buff *nskb;
 
 	/*
 	 * Encapsulates and transmits out.
 	 */
-	skb_queue_walk_safe(q_head, skb, nskb) {
-		__skb_unlink(skb, q_head);
-		if (likely(skb_queue_len(q_head))) {
-			uint8_t *ndata = nskb->data;
-			uint32_t mtu = nct->enc.mtu;
+	uint8_t *data = skb->data;
+	uint32_t mtu = nct->enc.mtu;
 
-			prefetch(ndata);
-			if (likely(nskb->len > mtu)) {
-				prefetch_range(ndata + mtu, nskb->len - mtu);
-			}
-		}
-
-		/*
-		 * Encapsulate the packet.
-		 */
-		netfn_capwap_enc(&nct->enc, skb, &q_frags);
+	prefetch(data);
+	if (likely(skb->len > mtu)) {
+		prefetch_range(data + mtu, skb->len - mtu);
 	}
+
+	/*
+	 * Encapsulate the packet.
+	 */
+	skb_queue_head_init(&q_frags);
+	netfn_capwap_enc(&nct->enc, skb, &q_frags);
 
 	/*
 	 * Trasmit the packet out.
@@ -710,42 +641,34 @@ void netfn_capwap_tun_tx_cb(struct netfn_pkt_steer *tx_steer, struct sk_buff_hea
 }
 
 /*
- * netfn_capwap_tun_rx_pri_cb()
- *	Rx priority packet steering callback
+ * netfn_capwap_tun_rx_pri_deliver()
+ *	Deliver Rx priority packet.
  */
-static void netfn_capwap_tun_rx_pri_cb(struct netfn_pkt_steer *rx_steer, struct sk_buff_head *q_head)
+void netfn_capwap_tun_rx_pri_deliver(struct netfn_capwap_tun *nct, struct sk_buff *skb)
 {
-	struct netfn_capwap_tun *nct = container_of(rx_steer, struct netfn_capwap_tun, rx_steer_pri);
-	struct sk_buff *skb, *next_skb;
 	rx_handler_func_t *rx_handler;
 
-	/*
-	 * Walk the queue and pass onto required handler.
-	 */
-	skb_queue_walk_safe(q_head, skb, next_skb) {
-		__skb_unlink(skb, q_head);
-		skb_reset_mac_header(skb);
-		skb_reset_transport_header(skb);
+	skb_reset_mac_header(skb);
+	skb_reset_network_header(skb);
+	skb_reset_transport_header(skb);
 
-		NETFN_CAPWAP_TUN_STATS_INC(&nct->stats.rx_pkts);
-		NETFN_CAPWAP_TUN_STATS_ADD(&nct->stats.rx_bytes, skb->len);
+	NETFN_CAPWAP_TUN_STATS_INC(&nct->stats.rx_pkts);
+	NETFN_CAPWAP_TUN_STATS_ADD(&nct->stats.rx_bytes, skb->len);
 
-		rx_handler = rcu_dereference(skb->dev->rx_handler);
-		if (likely(rx_handler) && (rx_handler(&skb) == RX_HANDLER_CONSUMED)) {
-			continue;
-		}
-
-		netif_receive_skb(skb);
+	rx_handler = rcu_dereference(skb->dev->rx_handler);
+	if (likely(rx_handler) && (rx_handler(&skb) == RX_HANDLER_CONSUMED)) {
+		return;
 	}
+
+	netif_receive_skb(skb);
 }
 
 /*
- * netfn_capwap_tun_rx_cb()
- *	Rx data packet steering callback
+ * netfn_capwap_tun_rx_deliver()
+ *	Deliver Rx data packet.
  */
-static void netfn_capwap_tun_rx_cb(struct netfn_pkt_steer *rx_steer, struct sk_buff_head *q_head)
+static void netfn_capwap_tun_rx_deliver(struct netfn_capwap_tun *nct, struct sk_buff_head *q_head)
 {
-	struct netfn_capwap_tun *nct = container_of(rx_steer, struct netfn_capwap_tun, rx_steer);
 	struct net_device *dev = nct->dev;
 	struct sk_buff *skb, *next_skb;
 	rx_handler_func_t *rx_handler;
@@ -756,6 +679,7 @@ static void netfn_capwap_tun_rx_cb(struct netfn_pkt_steer *rx_steer, struct sk_b
 	skb_queue_walk_safe(q_head, skb, next_skb) {
 		__skb_unlink(skb, q_head);
 		skb_reset_mac_header(skb);
+		skb_reset_network_header(skb);
 		skb_reset_transport_header(skb);
 
 		skb->dev = dev;
@@ -780,9 +704,7 @@ static void netfn_capwap_tun_rx_cb(struct netfn_pkt_steer *rx_steer, struct sk_b
  */
 struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, struct netfn_tuple *tuple, ssize_t pvt_sz)
 {
-	struct netfn_pkt_steer_info info = {0};
 	struct netfn_capwap *nc = &global_nc;
-	unsigned long capwap_core_mask;
 	struct netfn_capwap_tun *nct;
 	struct net_device *dev;
 	int err;
@@ -860,44 +782,6 @@ struct net_device *netfn_capwap_tun_alloc(struct netfn_capwap_tun_cfg *cfg, stru
 		pr_warn("%px: Decapsulation init failed.\n", dev);
 		goto fail;
 	}
-
-	capwap_core_mask = (1 << capwap_core);
-
-	/*
-	 * Allocate tx data pkt steering object.
-	 */
-	info.cb = netfn_capwap_tun_tx_cb;
-	info.budget = tx_napi_budget;
-	info.weight = 1;
-	info.dev = dev;
-	info.sender_mask = *(to_cpumask(&fwd_cores_mask));
-	info.receiver_mask = *(to_cpumask(&capwap_core_mask));
-	info.fifo_len = ps_queue_len;
-	netfn_pkt_steer_init(&nct->tx_steer, &info);
-
-	/*
-	 * Allocate rx data pkt steering object.
-	 */
-	info.cb = netfn_capwap_tun_rx_cb;
-	info.budget = rx_napi_budget;
-	info.weight = 1;
-	info.dev = dev;
-	info.sender_mask = *(to_cpumask(&capwap_core_mask));
-	info.receiver_mask = *(to_cpumask(&fwd_cores_mask));
-	info.fifo_len = ps_queue_len;
-	netfn_pkt_steer_init(&nct->rx_steer, &info);
-
-	/*
-	 * Allocate rx control pkt steering object.
-	 */
-	info.cb = netfn_capwap_tun_rx_pri_cb;
-	info.budget = rx_napi_budget;
-	info.weight = 1;
-	info.dev = dev;
-	info.sender_mask = *(to_cpumask(&capwap_core_mask));
-	info.receiver_mask = *(to_cpumask(&fwd_cores_mask));
-	info.fifo_len = ps_queue_len;
-	netfn_pkt_steer_init(&nct->rx_steer_pri, &info);
 
 	pr_info("%px: Successfully allocated tunnel(%s)\n", nct, dev->name);
 	return dev;

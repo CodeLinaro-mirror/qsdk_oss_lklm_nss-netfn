@@ -21,21 +21,11 @@
 
 #include <asm/bitops.h>
 
-extern struct netfn_capwap global_nc;
-extern ulong fwd_cores_mask;
 extern ulong capwap_core;
-extern int tx_napi_budget;
-extern int rx_napi_budget;
-extern int ps_queue_len;
+extern struct netfn_capwap global_nc;
 
-#define NETFN_CAPWAP_RX_BUDGET 64
-#define NETFN_CAPWAP_TX_BUDGET 32
-#define NETFN_CAPWAP_FIFO_LEN 8192
-
-#define NETFN_CAPWAP_RPS_CORE ((find_first_bit(&fwd_cores_mask, NR_CPUS)) % (NR_CPUS))
 #define NETFN_CAPWAP_TUN_STATS_STRLEN 20	/* Stats string length. */
 #define NETFN_CAPWAP_TUN_STATS_WIDTH 82		/* Stats string width. */
-#define NETFN_CAPWAP_FWD_CORES_MASK 4	/* Default values for core masks */
 #define NETFN_CAPWAP_CORE 3		/* Default values for core */
 #define NETFN_CAPWAP_FRAG_IDX(frag_id, max) ({ \
 		BUILD_BUG_ON_NOT_POWER_OF_2(max); \

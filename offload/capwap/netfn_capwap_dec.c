@@ -57,10 +57,6 @@ static int8_t *g_dec_stats_str[] = {
 	"err_malformed",
 	"err_excess_len",
 	"err_nwireless_len",
-	"fifo_full",
-	"fifo_enq",
-	"fifo_dq",
-	"fifo_empty",
 	"res1",
 	"res2",
 };
@@ -793,7 +789,6 @@ static ssize_t netfn_capwap_dec_stats_show(struct file *fp, char __user *ubuf, s
 {
 	struct netfn_capwap_dec *dec = fp->private_data;
 	uint64_t *stats = (uint64_t *)&dec->stats;
-	struct netfn_pkt_steer_stats ps_stats;
 	size_t dec_stats_sz, stats_sz;
 	ssize_t bytes_read = 0;
 	size_t size_wr = 0;
@@ -808,15 +803,6 @@ static ssize_t netfn_capwap_dec_stats_show(struct file *fp, char __user *ubuf, s
 		pr_warn("%px: Unable to allocate memory for stats.\n", fp);
 		return -ENOMEM;
 	}
-
-	/*
-	 * Get pkt steer stats
-	 */
-	netfn_pkt_steer_get_stats(&dec->nct->rx_steer, &ps_stats);
-	dec->stats.fifo_full = ps_stats.fifo_full;
-	dec->stats.fifo_enq = ps_stats.fifo_enq;
-	dec->stats.fifo_dq = ps_stats.fifo_dq;
-	dec->stats.fifo_empty = ps_stats.fifo_empty;
 
 	/*
 	 * Print decap stats.
@@ -913,11 +899,7 @@ bool netfn_capwap_dec_rx_skbs(struct netfn_capwap_dec *dec, struct sk_buff_head 
 		 * For control packet we don't process further.
 		 */
 		if (unlikely(NETFN_CAPWAP_CB(skb)->exception)) {
-			if (!netfn_pkt_steer_send(&nct->rx_steer_pri, skb, NETFN_CAPWAP_RPS_CORE)) {
-				NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.drop_pri_queue_full);
-				__skb_queue_head(&q_free, skb);
-			}
-
+			netfn_capwap_tun_rx_pri_deliver(nct, skb);
 			continue;
 		}
 
