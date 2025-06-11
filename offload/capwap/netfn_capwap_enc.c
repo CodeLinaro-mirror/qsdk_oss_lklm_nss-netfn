@@ -284,7 +284,7 @@ static inline void netfn_capwap_enc_80211(struct netfn_capwap_enc *enc, struct s
 	/*
 	 * Copy over the MAC addresses.
 	 */
-	ether_addr_copy(wlan_hdr->addr1, (uint8_t *)&enc->bssid);
+	ether_addr_copy(wlan_hdr->addr1, enc->bssid);
 	ether_addr_copy(wlan_hdr->addr2, src_mac);
 	ether_addr_copy(wlan_hdr->addr3, dst_mac);
 
@@ -535,7 +535,7 @@ bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc
 	struct netfn_tuple_5tuple *tuple = &ntuple->tuples.tuple_5;
 	struct netfn_capwap_enc_hdr *hdr = &enc->hdr;
 
-	ether_addr_copy(&enc->bssid, cfg->bssid);
+	ether_addr_copy(enc->bssid, cfg->bssid);
 	enc->outer_hdr_len = sizeof(struct netfn_capwap_winfo);
 	enc->features = nct->features;
 	enc->nct = nct;

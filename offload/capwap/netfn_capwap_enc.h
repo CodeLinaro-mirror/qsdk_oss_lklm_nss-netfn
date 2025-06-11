@@ -66,7 +66,7 @@ struct netfn_capwap_enc {
 	uint16_t outer_hdr_len;		/* Outer header length for the tunnel. */
 	uint8_t snap_hdr[NETFN_CAPWAP_SNAP_HDR_LEN];
 					/* Custom snap header. */
-	uint8_t bssid;			/* Basic service set ID. */
+	uint8_t bssid[ETH_ALEN];	/* Basic service set ID. */
 	uint8_t flags;			/* Check if VLAN or PPPOE is enabled. */
 };
 /*
