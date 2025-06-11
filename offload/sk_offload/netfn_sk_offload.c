@@ -82,7 +82,13 @@ static bool netfn_sk_offload_ppe_get_macaddr(struct dst_entry *dst, void *daddr,
  */
 static struct net_device *netfn_sk_offload_ppe_get_vlan(struct net_device *dev, struct netfn_flowmgr_vlan_rule *orig, struct netfn_flowmgr_vlan_rule *reply)
 {
+	uint32_t inner_tag, outer_tag;
+	uint16_t vlan_id_1, vlan_id_2;
 	struct net_device *next_dev;
+	__be32 tpid_1, tpid_2;
+
+	vlan_id_1 = vlan_dev_vlan_id(dev);
+	tpid_1 = vlan_dev_vlan_proto(dev);
 
 	/*
 	 * Check if the next isn't null
@@ -93,22 +99,39 @@ static struct net_device *netfn_sk_offload_ppe_get_vlan(struct net_device *dev, 
 		return NULL;
 	}
 
+	inner_tag = (ntohs(tpid_1) << 16 ) | vlan_id_1;
+	outer_tag = 0xfff;
+
+	if (is_vlan_dev(next_dev)) {
+		vlan_id_2 = vlan_dev_vlan_id(next_dev);
+		tpid_2 = vlan_dev_vlan_proto(next_dev);
+
+		next_dev = vlan_dev_next_dev(next_dev);
+		if (!next_dev) {
+			pr_warn("Cannot find the physical net_device\n");
+			return NULL;
+		}
+		outer_tag = inner_tag;
+		inner_tag = (ntohs(tpid_2) << 16 ) | vlan_id_2;
+	}
+
 	/*
-	 * We don't want next dev to be VLAN
-	 * Next dev should be ethernet device
+	 * Egress dev should be ethernet device
 	 */
-	if (is_vlan_dev(next_dev) || (next_dev->type != ARPHRD_ETHER)) {
-		pr_warn("%px: QinQ or non-ethernet VLAN master (%s) is not supported\n", dev,
+	if ((next_dev->type != ARPHRD_ETHER)) {
+		pr_warn("%px: Non-ethernet VLAN master (%s) is not supported\n", dev,
 				next_dev->name);
 		return NULL;
 	}
 
-	orig->inner.egress_vlan_tag = reply->inner.ingress_vlan_tag = vlan_dev_vlan_id(dev);
+	orig->inner.egress_vlan_tag = reply->inner.ingress_vlan_tag = inner_tag;
 	orig->inner.ingress_vlan_tag = reply->inner.egress_vlan_tag = 0xfff;
-	orig->outer.egress_vlan_tag = reply->outer.ingress_vlan_tag = 0xfff;
+	orig->outer.egress_vlan_tag = reply->outer.ingress_vlan_tag = outer_tag;
 	orig->outer.ingress_vlan_tag = reply->outer.egress_vlan_tag = 0xfff;
 
-	pr_debug("%px: VLAN rule configured with dev (%s) vlan_id(%u)\n", dev, dev->name, vlan_dev_vlan_id(dev));
+	pr_debug("%px: VLAN rule configured with dev (%s) vlan_tag(%x) vlan_tag(%x) \n",
+			dev, dev->name, inner_tag, outer_tag);
+
 	return next_dev;
 }
 
