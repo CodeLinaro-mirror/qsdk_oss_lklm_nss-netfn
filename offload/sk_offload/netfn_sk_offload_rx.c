@@ -217,7 +217,6 @@ static void __rx_gro_flush(struct netfn_sk_offload_ctx *ctx)
 	struct sk_buff *first_frag = skb_peek(&gro_state->frag_q);
 	uint8_t ip_proto = ctx->tuple.tuples.tuple_5.protocol;
 	struct sk_buff **p_skb, *iter, *h_skb;
-	struct sk_buff *last_frag;
 	struct dst_entry *dst;
 	uint32_t head_len;
 
@@ -267,11 +266,12 @@ static void __rx_gro_flush(struct netfn_sk_offload_ctx *ctx)
 		}
 	}
 
-	*p_skb = first_frag;
+	if (!skb_queue_empty(&gro_state->frag_q)) {
+		struct sk_buff *last_frag = gro_state->frag_q.prev;
 
-	last_frag = skb_peek_tail(&gro_state->frag_q);
-	if (last_frag) {
+		first_frag->prev = NULL;
 		last_frag->next = NULL;
+		*p_skb = first_frag;
 	}
 
 	/*
