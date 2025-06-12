@@ -86,10 +86,23 @@ static struct notifier_block netfn_sk_offload_notifier __attribute__((unused)) =
 void __exit netfn_sk_offload_exit_module(void)
 {
 	struct netfn_sk_offload *so = &g_sk_offload;
+	int ret = 0;
 
 	/*
 	 * TODO:
-	 * 1. Unregister from the AF_INET Socket Offload Notifier.
+	 * We ensure sufficient cleanup is done
+	 * for all the active contexts before
+	 * module goes away.
+	 */
+
+	ret = sock_notify_unregister(&netfn_sk_offload_notifier);
+	if (ret) {
+		pr_err("Failed to un-register from AF_INET Socket Offload Notifier, ret:%d\n", ret);
+		return;
+	}
+
+	/*
+	 * TODO:
 	 * 2. De-allocate the VP.
 	 */
 
@@ -109,9 +122,14 @@ int __init netfn_sk_offload_init_module(void)
 
 	pr_info("Netfn Sock Offload Module loaded: (%s)\n", NSS_NETFN_BUILD_ID);
 
+	ret = sock_notify_register(&netfn_sk_offload_notifier);
+	if (ret) {
+		pr_err("Failed to register to AF_INET Socket Offload Notifier, ret:%d\n", ret);
+		return ret;
+	}
+
 	/*
 	 * TODO:
-	 * 1. Register to the AF_INET Socket Offload Notifier.
 	 * 2. Allocate the VP.
 	 */
 
