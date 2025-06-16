@@ -230,7 +230,6 @@ static int netfn_sk_offload_stats_ctx_show(struct seq_file *m, void __attribute_
 	for_each_set_bit(index, so->sk_bitmap, NETFN_SK_OFFLOAD_MAX_CONNS) {
 		ctx = rcu_dereference(db[index].ctx);
 		netfn_sk_offload_stats_ctx_print(m, ctx, stats);
-		break;
 	}
 	rcu_read_unlock_bh();
 
