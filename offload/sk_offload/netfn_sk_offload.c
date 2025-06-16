@@ -398,8 +398,9 @@ static void netfn_sk_offload_disable(struct sock *sk)
 static bool netfn_sk_offload_enable(struct sock *sk)
 {
 	struct netfn_sk_offload *so = &g_sk_offload;
-	struct netfn_sk_offload_stats *stats;
         struct netfn_sk_offload_ctx *ctx = NULL;
+	struct netfn_sk_offload_stats *stats;
+	struct netfn_tuple_5tuple *t;
         netfn_flowmgr_ret_t status;
         uint16_t flow_idx;
 
@@ -466,6 +467,18 @@ static bool netfn_sk_offload_enable(struct sock *sk)
 	stats->ctx_alloc++;
 	atomic_inc(&so->num_conns);
 
+	t = &ctx->tuple.tuples.tuple_5;
+	if (ctx->tuple.ip_version == IPVERSION) {
+		pr_debug("%px: Socket offloaded with flow_idx(%u), sip_address: %pI4, dip_address: %pI4, "
+		"src_port: %u, dst_port: %u, protocol: %u, ip_ver: %u\n",
+		sk, flow_idx, &t->src_ip, &t->dest_ip,
+		ntohs(t->l4_src_ident), ntohs(t->l4_dest_ident), t->protocol, ctx->tuple.ip_version);
+	} else {
+		pr_debug("%px: Socket offloaded with flow_idx(%u), sip_address: %pI6, dip_address: %pI6, "
+		"src_port: %u, dst_port: %u, protocol: %u, ip_ver: %u\n",
+		sk, flow_idx, &t->src_ip, &t->dest_ip,
+		ntohs(t->l4_src_ident), ntohs(t->l4_dest_ident), t->protocol, ctx->tuple.ip_version);
+	}
 	return true;
 
 fail3:
