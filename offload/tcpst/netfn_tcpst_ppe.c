@@ -2,7 +2,7 @@
  * netfn_tcpst_ppe.c
  *	Netfn TCP Speedtest PPE acceleration helper
  *
- * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -69,6 +69,8 @@ static bool netfn_tcpst_ppe_get_macaddr(struct dst_entry *dst, void *daddr, uint
 static struct net_device *netfn_tcpst_ppe_get_vlan(struct net_device *dev, struct netfn_flowmgr_vlan_rule *orig, struct netfn_flowmgr_vlan_rule *reply)
 {
 	struct net_device *next_dev;
+	uint16_t vlan_tag;
+	__be32 tpid;
 
 	/*
 	 * Check if the next isn't null
@@ -89,7 +91,10 @@ static struct net_device *netfn_tcpst_ppe_get_vlan(struct net_device *dev, struc
 		return NULL;
 	}
 
-	orig->inner.egress_vlan_tag = reply->inner.ingress_vlan_tag = vlan_dev_vlan_id(dev);
+	tpid = vlan_dev_vlan_proto(dev);
+	vlan_tag = vlan_dev_vlan_id(dev);
+
+	orig->inner.egress_vlan_tag = reply->inner.ingress_vlan_tag = (ntohs(tpid) << 16 ) | vlan_tag;
 	orig->inner.ingress_vlan_tag = reply->inner.egress_vlan_tag = 0xfff;
 	orig->outer.egress_vlan_tag = reply->outer.ingress_vlan_tag = 0xfff;
 	orig->outer.ingress_vlan_tag = reply->outer.egress_vlan_tag = 0xfff;
