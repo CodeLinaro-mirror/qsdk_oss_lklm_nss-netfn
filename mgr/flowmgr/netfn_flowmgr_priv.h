@@ -43,8 +43,8 @@ static inline netfn_flowmgr_ret_t __set_status_n_flowidx(uint8_t err, uint8_t ae
 	BUILD_BUG_ON(NETFN_FLOWMGR_FLOW_IDX_MAX > U16_MAX);
 
 	if (err > NETFN_FLOWMGR_RET_MAX) err = NETFN_FLOWMGR_RET_MAX;
-	if (ae_err > NETFN_FLOWMGR_RET_MAX) ae_err = PPE_DRV_RET_MAX;
-	if (flow_idx > NETFN_FLOWMGR_RET_MAX) flow_idx = NETFN_FLOWMGR_FLOW_IDX_MAX;
+	if (ae_err > PPE_DRV_RET_MAX) ae_err = PPE_DRV_RET_MAX;
+	if (flow_idx > NETFN_FLOWMGR_FLOW_IDX_MAX) flow_idx = NETFN_FLOWMGR_FLOW_IDX_MAX;
 
 	return (netfn_flowmgr_ret_t)((flow_idx << 16) | (ae_err << 8) | err);
 }
