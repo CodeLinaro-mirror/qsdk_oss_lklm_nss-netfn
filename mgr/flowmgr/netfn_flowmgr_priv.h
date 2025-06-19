@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  * SPDX-License-Identifier: ISC
  **************************************************************************
  */
@@ -12,6 +12,7 @@
 #ifndef __NETFN_FLOWMGR_PRIV_H
 #define __NETFN_FLOWMGR_PRIV_H
 
+#include <ppe_drv.h>
 #include <netfn_flowmgr.h>
 #include "netfn_flowmgr_stats.h"
 
@@ -32,9 +33,25 @@ enum netfn_flowmgr_static_dbg_level {
         NETFN_FLOWMGR_STATIC_DBG_LEVEL_TRACE,
 };
 
-/* Define a macro to set  netfn flowmgr status code */
-#define NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(netfn_flowmgr_error, ae_error) \
-		((netfn_flowmgr_ret_t)((netfn_flowmgr_error) | (ae_error << 8)))
+/* Define a macro to set netfn flowmgr status code and flow_idx */
+#define NETFN_FLOWMGR_SET_STATUS_CODE_N_FLOWIDX(_err, _ae_err, flow_idx) __set_status_n_flowidx(_err, _ae_err, flow_idx)
+
+static inline netfn_flowmgr_ret_t __set_status_n_flowidx(uint8_t err, uint8_t ae_err, uint16_t flow_idx)
+{
+	BUILD_BUG_ON(NETFN_FLOWMGR_RET_MAX > U8_MAX);
+	BUILD_BUG_ON(PPE_DRV_RET_MAX > U8_MAX);
+	BUILD_BUG_ON(NETFN_FLOWMGR_FLOW_IDX_MAX > U16_MAX);
+
+	if (err > NETFN_FLOWMGR_RET_MAX) err = NETFN_FLOWMGR_RET_MAX;
+	if (ae_err > NETFN_FLOWMGR_RET_MAX) ae_err = PPE_DRV_RET_MAX;
+	if (flow_idx > NETFN_FLOWMGR_RET_MAX) flow_idx = NETFN_FLOWMGR_FLOW_IDX_MAX;
+
+	return (netfn_flowmgr_ret_t)((flow_idx << 16) | (ae_err << 8) | err);
+}
+
+/* Define a macro to set netfn flowmgr status code */
+#define NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(netfn_error, ae_error) \
+		NETFN_FLOWMGR_SET_STATUS_CODE_N_FLOWIDX(netfn_error, ae_error, 0)
 
 #if (NETFN_FLOWMGR_DEBUG_LEVEL == 3)
 #define netfn_flowmgr_assert(c, s, ...)

@@ -1,6 +1,6 @@
 /*
  **************************************************************************
- * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  * SPDX-License-Identifier: ISC
  **************************************************************************
  */
@@ -167,6 +167,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v6_rule(struct netfn_flowmgr_create
 	netfn_tuple_type_t tuple_type;
 	ppe_drv_ret_t ppe_status = PPE_DRV_RET_SUCCESS;
 	netfn_flowmgr_ret_status_t netfn_status = NETFN_FLOWMGR_RET_SUCCESS;
+	uint16_t flow_idx;
 
 	stats = &f->stats[NETFN_FLOWMGR_AE_TYPE_PPE];
 
@@ -334,6 +335,14 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v6_rule(struct netfn_flowmgr_create
 		 */
 		pd6rc->rule_flags |= PPE_DRV_V4_RULE_FLAG_VP_FLOW;
 		netfn_flowmgr_warn("Flow is VP flow\n");
+	}
+
+	if (org_flow_flags & NETFN_FLOWMGR_FLOW_SW_MDATA_VALID) {
+		/*
+		 * Socket Offloading flows
+		 */
+		pd6rc->rule_flags |= PPE_DRV_V6_RULE_RET_FLOW_SW_MDATA_VALID;
+		netfn_flowmgr_warn("Flow is Socket Offloading flow\n");
 	}
 
 	/*
@@ -542,6 +551,10 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_create_v6_rule(struct netfn_flowmgr_create
 		goto done;
 	}
 
+	if (org_flow_flags & NETFN_FLOWMGR_FLOW_SW_MDATA_VALID) {
+		flow_idx = pd6rc->flow_index_ret;
+	}
+
 	/*
 	 * Update stats
 	 */
@@ -552,7 +565,7 @@ done:
 	/*
 	 * Setting both netfn and ppe specific error code
 	 */
-	return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(netfn_status, ppe_status);
+	return NETFN_FLOWMGR_SET_STATUS_CODE_N_FLOWIDX(netfn_status, ppe_status, flow_idx);
 }
 
 /*
