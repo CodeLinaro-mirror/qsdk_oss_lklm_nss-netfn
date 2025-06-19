@@ -156,7 +156,7 @@ static enum netfn_sk_offload_rx_action __rx_gro_tcp_check(struct netfn_sk_offloa
 	/*
 	 * If FIN and PSH was set, then end the chain with this packet.
 	 */
-	return !!(flags & TCP_SKIP_FLAGS) ? NETFN_SK_OFFLOAD_RX_GRO_QUEUE : NETFN_SK_OFFLOAD_RX_GRO_FLUSH;
+	return !!(flags & ~TCP_SKIP_FLAGS) ? NETFN_SK_OFFLOAD_RX_GRO_FLUSH : NETFN_SK_OFFLOAD_RX_GRO_QUEUE;
 }
 
 /*
