@@ -635,7 +635,7 @@ static struct notifier_block netfn_sk_offload_notifier __attribute__((unused)) =
 static void netfn_sk_offload_netdev_setup(struct net_device *dev)
 {
 	dev->addr_len = ETH_ALEN;
-	dev->mtu = ETH_DATA_LEN;
+	dev->mtu = PPE_DRV_JUMBO_MAX;
 	dev->type = ARPHRD_VOID;
 	dev->ethtool_ops = NULL;
 	dev->header_ops = NULL;

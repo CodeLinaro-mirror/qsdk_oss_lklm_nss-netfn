@@ -739,7 +739,6 @@ bool netfn_sk_offload_rx(struct ppe_vp_cb_info *info, void *cb_data)
 	/*
 	 * Set skb fields
 	 */
-	skb->ip_summed = info->ip_summed;
 	skb->pkt_type = PACKET_HOST;
 
 	/*
