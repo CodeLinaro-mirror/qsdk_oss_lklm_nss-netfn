@@ -623,7 +623,6 @@ void netfn_capwap_tun_enc(struct netfn_capwap_tun *nct, struct sk_buff *skb)
 
 		__skb_unlink(skb, &q_frags);
 		skb->dev = dev;
-		skb->fast_xmit = true;
 
 		/*
 		 * We are either sending it to VP or DTLS netdevice. Which is controlled path,
