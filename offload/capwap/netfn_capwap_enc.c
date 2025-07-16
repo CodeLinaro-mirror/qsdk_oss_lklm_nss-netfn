@@ -518,7 +518,7 @@ void netfn_capwap_enc(struct netfn_capwap_enc *enc, struct sk_buff *orig_skb, st
 	 */
 	if (unlikely(!netfn_capwap_enc_frag(enc, orig_skb, &tmp, &mdata))) {
 		pr_warn_ratelimited("%px: Fragmentation failed\n", enc);
-		dev_kfree_skb_list_fast(&tmp);
+		skb_queue_purge(&tmp);
 		return;
 	}
 
