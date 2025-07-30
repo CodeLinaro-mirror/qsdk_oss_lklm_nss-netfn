@@ -159,6 +159,59 @@ static enum netfn_sk_offload_rx_action __rx_gro_tcp_check(struct netfn_sk_offloa
 	return !!(flags & ~TCP_SKIP_FLAGS) ? NETFN_SK_OFFLOAD_RX_GRO_FLUSH : NETFN_SK_OFFLOAD_RX_GRO_QUEUE;
 }
 
+#ifdef NETFN_SK_OFFLOAD_HW_GRO
+/*
+ * netfn_sk_offload_hw_coalesce_check
+ *	Coalesce check for HW offload
+ */
+int __rx_hw_check(struct netfn_sk_offload_ctx *ctx, struct ppe_vp_cb_mdata_info_gro *info, struct sk_buff *skb, bool is_udp)
+{
+	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
+	struct netfn_sk_offload_stats_ctx *stats;
+	bool gro_en = info->hw_gro_en;
+	bool gro_more = info->hw_gro_more;
+
+	stats = this_cpu_ptr(ctx->stats);
+
+	/*
+	 * If it is a first packet in the chain
+	 */
+	if (__is_cache_empty(gro_state)) {
+		/*
+		 * If HW indicates gro is enabled then START gro coalescing
+		 */
+		if (likely((gro_en) && (gro_more))) {
+			return NETFN_SK_OFFLOAD_RX_GRO_START;
+		}
+
+		/*
+		 * GRO coalescing not required
+		 */
+		stats->fail_start_coalesce++;
+		return NETFN_SK_OFFLOAD_RX_GRO_SKIP;
+	}
+
+	WARN_ON(!gro_en);
+
+	if (unlikely(is_udp) && unlikely(gro_state->udp.next_seq != iperf_get_seq(skb))) {
+		stats->fail_coalesce++;
+		return NETFN_SK_OFFLOAD_RX_GRO_SKIP;
+	}
+
+	/*
+	 * If GRO more is 0, it indicates no more segments for coalescing.
+	 */
+	if (likely(!gro_more)) {
+		return NETFN_SK_OFFLOAD_RX_GRO_FLUSH;
+	}
+
+	/*
+	 * Continue with GRO coalescing
+	 */
+	return NETFN_SK_OFFLOAD_RX_GRO_QUEUE;
+}
+#endif
+
 /*
  * __rx_except
  *      Exception the packets to Linux
@@ -262,7 +315,6 @@ static void __rx_gro_flush(struct netfn_sk_offload_ctx *ctx)
 	 * - First SKB length will be total length.
 	 * - All coalesced SKB length will become data length.
 	 */
-
 	p_skb = &skb_shinfo(h_skb)->frag_list;
 
 	h_skb->len = gro_state->head_cache.len;
@@ -515,7 +567,14 @@ static void __rx_gro_state_init(struct netfn_sk_offload_ctx *ctx, struct sk_buff
 
 	stats = this_cpu_ptr(ctx->stats);
 
-	dev_napi_notify_completion(&ctx->napi_info);
+	/*
+	 * Skip NAPI completion notification for HW GRO packets.
+	 * HW GRO handles packet coalescing in hardware, so we don't need
+	 * to notify NAPI completion for each individual packet in the chain.
+	 * NAPI notification will be handled when the complete GRO chain is flushed.
+	 */
+	if (unlikely(!ctx->hw_gro_en))
+		dev_napi_notify_completion(&ctx->napi_info);
 
 	/*
 	 * Reset GRO field
@@ -536,16 +595,91 @@ static void __rx_gro_state_init(struct netfn_sk_offload_ctx *ctx, struct sk_buff
 }
 
 /*
+ * __rx_tcp_hw_process()
+ * 	Process TCP packets
+ */
+static void __rx_tcp_hw_process(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, struct ppe_vp_cb_mdata_info_gro *info)
+{
+	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
+	struct tcphdr *tcph = tcp_hdr(skb);
+	int gro_action;
+	uint32_t hlen = tcph->doff * 4;
+	__be32 flags;
+
+	gro_action = __rx_hw_check(ctx, info, skb, false);
+	switch (gro_action) {
+	case NETFN_SK_OFFLOAD_RX_GRO_START:
+		flags = tcp_flag_word(tcph);
+
+		gro_state->tcp.flag_word = flags;
+
+		WARN_ON(!__is_cache_empty(gro_state));
+		__rx_gro_state_init(ctx, skb);
+		break;
+
+	case NETFN_SK_OFFLOAD_RX_GRO_QUEUE:
+		/*
+		 * We are going to coalesce data, Pull UDP header as well.
+		 */
+		__skb_pull(skb, hlen);
+		__rx_gro_queue(ctx, skb);
+		break;
+
+	case NETFN_SK_OFFLOAD_RX_GRO_FLUSH:
+		/*
+		 * We are going to coalesce data, Pull UDP header as well.
+		 */
+		__skb_pull(skb, hlen);
+
+		/*
+                 * We are going to coalesce data, Pull TCP header as well.
+                 */
+		if (info->hw_gro_psh) {
+			gro_state->tcp.flag_word |= TCP_FLAG_PSH;
+		}
+
+		if (info->hw_gro_fin) {
+			gro_state->tcp.flag_word |= TCP_FLAG_FIN;
+		}
+
+		__rx_gro_queue(ctx, skb);
+                tcph = tcp_hdr(gro_state->head_cache.skb);
+                tcp_flag_word(tcph) |= gro_state->tcp.flag_word;
+
+		__rx_gro_flush(ctx);
+		break;
+
+	case NETFN_SK_OFFLOAD_RX_GRO_SKIP:
+		/*
+		 * If we have active GRO chain, flush it
+		 */
+		if (!__is_cache_empty(gro_state))  {
+                	tcph = tcp_hdr(gro_state->head_cache.skb);
+                	tcp_flag_word(tcph) |= gro_state->tcp.flag_word;
+			__rx_gro_flush(ctx);
+		}
+
+		__rx_deliver(ctx, skb);
+		break;
+	}
+}
+
+/*
  * __rx_tcp
  *	Perform GRO on TCP packets
  */
-static void __rx_tcp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
+static void __rx_tcp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, struct ppe_vp_cb_mdata_info_gro *info)
 {
 	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
 	struct tcphdr *tcph = tcp_hdr(skb);
 	int gro_action;
 	uint32_t hlen;
 	__be32 flags;
+
+	if (ctx->hw_gro_en) {
+		__rx_tcp_hw_process(ctx, skb, info);
+		return;
+	}
 
 	hlen = tcph->doff * 4;
 	flags = tcp_flag_word(tcph);
@@ -637,7 +771,7 @@ static void __rx_tcp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
  * __rx_udp
  *      Perform GRO on UDP packets
  */
-static void __rx_udp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
+static void __rx_udp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, struct ppe_vp_cb_mdata_info_gro *info)
 {
 	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
 	struct udphdr *udph;
@@ -645,7 +779,11 @@ static void __rx_udp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
 
 	udph = udp_hdr(skb);
 
-	gro_action = __rx_gro_udp_check(ctx, skb);
+	if (unlikely(ctx->hw_gro_en))
+		gro_action = __rx_hw_check(ctx, info, skb, true);
+	else
+		gro_action = __rx_gro_udp_check(ctx, skb);
+
 
 	switch (gro_action) {
 	case NETFN_SK_OFFLOAD_RX_GRO_START:
@@ -687,9 +825,15 @@ static void __rx_udp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
 		__rx_gro_queue(ctx, skb);
 
 		/*
-		 * Update head SKB and flush SKB
+		 * If we have active GRO chain, flush it.
 		 */
-		__rx_udp_gro_flush(ctx);
+		if (!__is_cache_empty(gro_state))  {
+			/*
+			 * Update head SKB and flush SKB
+			 */
+			__rx_udp_gro_flush(ctx);
+		}
+
 		break;
 
 	case NETFN_SK_OFFLOAD_RX_GRO_SKIP:
@@ -716,6 +860,7 @@ static void __rx_udp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
  */
 bool netfn_sk_offload_rx(struct ppe_vp_cb_info *info, void *cb_data)
 {
+	bool hw_gro_en = info->mdata_info.minfo.gro_info.hw_gro_en;
 	struct netfn_sk_offload *so = &g_sk_offload;
 	struct netfn_sk_offload_ctx *ctx = NULL;
 	struct netfn_sk_offload_stats_ctx *stats;
@@ -740,6 +885,11 @@ bool netfn_sk_offload_rx(struct ppe_vp_cb_info *info, void *cb_data)
 
 	skb->protocol = ctx->etype;
 
+	/*
+	 * Set skb fields
+	 */
+	skb->pkt_type = PACKET_HOST;
+
 	stats = this_cpu_ptr(ctx->stats);
 
 	/*
@@ -751,23 +901,29 @@ bool netfn_sk_offload_rx(struct ppe_vp_cb_info *info, void *cb_data)
 	stats->rx_bytes += skb->len;
 
 	/*
-	 * Set skb fields
-	 */
-	skb->pkt_type = PACKET_HOST;
-
-	/*
-	 * Pull IP header as packet will be delivered to TCP stack.
+	 * Pull Ethernet + IP header, as packet will be delivered to TCP stack.
+	 * For HW GRO, only Head packet will have headers.
 	 */
 	skb_reset_network_header(skb);
 	__skb_pull(skb, ctx->iphdr_sz);
 	skb_reset_transport_header(skb);
+
+#ifdef NETFN_SK_OFFLOAD_HW_GRO
+	if (likely(hw_gro_en)) {
+		stats->hw_gro_rx_pkts++;
+		so_stats->hw_gro_rx_pkts++;
+		stats->hw_gro_rx_bytes += skb->len;
+		so_stats->hw_gro_rx_bytes += skb->len;
+		ctx->hw_gro_en = true;
+	}
+#endif
 
 	if (!ctx->gro_rcv) {
 		rcu_read_unlock_bh();
 		goto drop;
 	}
 
-	ctx->gro_rcv(ctx, skb);
+	ctx->gro_rcv(ctx, skb, &info->mdata_info.minfo.gro_info);
 	rcu_read_unlock_bh();
 
 	return true;
@@ -810,5 +966,4 @@ void netfn_sk_offload_rx_init(struct netfn_sk_offload_ctx *ctx)
 	 * Initialise the NAPI completion callback
 	 */
 	napi_notifier_info_init(&ctx->napi_info, napi_notify, ctx);
-
 }

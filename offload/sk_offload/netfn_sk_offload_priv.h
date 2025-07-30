@@ -61,7 +61,7 @@ struct netfn_sk_offload_ctx {
 	struct netfn_sk_offload_stats_ctx __percpu *stats;
 						/* Context specific stats */
 	struct netfn_tuple tuple;		/* Context tuple */
-	void (*gro_rcv)(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb);
+	void (*gro_rcv)(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, struct ppe_vp_cb_mdata_info_gro *info);
 						/* GRO receive */
 	struct netfn_sk_offload_rx_state gro_state;     /* GRO state */
 	uint16_t flow_idx;			/* Flow Index */
@@ -74,6 +74,8 @@ struct netfn_sk_offload_ctx {
 	struct napi_notifier_info napi_info;	/* NAPI completion info */
 	uint8_t iphdr_sz;               /* IP header size */
 	__be16 etype;			/* Ethernet type */
+
+	bool hw_gro_en;			/* HW gro en */
 };
 
 #endif /*__NETFN_SK_OFFLOAD_PRIV_H */

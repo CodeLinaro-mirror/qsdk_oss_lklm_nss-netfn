@@ -31,9 +31,12 @@ static const char *netfn_sk_offload_stats_str[] __attribute__((unused)) = {
 	"Ctx Dealloc Success",		/* Context dealloc success */
 	"Rx Packets",			/* Rx pkts received */
 	"Rx Bytes",			/* Rx bytes received */
+	"HW GRO Rx Packets",		/* GRO Rx pkts received */
+	"HW GRO Rx Bytes",			/* GRO Rx bytes received */
 	"Tx Packets",			/* Tx pkts sent */
 	"Tx Bytes",			/* Tx bytes sent */
 	"Ctx retrieve failures",	/* Context retrieve failures */
+	"Insufficient hdr_len failures",	/* Insufficient header length failures */
 	"Total packets dropped",	/* Total pkts dropped */
 };
 
@@ -44,6 +47,8 @@ static const char *netfn_sk_offload_stats_str[] __attribute__((unused)) = {
 static const char *netfn_sk_offload_stats_ctx_str[] __attribute__((unused)) = {
 	"Rx packets",				/* Rx pkts received */
 	"Rx Bytes",				/* Rx Bytes received */
+	"HW GRO Rx packets",			/* Rx pkts received */
+	"HW GRO Rx Bytes",				/* Rx Bytes received */
 	"Dst miss packets",			/* Destination failure packets */
 	"Tx packets",				/* Tx pkts sent */
 	"Tx Bytes",				/* Tx Bytes sent */
