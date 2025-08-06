@@ -166,26 +166,40 @@ static enum netfn_sk_offload_rx_action __rx_gro_tcp_check(struct netfn_sk_offloa
 static void __rx_except(struct netfn_sk_offload_ctx *ctx, struct sk_buff_head *head)
 {
 	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
+	struct net_device *dev = NULL;
 	struct sk_buff *tmp, *skb;
 
 	/*
 	 * De-queue all packets from the frag queue and notify Linux
 	 */
 	skb_queue_walk_safe(head, skb, tmp) {
-		skb_unlink(skb, head);
+		__skb_unlink(skb, head);
+
+		/*
+		 * Fetch the netdev from skb_iif and use it to set skb dev.
+		 */
+		dev = dev_get_by_index(&init_net, skb->skb_iif);
+		if (!dev) {
+			pr_warn_ratelimited("%px: net dev not found for SKB\n", skb);
+			return;
+		}
+
+		skb->dev = dev;
 
 		/*
 		 * Reset the headers and protocol
 		 */
-		skb_push(skb, skb_network_header_len(skb));
+		skb_push(skb, -skb_network_offset(skb));
+
 		netif_receive_skb(skb);
+		dev_put(dev);
 	}
 
 	/*
 	 * Reset local state.
 	 */
 	memset(gro_state, 0, sizeof(*gro_state));
-	__skb_queue_head_init(&gro_state->frag_q);
+	skb_queue_head_init(&gro_state->frag_q);
 }
 
 /*
@@ -278,7 +292,7 @@ static void __rx_gro_flush(struct netfn_sk_offload_ctx *ctx)
 	 * Reset local state.
 	 */
 	memset(gro_state, 0, sizeof(*gro_state));
-	__skb_queue_head_init(&gro_state->frag_q);
+	skb_queue_head_init(&gro_state->frag_q);
 
 	/*
 	 * Correct headers.
@@ -326,7 +340,7 @@ void __rx_gro_purge(struct netfn_sk_offload_ctx *ctx)
 	__skb_queue_purge(&gro_state->frag_q);
 
 	memset(gro_state, 0, sizeof(*gro_state));
-	__skb_queue_head_init(&gro_state->frag_q);
+	skb_queue_head_init(&gro_state->frag_q);
 }
 
 /*
@@ -420,7 +434,7 @@ static void __rx_deliver(struct netfn_sk_offload_ctx *ctx,  struct sk_buff *skb)
 		struct netfn_sk_offload_stats_ctx *stats;
 		struct sk_buff_head head;
 
-		__skb_queue_head_init(&head);
+		skb_queue_head_init(&head);
 		__skb_queue_tail(&head, skb);
 
 		stats = this_cpu_ptr(ctx->stats);
@@ -486,7 +500,7 @@ static void __rx_gro_state_init(struct netfn_sk_offload_ctx *ctx, struct sk_buff
 	/*
 	 * Reset our local state for coalesce,
 	 */
-	__skb_queue_head_init(&gro_state->frag_q);
+	skb_queue_head_init(&gro_state->frag_q);
 
 	/* Save the current SKB as the new head */
 	gro_state->head_cache.len = skb->len;
