@@ -726,6 +726,7 @@ static bool netfn_capwap_dec(struct netfn_capwap_dec *dec, struct sk_buff *skb, 
 		preh.dscp = (skb->priority >> 2);
 		preh.vlan_pcp = ((ntohs(skb_vlan_tag_get(skb)) & VLAN_PRIO_MASK) >> VLAN_PRIO_SHIFT);
 		next_hdr = netfn_capwap_dec_capwap(dec, skb, next_hdr, &preh);
+		skb->priority = 0;
 		goto skip_headers;
 	}
 
