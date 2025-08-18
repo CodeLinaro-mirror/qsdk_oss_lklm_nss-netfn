@@ -35,10 +35,6 @@
  */
 struct netfn_capwap global_nc;
 
-ulong capwap_core = NETFN_CAPWAP_CORE;			/* 3 represents core 3 */
-module_param(capwap_core, ulong, S_IRUSR);
-MODULE_PARM_DESC(capwap_core, "Core marked for processing CAPWAP pkts.");
-
 /*
  * netfn_capwap_frags_add()
  *	Try to add frag to frags list

@@ -17,6 +17,8 @@
 #ifndef __NETFN_TYPES_H
 #define __NETFN_TYPES_H
 
+#define NETFN_VP_RING0_QNUM 64
+
 /**
  * netfn_tuple_type
  *	Tuple type.
