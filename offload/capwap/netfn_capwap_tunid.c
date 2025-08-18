@@ -161,6 +161,7 @@ static netdev_tx_t netfn_capwap_tunid_tx(struct sk_buff *skb, struct net_device 
 	struct netfn_capwap_tunid *ncti = netdev_priv(dev);
 	struct netfn_capwap_pkt_stats *stats = &ncti->stats;
 	uint16_t tunid = pre->tunnel_id;
+	unsigned int skb_len = skb->len;
 	struct net_device *tun_dev;
 
 	/*
@@ -193,7 +194,7 @@ static netdev_tx_t netfn_capwap_tunid_tx(struct sk_buff *skb, struct net_device 
 	}
 
 	NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_pkts);
-	NETFN_CAPWAP_TUN_STATS_ADD(&stats->tx_bytes, skb->len);
+	NETFN_CAPWAP_TUN_STATS_ADD(&stats->tx_bytes, skb_len);
 done:
 	rcu_read_unlock_bh();
 	return NETDEV_TX_OK;
