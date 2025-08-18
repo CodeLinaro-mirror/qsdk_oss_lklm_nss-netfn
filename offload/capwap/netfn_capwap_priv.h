@@ -21,12 +21,10 @@
 
 #include <asm/bitops.h>
 
-extern ulong capwap_core;
 extern struct netfn_capwap global_nc;
 
 #define NETFN_CAPWAP_TUN_STATS_STRLEN 20	/* Stats string length. */
 #define NETFN_CAPWAP_TUN_STATS_WIDTH 82		/* Stats string width. */
-#define NETFN_CAPWAP_CORE 3		/* Default values for core */
 #define NETFN_CAPWAP_FRAG_IDX(frag_id, max) ({ \
 		BUILD_BUG_ON_NOT_POWER_OF_2(max); \
 		((frag_id) & ((max) - 1)); \

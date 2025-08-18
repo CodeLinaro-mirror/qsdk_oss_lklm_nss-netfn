@@ -33,9 +33,9 @@
 #include <ppe_drv.h>
 #include "netfn_dtls_priv.h"
 
-static int netfn_dtls_core_id = 0x2;
-module_param(netfn_dtls_core_id, int, 0644);
-MODULE_PARM_DESC(netfn_dtls_core_id, "DTLS receive core Map");
+static int vp_qnum = NETFN_VP_RING0_QNUM;
+module_param(vp_qnum, int, 0644);
+MODULE_PARM_DESC(vp_qnum, "DTLS VP queue number");
 
 /*
  * netfn_dtls_tun_reset_stats()
@@ -380,7 +380,7 @@ static struct net_device *netfn_dtls_tun_alloc_vp(struct net_device *dev)
 	vpai.dst_cb_data = netdev_priv(dev);
 	vpai.src_cb = netfn_dtls_tun_vp_err;
 	vpai.src_cb_data = netdev_priv(dev);
-	vpai.queue_num = ppe_drv_queue_from_core(netfn_dtls_core_id);
+	vpai.queue_num = vp_qnum;
 	vpai.flags |= PPE_VP_FLAG_REDIR_ENABLE;
 
 	vp_dev = ppe_vp_alloc_dev(dev, &vpai);
