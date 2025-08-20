@@ -47,6 +47,10 @@ static int8_t *g_enc_stats_str[] = {
 	"err_direct_dtls",
 	"err_nwireless_len",
 	"err_insufficient_hroom",
+	"fifo_full",
+	"fifo_enq",
+	"fifo_dq",
+	"fifo_empty",
 	"res1",
 	"res2",
 };
@@ -415,6 +419,7 @@ static ssize_t netfn_capwap_enc_stats_show(struct file *fp, char __user *ubuf, s
 {
 	struct netfn_capwap_enc *enc = fp->private_data;
 	uint64_t *stats = (uint64_t *)&enc->stats;
+	struct netfn_pkt_steer_stats ps_stats;
 	size_t enc_stats_sz, stats_sz;
 	ssize_t bytes_read = 0;
 	size_t size_wr = 0;
@@ -429,6 +434,15 @@ static ssize_t netfn_capwap_enc_stats_show(struct file *fp, char __user *ubuf, s
 		pr_warn("%px: Unable to allocate memory for stats.\n", fp);
 		return -ENOMEM;
 	}
+
+	/*
+	 * Get pkt steer stats
+	 */
+	netfn_pkt_steer_get_stats(&enc->nct->tx_steer, &ps_stats);
+	enc->stats.fifo_full = ps_stats.fifo_full;
+	enc->stats.fifo_enq = ps_stats.fifo_enq;
+	enc->stats.fifo_dq = ps_stats.fifo_dq;
+	enc->stats.fifo_empty = ps_stats.fifo_empty;
 
 	/*
 	 * Print encap stats.
@@ -538,6 +552,7 @@ bool netfn_capwap_enc_init(struct netfn_capwap_enc *enc, struct netfn_capwap_enc
 	ether_addr_copy(&enc->bssid, cfg->bssid);
 	enc->outer_hdr_len = sizeof(struct netfn_capwap_winfo);
 	enc->features = nct->features;
+	enc->nct = nct;
 
 	/*
 	 * Add vlan and pppoe overhead.

@@ -2,7 +2,7 @@
  * netfn_capwap_dec.h
  *	Network function's CAPWAP offload decapsulation defintions.
  *
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -43,6 +43,7 @@ struct netfn_capwap_dec_ctx {
  *	Decapsulation state
  */
 struct netfn_capwap_dec {
+	struct netfn_capwap_tun *nct;		/* Back pointer to parent */
 	struct netfn_capwap_dec_ctx __rcu *ctx;	/* Decap reassembly context. */
 	struct netfn_capwap_dec_stats stats;	/* Decap tunnel stats. */
 

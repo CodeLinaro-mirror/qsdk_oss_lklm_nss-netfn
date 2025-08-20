@@ -2,7 +2,7 @@
  * netfn_capwap_priv.h
  *	Network function's CAPWAP offload private definitions.
  *
- * Copyright (c) 2023-2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2023-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -26,9 +26,11 @@ extern ulong fwd_cores_mask;
 extern ulong capwap_core;
 extern int tx_napi_budget;
 extern int rx_napi_budget;
+extern int ps_queue_len;
 
 #define NETFN_CAPWAP_RX_BUDGET 64
 #define NETFN_CAPWAP_TX_BUDGET 32
+#define NETFN_CAPWAP_FIFO_LEN 8192
 
 #define NETFN_CAPWAP_RPS_CORE ((find_first_bit(&fwd_cores_mask, NR_CPUS)) % (NR_CPUS))
 #define NETFN_CAPWAP_TUN_STATS_STRLEN 20	/* Stats string length. */

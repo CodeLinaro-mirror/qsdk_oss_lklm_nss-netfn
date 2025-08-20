@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) 2024-2025, Qualcomm Innovation Center, Inc. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -17,6 +17,8 @@
 #ifndef __NETFN_PKT_STEER_H
 #define __NETFN_PKT_STEER_H
 
+#define NETFN_PKT_STEER_FIFO_SZ(len) ((len) * (sizeof(struct sk_buff *)))
+
 /*
  * Packet steer per PCU handle
  */
@@ -30,6 +32,9 @@ typedef void (*netfn_pkt_steer_recv_t)(struct netfn_pkt_steer *ps, struct sk_buf
 struct netfn_pkt_steer_info {
 	netfn_pkt_steer_recv_t cb;	/* Callback to execute on remote CPU */
 	struct net_device *dev;		/* Netdevice of the caller real or dummy */
+	cpumask_t sender_mask;		/* CPU sender mask for packet steer */
+	cpumask_t receiver_mask;	/* CPU sender mask for packet steer */
+	uint32_t fifo_len;		/* Fifo length */
 	uint16_t budget;		/* Budget for remote CPU process */
 	uint16_t weight;		/* weight for each queue */
 };
@@ -41,7 +46,37 @@ struct netfn_pkt_steer_stats {
 	uint64_t fifo_full;		/* Enqueue failed due to FIFO full */
 	uint64_t fifo_enq;		/* Total packets enqueued */
 	uint64_t fifo_dq;		/* Total packets dequeued */
+	uint64_t fifo_empty;		/* Dequeue failed due to FIFO empty */
 	uint64_t spare[2];		/* Reserved stats */
+};
+
+/*
+ * netfn_pkt_steer_fifo
+ * 	skb queue for napi operations
+ */
+struct netfn_pkt_steer_fifo {
+	atomic64_t prod;			/* Produce index */
+	atomic64_t cons;			/* Consumer index */
+	uint32_t len;				/* FIFO len */
+	struct netfn_pkt_steer_stats stats;	/* statistics */
+	struct sk_buff *skbs[];			/* Packet queue */
+};
+
+/*
+ * netfn_pkt_steer_pcpu
+ * 	Per Core NAPI structure.
+ */
+struct netfn_pkt_steer_pcpu {
+	struct netfn_pkt_steer *ps;		/* Cache Parent object to be passed in cb */
+	netfn_pkt_steer_recv_t cb;		/* Cache calback */
+
+	struct napi_struct napi;		/* NAPI object */
+	call_single_data_t csd;			/* IPI descriptor */
+	atomic_t ipi_queued;			/* Previous IPI is not yet completed */
+	atomic_t ipi_masked;			/* IPI is masked by consumer */
+	atomic_t queued;			/* Packets in CPU's Queue */
+
+	struct netfn_pkt_steer_fifo __rcu *fifo[NR_CPUS];	/* Cross CPU SKB Queue */
 };
 
 /*
@@ -49,8 +84,8 @@ struct netfn_pkt_steer_stats {
  * 	Per Core NAPI structure.
  */
 struct netfn_pkt_steer {
-	struct netfn_pkt_steer_info info;	/* Info passed during init */
-	struct netfn_pkt_steer_pcpu __rcu __percpu *pcpu;	/* Per CPU NAPI entry */
+	struct netfn_pkt_steer_info info;		/* Info passed during init */
+	struct netfn_pkt_steer_pcpu pcpu[NR_CPUS];	/* Per CPU NAPI entry */
 };
 
 /*

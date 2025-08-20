@@ -54,6 +54,10 @@ int rx_napi_budget = NETFN_CAPWAP_RX_BUDGET;
 module_param(rx_napi_budget, int, S_IRUSR);
 MODULE_PARM_DESC(rx_napi_budget, "Budget for Receive side Packet Steer");
 
+int ps_queue_len = NETFN_CAPWAP_FIFO_LEN;
+module_param(ps_queue_len, int, S_IRUSR);
+MODULE_PARM_DESC(ps_queue_len, "Length of FIFO needed for packet steer queues");
+
 /*
  * netfn_capwap_frags_add()
  *	Try to add frag to frags list
