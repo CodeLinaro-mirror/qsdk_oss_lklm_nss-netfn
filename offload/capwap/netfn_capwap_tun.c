@@ -502,6 +502,14 @@ static void netfn_capwap_tun_list_rx(struct netfn_capwap_tun *nct, struct sk_buf
 	struct netfn_capwap_dec_stats *stats = &nct->dec.stats;
 
 	/*
+	 * Check if tunnel is up or not
+	 */
+	if (unlikely(!(nct->dev->flags & IFF_UP))) {
+		NETFN_CAPWAP_TUN_STATS_ADD(&nct->stats.rx_dropped, skb_queue_len(q_head));
+		goto fail;
+	}
+
+	/*
 	 * Decapsulate and reassemble the skb
 	 */
 	if (unlikely(!netfn_capwap_dec_rx_skbs(&nct->dec, q_head))) {
