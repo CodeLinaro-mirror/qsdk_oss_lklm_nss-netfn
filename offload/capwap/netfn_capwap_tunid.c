@@ -174,6 +174,15 @@ static netdev_tx_t netfn_capwap_tunid_tx(struct sk_buff *skb, struct net_device 
 		goto drop;
 	}
 
+	/*
+	 * Check if tunnel is not disabled
+	 */
+	if (unlikely(!(tun_dev->flags & IFF_UP))) {
+		pr_debug("%px: Tunnel(%d) is in disabled state\n", &global_nc, tunid);
+		rcu_read_unlock_bh();
+		goto drop;
+	}
+
 	skb->dev = tun_dev;
 
 	/*
