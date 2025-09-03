@@ -134,20 +134,20 @@ static ssize_t netfn_capwapmgr_snap_read(struct file *f, char *buf, size_t count
  */
 static ssize_t netfn_capwapmgr_snap_write(struct file *f, const char *buffer, size_t len, loff_t *offset)
 {
+	char data[18] = {0};
 	ssize_t size;
-	char data[16];
 	uint64_t res;
 	int status;
 
-	size = simple_write_to_buffer(data, sizeof(data), offset, buffer, len);
+	size = simple_write_to_buffer(data, sizeof(data) - 1, offset, buffer, len);
 	if (size < 0) {
-		netfn_capwapmgr_warn("Error reading snap header from debugfs");
+		netfn_capwapmgr_warn("Error reading snap header from debugfs\n");
 		return size;
 	}
 
 	status = kstrtou64(data, 16, &res);
 	if (status) {
-		netfn_capwapmgr_warn("Error updating snap header from debugfs");
+		netfn_capwapmgr_warn("Error updating snap header from debugfs, status(%d)\n", status);
 		return status;
 	}
 
