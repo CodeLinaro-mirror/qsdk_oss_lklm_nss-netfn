@@ -299,6 +299,9 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_tunid_add(struct net_device *dev, uint8_t 
 	 * dev_put:netfn_capwapmgr_tunid_del()
 	 */
 	dev_hold(tunid_dev);
+	rtnl_lock();
+	dev_open(tunid_dev, NULL);
+	rtnl_unlock();
 
 	ctx->tunnels[tun_id] = tunid_ctx;
 	mutex_unlock(&mgr->lock);
@@ -340,7 +343,7 @@ struct net_device *netfn_capwapmgr_tunid_get_dtls_dev(struct net_device *dev, ui
 		return dtls_dev;
 	}
 
-	mutex_lock(&mgr->lock);	
+	mutex_lock(&mgr->lock);
 	ctx = netfn_capwap_tunid_pvt_get(dev);
 
 	tunid_ctx = ctx->tunnels[tun_id];

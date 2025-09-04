@@ -331,7 +331,6 @@ struct net_device *netfn_capwap_tunid_add(struct net_device *dev, uint8_t id, st
 	spin_unlock_bh(&ncti->lock);
 
 	rtnl_lock();
-	dev_open(tun_dev, NULL);
 	netdev_rx_handler_register(tun_dev, &netfn_capwap_tunid_rx_handler, dev);
 	rtnl_unlock();
 
