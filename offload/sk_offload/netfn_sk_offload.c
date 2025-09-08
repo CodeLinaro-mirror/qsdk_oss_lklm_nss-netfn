@@ -379,7 +379,7 @@ static void netfn_sk_offload_rule_destroy(struct netfn_sk_offload_ctx *ctx)
 
 	status = netfn_flowmgr_rule_decel(&orig, &reply, NETFN_FLOWMGR_ACCEL_MODE_PPE);
 	if (NETFN_FLOWMGR_GET_NETFN_ERROR_CODE(status) != NETFN_FLOWMGR_RET_SUCCESS) {
-		pr_warn("%px: Failed to destroy flow rule status(%x)\n", sk, status);
+		pr_debug("%px: Failed to destroy flow rule status(%x)\n", sk, status);
 	}
 }
 
@@ -596,7 +596,7 @@ static int netfn_sk_offload_notify(struct notifier_block *nb, unsigned long even
 		return NOTIFY_BAD;
 	}
 
-	pr_info("%px: Received notification with event(%lu), offload(%d), app_id(%d)\n",
+	pr_debug("%px: Received notification with event(%lu), offload(%d), app_id(%d)\n",
 			sk, event, val, appid);
 
 	switch (event) {
