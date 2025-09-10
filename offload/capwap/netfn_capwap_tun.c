@@ -42,6 +42,10 @@
 #define NETFN_CAPWAP_MAX_STRLEN 25
 #define NETFN_CAPWAP_TUN_STATS_MAX (sizeof(struct netfn_capwap_pkt_stats) / sizeof(uint64_t))
 
+static ulong vp_qnum = NETFN_VP_RING0_QNUM;		/* PPE VP queue number */
+module_param(vp_qnum, ulong, S_IRUSR);
+MODULE_PARM_DESC(vp_qnum, "PPE VP queue number for capwap");
+
 static void netfn_capwap_tun_enc(struct netfn_capwap_tun *nct, struct sk_buff *skb);
 static void netfn_capwap_tun_rx_deliver(struct netfn_capwap_tun *nct, struct sk_buff_head *q_head);
 
@@ -553,7 +557,7 @@ static struct net_device *netfn_capwap_tun_vp_attach(struct net_device *dev)
 	vpai.dst_cb_data = netdev_priv(dev);
 	vpai.src_cb = netfn_capwap_tun_vp_err;
 	vpai.src_cb_data = netdev_priv(dev);
-	vpai.queue_num = ppe_drv_queue_from_core(capwap_core);
+	vpai.queue_num = vp_qnum;
 	vpai.flags |= PPE_VP_FLAG_REDIR_ENABLE;
 
 	vp_dev = ppe_vp_alloc_dev(dev, &vpai);
