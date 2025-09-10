@@ -59,9 +59,8 @@ static int netfn_capwap_tunid_close(struct net_device *dev)
  *	Accumulates all child tunnel's error and drop stats.
  */
 
-static void netfn_capwap_tunid_get_tun_stats(struct netfn_capwap_tunid *ncti)
+static void netfn_capwap_tunid_get_tun_stats(struct netfn_capwap_tunid *ncti, struct rtnl_link_stats64 *stats)
 {
-	struct netfn_capwap_pkt_stats tunid_stats = {0};
 	struct netfn_capwap_pkt_stats tun_stats = {0};
 	struct netfn_capwap_tun *nct;
 	struct net_device *tun_dev;
@@ -77,18 +76,13 @@ static void netfn_capwap_tunid_get_tun_stats(struct netfn_capwap_tunid *ncti)
 		nct = netdev_priv(tun_dev);
 		tun_stats = nct->stats;
 
-		tunid_stats.tx_dropped += tun_stats.tx_dropped;
-		tunid_stats.rx_dropped += tun_stats.rx_dropped;
-		tunid_stats.tx_errors += tun_stats.tx_errors;
-		tunid_stats.rx_errors += tun_stats.rx_errors;
+		stats->tx_dropped += tun_stats.tx_dropped;
+		stats->rx_dropped += tun_stats.rx_dropped;
+		stats->tx_errors += tun_stats.tx_errors;
+		stats->rx_errors += tun_stats.rx_errors;
 	}
 
 	rcu_read_unlock_bh();
-
-	ncti->stats.tx_dropped = tunid_stats.tx_dropped;
-	ncti->stats.rx_dropped = tunid_stats.rx_dropped;
-	ncti->stats.tx_errors = tunid_stats.tx_errors;
-	ncti->stats.rx_errors = tunid_stats.rx_errors;
 }
 
 /*
@@ -108,12 +102,12 @@ static void netfn_capwap_tunid_stats(struct net_device *dev, struct rtnl_link_st
 	/*
 	 * Accumulate error and drop stats from child tunnels.
 	 */
-	netfn_capwap_tunid_get_tun_stats(ncti);
+	netfn_capwap_tunid_get_tun_stats(ncti, stats);
 
-	stats->tx_dropped = READ_ONCE(pkt_stats->tx_dropped);
-	stats->rx_dropped = READ_ONCE(pkt_stats->rx_dropped);
-	stats->tx_errors = READ_ONCE(pkt_stats->tx_errors);
-	stats->rx_errors = READ_ONCE(pkt_stats->rx_errors);
+	stats->tx_dropped += READ_ONCE(pkt_stats->tx_dropped);
+	stats->rx_dropped += READ_ONCE(pkt_stats->rx_dropped);
+	stats->tx_errors += READ_ONCE(pkt_stats->tx_errors);
+	stats->rx_errors += READ_ONCE(pkt_stats->rx_errors);
 }
 
 /*
@@ -169,8 +163,7 @@ static netdev_tx_t netfn_capwap_tunid_tx(struct sk_buff *skb, struct net_device 
 	 */
 	if (tunid < 0 || tunid >= NETFN_CAPWAP_MAX_IDS) {
 		pr_warn_ratelimited("%px: Invalid id(%d) allowed(0 to %d)\n", &global_nc, tunid, NETFN_CAPWAP_MAX_IDS - 1);
-		dev_kfree_skb(skb);
-		return NETDEV_TX_OK;
+		goto drop;
 	}
 
 	rcu_read_lock_bh();
@@ -178,8 +171,7 @@ static netdev_tx_t netfn_capwap_tunid_tx(struct sk_buff *skb, struct net_device 
 	if (!tun_dev) {
 		pr_warn_ratelimited("%px: No tun dev found corresponding to id(%d)\n", &global_nc, tunid);
 		rcu_read_unlock_bh();
-		dev_kfree_skb(skb);
-		return NETDEV_TX_OK;
+		goto drop;
 	}
 
 	skb->dev = tun_dev;
@@ -189,14 +181,18 @@ static netdev_tx_t netfn_capwap_tunid_tx(struct sk_buff *skb, struct net_device 
 	 * so no need for dev_queue_xmit/dev_fast_xmit.
 	 */
 	if (tun_dev->netdev_ops->ndo_start_xmit(skb, tun_dev) != NETDEV_TX_OK) {
-		dev_kfree_skb(skb);
-		goto done;
+		pr_warn_ratelimited("%px: Failed to xmit using tundev(%s)\n", &global_nc, tun_dev->name);
+		rcu_read_unlock_bh();
+		goto drop;
 	}
 
 	NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_pkts);
 	NETFN_CAPWAP_TUN_STATS_ADD(&stats->tx_bytes, skb_len);
-done:
 	rcu_read_unlock_bh();
+	return NETDEV_TX_OK;
+drop:
+	NETFN_CAPWAP_TUN_STATS_INC(&stats->tx_dropped);
+	dev_kfree_skb(skb);
 	return NETDEV_TX_OK;
 }
 
