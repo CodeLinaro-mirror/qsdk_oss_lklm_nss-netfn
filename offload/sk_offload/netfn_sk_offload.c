@@ -40,9 +40,9 @@
  */
 struct netfn_sk_offload g_sk_offload = {0};
 
-int netfn_sk_offload_core_mask = NETFN_SOCK_OFFLOAD_RFS_CORES;
-module_param(netfn_sk_offload_core_mask, int, S_IRUSR);
-MODULE_PARM_DESC(netfn_sk_offload_core_mask, "Core mask to be used for RFS");
+int rx_core_mask = NETFN_SOCK_OFFLOAD_RFS_CORES;
+module_param(rx_core_mask, int, S_IRUSR);
+MODULE_PARM_DESC(rx_core_mask, "Core mask to be used for RFS");
 
 /*
  * netfn_sk_offload_ppe_get_macaddr()
@@ -673,7 +673,7 @@ static inline bool netfn_sk_offload_vp_alloc(void)
 	 */
 	vpai.type = PPE_VP_TYPE_SW_L3;
 	vpai.usr_type = PPE_VP_USER_TYPE_ACTIVE;
-	vpai.core_mask = netfn_sk_offload_core_mask;
+	vpai.core_mask = rx_core_mask;
 	vpai.dst_cb_data = so;
 	vpai.src_cb = NULL;
 	vpai.src_cb_data = NULL;

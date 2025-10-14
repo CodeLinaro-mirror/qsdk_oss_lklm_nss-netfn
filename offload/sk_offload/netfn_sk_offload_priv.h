@@ -26,7 +26,7 @@
 
 #define NETFN_SOCK_OFFLOAD_RFS_CORES 7
 
-extern int netfn_sk_offload_core_mask;
+extern int rx_core_mask;
 
 extern struct netfn_sk_offload g_sk_offload;
 
