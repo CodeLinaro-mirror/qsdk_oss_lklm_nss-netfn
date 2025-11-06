@@ -23,6 +23,9 @@
 #include <linux/list.h>
 #include <linux/completion.h>
 
+#include <ppe_drv.h>
+#include <ppe_drv_eip.h>
+
 #include "netfn_dtls_priv.h"
 
 /*
@@ -49,6 +52,7 @@ void netfn_dtls_drv_final(struct kref *kref)
 int __init netfn_dtls_init_module(void)
 {
 	struct netfn_dtls_drv *drv = &g_dtls_drv;
+	enum eip_svc svc = EIP_SVC_DTLS;
 	int err = 0;
 
 	/*
@@ -57,6 +61,22 @@ int __init netfn_dtls_init_module(void)
 	if (!eip_is_enabled()) {
 		pr_info("EIP Module can't be loaded as EIP is unavailable\n");
 		return -1;
+	}
+
+	drv->is_inline = eip_is_inline_supported();
+
+	/*
+	 * Assign the EIP service code
+	 */
+	if (drv->is_inline) {
+		svc = EIP_SVC_HYBRID_DTLS;
+
+		/*
+		 * Map DTLS service codes (PPE2EIP and EIP2PPE) to the EIP197
+		 * unicast queue. This directs PPE to steer DTLS flows to EIP197
+		 * for inline crypto offload.
+		 */
+		ppe_drv_eip_sc_queue_config_set_dtls();
 	}
 
 	/*
@@ -68,13 +88,13 @@ int __init netfn_dtls_init_module(void)
 	drv->session_cache = kmem_cache_create("netfn_dtls_session", sizeof(struct netfn_dtls_session), 0, 0, NULL);
 	if (!drv->session_cache) {
 		pr_err("%px: Failed to allocate kmem cache for Session\n", drv);
-		return -1;
+		return -ENOMEM;
 	}
 
 	/*
 	 * Create DMA context.
 	 */
-	drv->ctx = eip_ctx_alloc(NETFN_DTLS_DEFAULT_SVC, &drv->dentry);
+	drv->ctx = eip_ctx_alloc(svc, &drv->dentry);
 	if (!drv->ctx) {
 		pr_err("%px: Failed to create DMA context\n", drv);
 		err = -ENOSYS;

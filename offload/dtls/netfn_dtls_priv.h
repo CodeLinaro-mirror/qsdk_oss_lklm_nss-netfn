@@ -27,8 +27,6 @@
 #include "netfn_dtls_enc.h"
 #include "netfn_dtls_dec.h"
 
-#define NETFN_DTLS_DEFAULT_SVC EIP_SVC_DTLS
-
 #define NETFN_DTLS_MAX_STR_LEN 64	/* Maximum print lenght */
 #define NETFN_DTLS_HASH_SHIFT 6
 #define NETFN_DTLS_HASH_SIZE (1 << NETFN_DTLS_HASH_SHIFT)
@@ -44,6 +42,7 @@ struct netfn_dtls_drv {
 	struct kmem_cache *session_cache;	/* Kmem cache for session memory */
 	struct eip_ctx *ctx;		/* DMA context to use for transformation request */
 	struct dentry *dentry;		/* Driver debugfs dentry */
+	bool is_inline;			/* Check if inline is supported */
 };
 
 extern struct netfn_dtls_drv g_dtls_drv;	/* Global Driver object */
