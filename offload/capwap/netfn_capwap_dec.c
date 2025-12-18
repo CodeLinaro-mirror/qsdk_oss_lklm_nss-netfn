@@ -255,6 +255,14 @@ static void netfn_capwap_dec_convert(struct netfn_capwap_dec *dec, struct sk_buf
 	ether_addr_copy((u8 *)smac, (u8 *)wlan_hdr->addr3);
 	ether_addr_copy((u8 *)dmac, (u8 *)wlan_hdr->addr1);
 
+	/*
+	 * Override dmac if bssid is used a dmac
+	 */
+	if (static_branch_unlikely(&skip_bss_mac)) {
+		ether_addr_copy((u8 *)smac, (u8 *)wlan_hdr->addr2);
+		ether_addr_copy((u8 *)dmac, (u8 *)wlan_hdr->addr3);
+	}
+
 	next_hdr += sizeof(*wlan_hdr);
 
 	/*

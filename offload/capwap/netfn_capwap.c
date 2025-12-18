@@ -35,6 +35,12 @@
  */
 struct netfn_capwap global_nc;
 
+static bool override_mac = false;
+module_param(override_mac, bool, S_IRUSR);
+MODULE_PARM_DESC(override_mac, "Use addr2 & addr3 for smac & dmac respectively");
+
+DEFINE_STATIC_KEY_FALSE(skip_bss_mac);
+
 /*
  * netfn_capwap_frags_add()
  *	Try to add frag to frags list
@@ -69,6 +75,10 @@ int __init netfn_capwap_init(void)
 	struct netfn_capwap *nc = &global_nc;
 
 	spin_lock_init(&nc->lock);
+
+	if (override_mac) {
+		static_branch_enable(&skip_bss_mac);
+	}
 
 	/*
 	 * Create a debugfs entry for capwap netfn engine.
