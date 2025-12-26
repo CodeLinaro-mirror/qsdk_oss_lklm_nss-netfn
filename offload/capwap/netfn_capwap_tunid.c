@@ -274,7 +274,7 @@ struct net_device *netfn_capwap_tunid_alloc(ssize_t pvt_sz)
 
 	ncti = netdev_priv(dev);
 	ncti->dev = dev;
-	memset(&ncti->tunnels, 0, sizeof(NETFN_CAPWAP_MAX_IDS));
+	memset(&ncti->tunnels, 0, sizeof(ncti->tunnels));
 	spin_lock_init(&ncti->lock);
 
 	err = register_netdev(dev);
