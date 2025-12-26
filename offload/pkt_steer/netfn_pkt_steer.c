@@ -79,7 +79,7 @@ static inline void netfn_pkt_steer_add_stats(struct netfn_pkt_steer_stats *src, 
  */
 static void netfn_pkt_steer_flush(struct netfn_pkt_steer_pcpu *pcpu)
 {
-	int i, cpu, tx_cpu;
+	int i, cpu;
 
 	for_each_online_cpu(cpu) {
 		struct netfn_pkt_steer_fifo *fifo = rcu_dereference_protected(pcpu->fifo[cpu], 1);
@@ -87,7 +87,7 @@ static void netfn_pkt_steer_flush(struct netfn_pkt_steer_pcpu *pcpu)
 		if (!fifo)
 			continue;
 
-		RCU_INIT_POINTER(pcpu->fifo[tx_cpu], NULL);
+		RCU_INIT_POINTER(pcpu->fifo[cpu], NULL);
 		synchronize_rcu();
 
 		for (i = 0; i < fifo->len; i++) {
