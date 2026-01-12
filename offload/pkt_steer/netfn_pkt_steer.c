@@ -239,6 +239,11 @@ int netfn_pkt_steer_send_list(struct netfn_pkt_steer *ps, struct sk_buff_head *h
 	uint32_t processed = 0, avail;
 	uint64_t prod, cons;
 
+	/*
+	 * Initialize tx_bytes to 0 to avoid invalid tx_bytes in case of failure
+	 */
+	*tx_bytes = 0;
+
 	rcu_read_lock_bh();
 	fifo = rcu_dereference(pcpu->fifo[cur_cpu]);
 	if (unlikely(!fifo)) {
@@ -248,7 +253,6 @@ int netfn_pkt_steer_send_list(struct netfn_pkt_steer *ps, struct sk_buff_head *h
 
 	prod = atomic64_read(&fifo->prod);
 	cons = atomic64_read(&fifo->cons);
-	*tx_bytes = 0;
 
 	/*
 	 * Fetch available length.
