@@ -389,7 +389,7 @@ bool netfn_pkt_steer_enable(struct netfn_pkt_steer *ps)
 		 */
 		for_each_cpu(tx_cpu, &info->sender_mask) {
 			struct netfn_pkt_steer_fifo *fifo;
-			size_t alloc_sz = sizeof(*fifo) + NETFN_PKT_STEER_FIFO_SZ(info->fifo_len);
+			size_t alloc_sz = sizeof(*fifo) + (info->fifo_len * sizeof(struct sk_buff *));
 
 			fifo = kzalloc(alloc_sz, GFP_KERNEL);
 			if (!fifo) {
