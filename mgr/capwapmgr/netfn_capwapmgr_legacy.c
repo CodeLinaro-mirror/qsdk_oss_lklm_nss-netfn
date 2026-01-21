@@ -28,6 +28,7 @@
 #include <linux/netdevice.h>
 #include <linux/if_pppox.h>
 #include <linux/udp.h>
+#include <linux/if_vlan.h>
 
 #include <ppe_drv_iface.h>
 #include <netfn_capwapmgr.h>
@@ -127,13 +128,11 @@ static bool netfn_capwapmgr_update_pppoe_rule(struct net_device *dev, struct net
          * pppoe_channel_addressing_get returns held device.
          */
         dev_put(addressing.dev);
-        goto done;
-
+        ppp_release_channels(channel, 1);
+	return status;
 fail:
         ppp_release_channels(channel, 1);
-        status = false;
-done:
-        return status;
+	return false;
 }
 
 /*
@@ -301,6 +300,13 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 	 */
 	tuple = &cfg->tuple;
 	if (v4) {
+		/*
+		 * Check for NULL top_ndev as its used to get VLAN TPID
+		 */
+		if (!v4->top_ndev) {
+			netfn_capwapmgr_warn("tunnel %d: top_outdev is NULL\n", tunnel_id);
+			return NETFN_CAPWAPMGR_ERROR_MAX;
+		}
 
 		/*
 		 * Convert flow rule.
@@ -316,8 +322,10 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		 * Convert vlan rule.
 		 */
 		if ((v4->in_vlan_tag[0] & 0xFFF) != 0xFFF) {
+			__be16 tpid = vlan_dev_vlan_proto(cfg->flow.top_outdev);
+
 			cfg->ext_cfg.ext_valid_flags |= NETFN_CAPWAPMGR_EXT_VALID_VLAN;
-			cfg->ext_cfg.vlan.inner.egress_vlan_tag = v4->in_vlan_tag[0];
+			cfg->ext_cfg.vlan.inner.egress_vlan_tag = (ntohs(tpid) << 16) | v4->in_vlan_tag[0];
 			cfg->ext_cfg.vlan.inner.ingress_vlan_tag = 0xFFF;
 			cfg->ext_cfg.vlan.outer.egress_vlan_tag = v4->in_vlan_tag[1];
 			cfg->ext_cfg.vlan.outer.ingress_vlan_tag = 0xFFF;
@@ -349,6 +357,13 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		tuple->tuples.tuple_5.l4_dest_ident = htons((uint16_t)v4->src_port);
 		tuple->tuples.tuple_5.protocol = (uint8_t)v4->protocol;
 	} else {
+		/*
+		 * Check for NULL top_ndev as its used to get VLAN TPID
+		 */
+		if (!v6->top_ndev) {
+			netfn_capwapmgr_warn("tunnel %d: top_outdev is NULL\n", tunnel_id);
+			return NETFN_CAPWAPMGR_ERROR_MAX;
+		}
 
 		/*
 		 * Convert flow rule.
@@ -360,8 +375,10 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		cfg->flow.top_outdev = v6->top_ndev;
 
 		if ((v6->in_vlan_tag[0] & 0xFFF) != 0xFFF) {
+			__be16 tpid = vlan_dev_vlan_proto(cfg->flow.top_outdev);
+
 			cfg->ext_cfg.ext_valid_flags |= NETFN_CAPWAPMGR_EXT_VALID_VLAN;
-			cfg->ext_cfg.vlan.inner.egress_vlan_tag = v6->in_vlan_tag[0];
+			cfg->ext_cfg.vlan.inner.egress_vlan_tag = (ntohs(tpid) << 16) | v6->in_vlan_tag[0];
 			cfg->ext_cfg.vlan.inner.ingress_vlan_tag = 0xFFF;
 			cfg->ext_cfg.vlan.outer.egress_vlan_tag = v6->in_vlan_tag[1];
 			cfg->ext_cfg.vlan.outer.ingress_vlan_tag = 0xFFF;

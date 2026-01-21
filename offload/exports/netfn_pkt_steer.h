@@ -17,8 +17,6 @@
 #ifndef __NETFN_PKT_STEER_H
 #define __NETFN_PKT_STEER_H
 
-#define NETFN_PKT_STEER_FIFO_SZ(len) ((len) * (sizeof(struct sk_buff *)))
-
 /*
  * Packet steer per PCU handle
  */

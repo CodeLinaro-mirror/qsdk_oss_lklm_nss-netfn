@@ -79,7 +79,7 @@ static inline void netfn_pkt_steer_add_stats(struct netfn_pkt_steer_stats *src, 
  */
 static void netfn_pkt_steer_flush(struct netfn_pkt_steer_pcpu *pcpu)
 {
-	int i, cpu, tx_cpu;
+	int i, cpu;
 
 	for_each_online_cpu(cpu) {
 		struct netfn_pkt_steer_fifo *fifo = rcu_dereference_protected(pcpu->fifo[cpu], 1);
@@ -87,7 +87,7 @@ static void netfn_pkt_steer_flush(struct netfn_pkt_steer_pcpu *pcpu)
 		if (!fifo)
 			continue;
 
-		RCU_INIT_POINTER(pcpu->fifo[tx_cpu], NULL);
+		RCU_INIT_POINTER(pcpu->fifo[cpu], NULL);
 		synchronize_rcu();
 
 		for (i = 0; i < fifo->len; i++) {
@@ -239,6 +239,11 @@ int netfn_pkt_steer_send_list(struct netfn_pkt_steer *ps, struct sk_buff_head *h
 	uint32_t processed = 0, avail;
 	uint64_t prod, cons;
 
+	/*
+	 * Initialize tx_bytes to 0 to avoid invalid tx_bytes in case of failure
+	 */
+	*tx_bytes = 0;
+
 	rcu_read_lock_bh();
 	fifo = rcu_dereference(pcpu->fifo[cur_cpu]);
 	if (unlikely(!fifo)) {
@@ -248,7 +253,6 @@ int netfn_pkt_steer_send_list(struct netfn_pkt_steer *ps, struct sk_buff_head *h
 
 	prod = atomic64_read(&fifo->prod);
 	cons = atomic64_read(&fifo->cons);
-	*tx_bytes = 0;
 
 	/*
 	 * Fetch available length.
@@ -385,7 +389,7 @@ bool netfn_pkt_steer_enable(struct netfn_pkt_steer *ps)
 		 */
 		for_each_cpu(tx_cpu, &info->sender_mask) {
 			struct netfn_pkt_steer_fifo *fifo;
-			size_t alloc_sz = sizeof(*fifo) + NETFN_PKT_STEER_FIFO_SZ(info->fifo_len);
+			size_t alloc_sz = sizeof(*fifo) + (info->fifo_len * sizeof(struct sk_buff *));
 
 			fifo = kzalloc(alloc_sz, GFP_KERNEL);
 			if (!fifo) {
