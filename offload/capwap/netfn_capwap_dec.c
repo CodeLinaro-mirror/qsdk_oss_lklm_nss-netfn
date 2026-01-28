@@ -727,6 +727,14 @@ static bool netfn_capwap_dec(struct netfn_capwap_dec *dec, struct sk_buff *skb, 
 		preh.vlan_pcp = ((ntohs(skb_vlan_tag_get(skb)) & VLAN_PRIO_MASK) >> VLAN_PRIO_SHIFT);
 		next_hdr = netfn_capwap_dec_capwap(dec, skb, next_hdr, &preh);
 		skb->priority = 0;
+
+		/*
+		 * Check if pkt is not control or invalid, if not then set as data pkt
+		 */
+#define __PKT_TYPE_MASK (NETFN_CAPWAP_PKT_TYPE_CTRL | NETFN_CAPWAP_PKT_TYPE_INVALID)
+		if (!(preh.type & __PKT_TYPE_MASK))
+			preh.type |= NETFN_CAPWAP_PKT_TYPE_DATA;
+
 		goto skip_headers;
 	}
 
