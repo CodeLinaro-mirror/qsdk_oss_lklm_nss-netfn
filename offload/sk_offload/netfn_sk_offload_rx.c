@@ -480,6 +480,31 @@ static void __rx_gro_queue(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb
 }
 
 /*
+ * __rx_udp_gro_flush
+ *	Update UDP headers and Flush the SKB
+ */
+static void __rx_udp_gro_flush(struct netfn_sk_offload_ctx *ctx)
+{
+	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
+	struct udphdr *udph;
+
+	udph = udp_hdr(gro_state->head_cache.skb);
+
+	/*
+	 * End the current chain and Flush it to Linux
+	 * Correct GRO state for Linux
+	 * Correct UDP header length.
+	 */
+	skb_shinfo(gro_state->head_cache.skb)->gso_type |= SKB_GSO_UDP_L4;
+	skb_shinfo(gro_state->head_cache.skb)->gso_size = gro_state->udp.len - sizeof(*udph);
+	skb_shinfo(gro_state->head_cache.skb)->gso_segs = skb_queue_len(&gro_state->frag_q) + 1;
+
+	udph->len = htons(gro_state->head_cache.len);
+	__rx_gro_flush(ctx);
+}
+
+
+/*
  * __rx_gro_state_init
  *	Initialise GRO head
  */
@@ -659,19 +684,12 @@ static void __rx_udp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
 	case NETFN_SK_OFFLOAD_RX_GRO_FLUSH:
 		__skb_pull(skb, sizeof(*udph));
 		gro_state->udp.next_seq = iperf_get_seq(skb) + 1;
+		__rx_gro_queue(ctx, skb);
 
 		/*
-		 * End the current chain and Flush it to Linux
-		 * Correct GRO state for Linux
-		 * Correct UDP header length.
+		 * Update head SKB and flush SKB
 		 */
-		__rx_gro_queue(ctx, skb);
-		skb_shinfo(gro_state->head_cache.skb)->gso_type |= SKB_GSO_UDP_L4;
-		skb_shinfo(gro_state->head_cache.skb)->gso_size = gro_state->udp.len - sizeof(*udph);
-		skb_shinfo(gro_state->head_cache.skb)->gso_segs = skb_queue_len(&gro_state->frag_q) + 1;
-
-		udph->len = htons(gro_state->head_cache.len);
-		__rx_gro_flush(ctx);
+		__rx_udp_gro_flush(ctx);
 		break;
 
 	case NETFN_SK_OFFLOAD_RX_GRO_SKIP:
@@ -679,14 +697,10 @@ static void __rx_udp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
 		 * If we have active GRO chain, flush it.
 		 */
 		if (!__is_cache_empty(gro_state))  {
-			udph = udp_hdr(gro_state->head_cache.skb);
-
-			skb_shinfo(gro_state->head_cache.skb)->gso_type |= SKB_GSO_UDP_L4;
-			skb_shinfo(gro_state->head_cache.skb)->gso_size = gro_state->udp.len - sizeof(*udph);
-			skb_shinfo(gro_state->head_cache.skb)->gso_segs = skb_queue_len(&gro_state->frag_q) + 1;
-
-			udph->len = htons(gro_state->head_cache.len);
-			__rx_gro_flush(ctx);
+			/*
+			 * Update head SKB and flush SKB
+			 */
+			__rx_udp_gro_flush(ctx);
 		}
 
 		/*
