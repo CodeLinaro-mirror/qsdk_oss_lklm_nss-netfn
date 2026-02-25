@@ -100,7 +100,7 @@ struct netfn_capwap_tun_cfg {
  */
 struct netfn_capwap_dec_stats {
 	uint64_t pkts_rcvd;			/**< Number of packets received. */
-	uint64_t dtls_pkts;			/**< DTLS pkts received directly. */
+	uint64_t dtls_dec_pkts;			/**< Packets received from DTLS */
 	uint64_t control_pkts;			/**< Control packets. */
 	uint64_t keepalive_pkts;		/**< Keep alive packets recieved. */
 	uint64_t fast_reasm;			/**< Fast reassembly hits. */
@@ -112,6 +112,7 @@ struct netfn_capwap_dec_stats {
 	uint64_t drop_missing_frags;		/**< Drop in reassembly window because of missing fragments. */
 	uint64_t drop_queue_full;		/**< Drop in during IPI to other core bcz of queue full. */
 	uint64_t drop_pri_queue_full;		/**< Drop in during IPI to other core bcz of priority queue full. */
+	uint64_t err_dtls_pkts;			/**< DTLS pkts received directly. */
 	uint64_t err_dec_failure;		/**< Failed during decapsulation. */
 	uint64_t err_max_frags;			/**< Exceeds max fragments allowed(10). */
 	uint64_t err_large_frags;		/**< Error packet of oversize. */
@@ -119,7 +120,7 @@ struct netfn_capwap_dec_stats {
 	uint64_t err_malformed;			/**< Error packet because of malformed packet. */
 	uint64_t err_excess_len;		/**< Error packet if frag size exceeds total len. */
 	uint64_t err_nwireless_len;		/**< Error packets because of invalid nwireless len. */
-	uint64_t reserve[2];			/**< Reserve for future use. */
+	uint64_t reserve[1];			/**< Reserve for future use. */
 };
 
 /*
