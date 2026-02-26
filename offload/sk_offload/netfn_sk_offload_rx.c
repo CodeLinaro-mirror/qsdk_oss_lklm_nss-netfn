@@ -594,6 +594,7 @@ static void __rx_gro_state_init(struct netfn_sk_offload_ctx *ctx, struct sk_buff
 	stats->start_coalesce++;
 }
 
+#ifdef NETFN_SK_OFFLOAD_HW_GRO
 /*
  * __rx_tcp_hw_process()
  * 	Process TCP packets
@@ -663,6 +664,7 @@ static void __rx_tcp_hw_process(struct netfn_sk_offload_ctx *ctx, struct sk_buff
 		break;
 	}
 }
+#endif
 
 /*
  * __rx_tcp
@@ -676,10 +678,12 @@ static void __rx_tcp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, stru
 	uint32_t hlen;
 	__be32 flags;
 
+#ifdef NETFN_SK_OFFLOAD_HW_GRO
 	if (ctx->hw_gro_en) {
 		__rx_tcp_hw_process(ctx, skb, info);
 		return;
 	}
+#endif
 
 	hlen = tcph->doff * 4;
 	flags = tcp_flag_word(tcph);
@@ -860,7 +864,9 @@ static void __rx_udp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, stru
  */
 bool netfn_sk_offload_rx(struct ppe_vp_cb_info *info, void *cb_data)
 {
+#ifdef NETFN_SK_OFFLOAD_HW_GRO
 	bool hw_gro_en = info->mdata_info.minfo.gro_info.hw_gro_en;
+#endif
 	struct netfn_sk_offload *so = &g_sk_offload;
 	struct netfn_sk_offload_ctx *ctx = NULL;
 	struct netfn_sk_offload_stats_ctx *stats;

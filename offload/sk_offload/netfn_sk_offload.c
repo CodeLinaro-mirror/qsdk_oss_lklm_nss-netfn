@@ -678,6 +678,7 @@ static inline bool netfn_sk_offload_vp_alloc(void)
 	vpai.src_cb = NULL;
 	vpai.src_cb_data = NULL;
 	vpai.dst_cb = netfn_sk_offload_rx;
+	vpai.net_dev_type = PPE_VP_NET_DEV_TYPE_NETFN_OL;
 
 	so->vp_num = ppe_vp_alloc(so->vp_dev, &vpai);
 	if (so->vp_num < 0) {
