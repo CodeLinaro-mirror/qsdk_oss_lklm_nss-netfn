@@ -325,7 +325,7 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_dscp_pri_add(struct netfn_flowmgr_dscp_pri
 {
 	struct netfn_flowmgr *f = &netfn_flowmgr_gbl;
 	struct netfn_flowmgr_debug_stats *stats;
-	struct ppe_acl_rule acl_rule = {0};
+	struct ppe_acl_rule *acl_rule;
 	struct net_device *netdev = NULL;
 	int16_t queue_num = 0;
 	uint8_t core_id = 0;
@@ -368,24 +368,30 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_dscp_pri_add(struct netfn_flowmgr_dscp_pri
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_INVALID_DSCP_RULE, 0);
 	}
 
+	acl_rule = kzalloc(sizeof(struct ppe_acl_rule), GFP_ATOMIC);
+	if (!acl_rule) {
+		netfn_flowmgr_warn("Failed to allocate memory for acl rule\n");
+		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_NO_MEM, 0);
+	}
+
 	/*
 	 * Create acl rule
 	 */
-	acl_rule.valid_flags |= PPE_ACL_RULE_MATCH_TYPE_TOS_TC_VALID;
+	acl_rule->valid_flags |= PPE_ACL_RULE_MATCH_TYPE_TOS_TC_VALID;
 
 	/*
 	 * Bind the ACL rule to the WAN port
 	 */
-	acl_rule.stype = PPE_ACL_RULE_SRC_TYPE_DEV;
+	acl_rule->dev_type = PPE_ACL_RULE_DEV_TYPE_SRC_DEV;
 
-	strlcpy(acl_rule.src.dev_name, netdev->name, IFNAMSIZ);
+	strlcpy(acl_rule->dev.dev_name, netdev->name, IFNAMSIZ);
 
 	/*
 	 * tos_tc_val in dscpinfo takes full 8-bit value:
 	 * IPv4 header: 8-bit ToS [DSCP(6) & ECN(2)]
 	 * IPv6 header: 8-bit TC [DSCP(6) & ECN(2)]
 	 */
-	acl_rule.rules[PPE_ACL_RULE_MATCH_TYPE_TOS_TC].rule.tos_tc.l3_tos_tc = dscpinfo->tos_tc_val;
+	acl_rule->rules[PPE_ACL_RULE_MATCH_TYPE_TOS_TC].rule.tos_tc.l3_tos_tc = dscpinfo->tos_tc_val;
 
 	/*
 	 * Get base queue for a given core
@@ -402,23 +408,25 @@ netfn_flowmgr_ret_t netfn_flowmgr_ppe_dscp_pri_add(struct netfn_flowmgr_dscp_pri
 	/*
 	 * Action
 	 */
-	acl_rule.cmn.cmn_flags |=  PPE_ACL_RULE_CMN_FLAG_NO_RULEID;
-	acl_rule.action.flags = PPE_ACL_RULE_ACTION_FLAG_QID_EN;
-	acl_rule.action.qid = ppe_queue_id;
+	acl_rule->cmn.cmn_flags |=  PPE_ACL_RULE_CMN_FLAG_NO_RULEID;
+	acl_rule->action.flags = PPE_ACL_RULE_ACTION_FLAG_QID_EN;
+	acl_rule->action.qid = ppe_queue_id;
 
 	/*
 	 * Call ppe acl rule create API
 	 */
-	ppe_acl_status = ppe_acl_rule_create(&acl_rule);
+	ppe_acl_status = ppe_acl_rule_create(acl_rule);
 	if (ppe_acl_status != PPE_ACL_RET_SUCCESS) {
 		netfn_flowmgr_warn("Failed to create ACL rule for dscp prioritization, error:%d", ppe_acl_status);
 		netfn_flowmgr_stats_inc(&stats->dscp_priority_add_req_rule_create_fail);
+		kfree(acl_rule);
 		return NETFN_FLOWMGR_SET_NETFN_STATUS_CODE(NETFN_FLOWMGR_RET_DSCP_RULE_ADD_FAILED, ppe_acl_status);
 	}
 
-	dscpinfo->rule_id = acl_rule.rule_id;
+	dscpinfo->rule_id = acl_rule->rule_id;
 	netfn_flowmgr_trace("DSCP priority added, rule_id = %u", dscpinfo->rule_id);
 
+	kfree(acl_rule);
 	return status;
 }
 
