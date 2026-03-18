@@ -41,7 +41,7 @@
  */
 static int8_t *g_dec_stats_str[] = {
 	"pkts_rcvd",
-	"dtls_pkts",
+	"dtls_dec_pkts",
 	"control_pkts",
 	"keepalive_pkts",
 	"fast_reasm",
@@ -50,6 +50,7 @@ static int8_t *g_dec_stats_str[] = {
 	"drop_missing_frags",
 	"drop_queue_full",
 	"drop_pri_queue_full",
+	"err_dtls_pkts",
 	"err_dec_failure",
 	"err_max_frags",
 	"err_large_frags",
@@ -58,7 +59,6 @@ static int8_t *g_dec_stats_str[] = {
 	"err_excess_len",
 	"err_nwireless_len",
 	"res1",
-	"res2",
 };
 
 /*
@@ -547,9 +547,16 @@ static uint8_t *netfn_capwap_dec_capwap(struct netfn_capwap_dec *dec, struct sk_
 	 */
 	preamble = netfn_capwap_hdr_get_preamble(info);
 	if (unlikely(preamble)) {
-		NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.dtls_pkts);
+		NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.err_dtls_pkts);
 		preh->type |= NETFN_CAPWAP_PKT_TYPE_INVALID;
 		return start;
+	}
+
+	/*
+	 * We are sure that its a valid packet
+	 */
+	if (likely(!(preh->type & NETFN_CAPWAP_PKT_TYPE_CTRL))) {
+		preh->type |= NETFN_CAPWAP_PKT_TYPE_DATA;
 	}
 
 	mdata->frag = netfn_capwap_hdr_has_fbit(info);
@@ -637,7 +644,6 @@ static uint8_t *netfn_capwap_dec_l4(struct netfn_capwap_dec *dec, struct sk_buff
 		return start + sizeof(*udph);
 	}
 
-	preh->type |= NETFN_CAPWAP_PKT_TYPE_DATA;
 	return start + sizeof(*udph);
 }
 
@@ -727,14 +733,7 @@ static bool netfn_capwap_dec(struct netfn_capwap_dec *dec, struct sk_buff *skb, 
 		preh.vlan_pcp = ((ntohs(skb_vlan_tag_get(skb)) & VLAN_PRIO_MASK) >> VLAN_PRIO_SHIFT);
 		next_hdr = netfn_capwap_dec_capwap(dec, skb, next_hdr, &preh);
 		skb->priority = 0;
-
-		/*
-		 * Check if pkt is not control or invalid, if not then set as data pkt
-		 */
-#define __PKT_TYPE_MASK (NETFN_CAPWAP_PKT_TYPE_CTRL | NETFN_CAPWAP_PKT_TYPE_INVALID)
-		if (!(preh.type & __PKT_TYPE_MASK))
-			preh.type |= NETFN_CAPWAP_PKT_TYPE_DATA;
-
+		NETFN_CAPWAP_TUN_STATS_INC(&dec->stats.dtls_dec_pkts);
 		goto skip_headers;
 	}
 
