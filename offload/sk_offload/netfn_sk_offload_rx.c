@@ -783,11 +783,14 @@ static void __rx_udp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, stru
 
 	udph = udp_hdr(skb);
 
+#ifdef NETFN_SK_OFFLOAD_HW_GRO
 	if (unlikely(ctx->hw_gro_en))
 		gro_action = __rx_hw_check(ctx, info, skb, true);
 	else
 		gro_action = __rx_gro_udp_check(ctx, skb);
-
+#else
+		gro_action = __rx_gro_udp_check(ctx, skb);
+#endif
 
 	switch (gro_action) {
 	case NETFN_SK_OFFLOAD_RX_GRO_START:
