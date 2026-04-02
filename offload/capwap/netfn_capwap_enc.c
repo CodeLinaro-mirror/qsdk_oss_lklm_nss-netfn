@@ -272,7 +272,7 @@ static inline void netfn_capwap_enc_80211(struct netfn_capwap_enc *enc, struct s
 		uint16_t *qos = (uint16_t *)__skb_push(skb, sizeof(phdr->wireless_qos));
 
 		fc |= IEEE80211_STYPE_QOS_DATA;
-		*qos = phdr->wireless_qos;
+		*qos = htons(phdr->wireless_qos);
 	}
 
 	/*
