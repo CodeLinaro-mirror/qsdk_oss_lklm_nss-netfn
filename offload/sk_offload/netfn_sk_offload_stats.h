@@ -56,9 +56,13 @@ struct netfn_sk_offload_stats_ctx {
 	uint64_t tx_bytes;			/* Tx bytes sent */
 	uint64_t coalesce;                      /* Total pkts coalesced to head */
 	uint64_t start_coalesce;                /* Total pkts started coalesced */
-	uint64_t fail_coalesce;                 /* Total pkts failed to coalesced */
-	uint64_t fail_start_coalesce;           /* Total pkts failed to coalesced start */
+	uint64_t fail_coalesce;			/* Total pkts failed to coalesced */
+	uint64_t fail_start_coalesce;           /* Total pkts failed to start coalescing */
 	uint64_t napi_flush;                    /* GRO flushed by Linux Napi complete */
+	uint64_t fail_xdp_frame_convert;	/* xdp_convert_buff_to_frame() failed (tailroom check) */
+	uint64_t fail_skb_build;		/* napi_build_skb() failed for page pool SKB */
+	uint64_t rx_scatter_pkts;		/* Scatter-gather (multi-buffer) packets received */
+	uint64_t rx_scatter_delivered;		/* Scatter-gather packets delivered to Linux */
 };
 
 /*

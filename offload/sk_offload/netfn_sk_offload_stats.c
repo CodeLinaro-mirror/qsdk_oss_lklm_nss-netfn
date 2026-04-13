@@ -59,8 +59,12 @@ static const char *netfn_sk_offload_stats_ctx_str[] __attribute__((unused)) = {
 	"Coalesced packets",			/* Total pkts coalesced to head */
 	"Coalesced start packets",		/* Total pkts started coalesced */
 	"Coalesce failed packets",		/* Total pkts failed to coalesced */
-	"Coalesce start failed packets",	/* Total pkts failed to coalesced start */
+	"Coalesce start failed packets",	/* Total pkts failed to start coalescing (GRO_SKIP: no gro_more) */
 	"Napi flush packets",			/* GRO flushed by Linux Napi complete */
+	"XDP frame convert failed",		/* xdp_convert_buff_to_frame() failed (tailroom check) */
+	"SKB build failed",			/* napi_build_skb() failed for page pool SKB */
+	"Scatter-gather fragments received",	/* Scatter-gather (multi-buffer) fragments received */
+	"Scatter-gather fragments delivered",	/* Scatter-gather fragments delivered to Linux */
 };
 
 /*

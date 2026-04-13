@@ -28,6 +28,9 @@
 
 #include <netfn_flowmgr.h>
 #include <ppe_drv.h>
+#ifdef NETFN_SK_OFFLOAD_VEIP_SUPPORT
+#include <ppe_drv_veip.h>
+#endif
 
 #include "netfn_sk_offload_priv.h"
 
@@ -220,6 +223,9 @@ netfn_flowmgr_ret_t netfn_sk_offload_rule_create(struct netfn_sk_offload_ctx *ct
 	struct net_device *out_dev;
 	struct inet_sock *inet;
 	struct dst_entry *dst;
+#ifdef NETFN_SK_OFFLOAD_VEIP_SUPPORT
+	bool is_veip;
+#endif
 
 	struct net_device *vp_dev = so->vp_dev;
 	struct sock *sk = ctx->sk;
@@ -274,9 +280,25 @@ netfn_flowmgr_ret_t netfn_sk_offload_rule_create(struct netfn_sk_offload_ctx *ct
 	}
 
 	/*
+	 * For VEIP interfaces (e.g., GPON/XGSPON GEM port VLAN), keep out_dev
+	 * as the VEIP interface itself so that conn_rule.tx_if resolves to the
+	 * VEIP iface index. ppe_drv_v4_if_walk then sees is_vlan_as_veip=true
+	 * and bypasses the "not able to find a matching vlan-if" guard.
+	 * For regular VLAN interfaces, use the physical parent as the bottom device
+	 * so that the hierarchy walk from top_rule.tx_if finds the VLAN interface.
+	 */
+#ifdef NETFN_SK_OFFLOAD_VEIP_SUPPORT
+	is_veip = ppe_drv_veip_is_enabled(out_dev);
+#endif
+
+	/*
 	 * If VLAN is present, fill VLAN specific information in create rule
 	 */
+#ifdef NETFN_SK_OFFLOAD_VEIP_SUPPORT
+	if (is_vlan_dev(out_dev) && !is_veip) {
+#else
 	if (is_vlan_dev(out_dev)) {
+#endif
 		orig.rule_info.rule_valid_flags |= NETFN_FLOWMGR_VALID_RULE_FLAG_VLAN;
 		reply.rule_info.rule_valid_flags |= NETFN_FLOWMGR_VALID_RULE_FLAG_VLAN;
 
@@ -294,6 +316,8 @@ netfn_flowmgr_ret_t netfn_sk_offload_rule_create(struct netfn_sk_offload_ctx *ct
 	orig_info->top_outdev = dst->dev;
 	orig_info->in_dev = orig_info->top_indev = vp_dev;
 	orig_info->flow_mtu = READ_ONCE(out_dev->mtu);
+
+	ctx->dev = out_dev;
 
 	memcpy(orig_info->flow_src_mac, out_dev->dev_addr, ETH_ALEN);
 
@@ -678,6 +702,9 @@ static inline bool netfn_sk_offload_vp_alloc(void)
 	vpai.src_cb = NULL;
 	vpai.src_cb_data = NULL;
 	vpai.dst_cb = netfn_sk_offload_rx;
+#ifdef NETFN_SK_OFFLOAD_HW_GRO
+	vpai.dst_xdp_cb = netfn_sk_offload_rx_page;
+#endif
 	vpai.net_dev_type = PPE_VP_NET_DEV_TYPE_NETFN_OL;
 
 	so->vp_num = ppe_vp_alloc(so->vp_dev, &vpai);

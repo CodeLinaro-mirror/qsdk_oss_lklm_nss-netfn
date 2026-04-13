@@ -159,64 +159,11 @@ static enum netfn_sk_offload_rx_action __rx_gro_tcp_check(struct netfn_sk_offloa
 	return !!(flags & ~TCP_SKIP_FLAGS) ? NETFN_SK_OFFLOAD_RX_GRO_FLUSH : NETFN_SK_OFFLOAD_RX_GRO_QUEUE;
 }
 
-#ifdef NETFN_SK_OFFLOAD_HW_GRO
-/*
- * netfn_sk_offload_hw_coalesce_check
- *	Coalesce check for HW offload
- */
-static int __rx_hw_check(struct netfn_sk_offload_ctx *ctx, struct ppe_vp_cb_mdata_info *info, struct sk_buff *skb, bool is_udp)
-{
-	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
-	struct netfn_sk_offload_stats_ctx *stats;
-	bool gro_en = !!(info->hw_gro_flags & PPE_VP_RX_HW_GRO_EN);
-	bool gro_more = !!(info->hw_gro_flags & PPE_VP_RX_HW_GRO_MORE);
-
-	stats = this_cpu_ptr(ctx->stats);
-
-	/*
-	 * If it is a first packet in the chain
-	 */
-	if (__is_cache_empty(gro_state)) {
-		/*
-		 * If HW indicates gro is enabled then START gro coalescing
-		 */
-		if (likely(gro_en) && likely(gro_more)) {
-			return NETFN_SK_OFFLOAD_RX_GRO_START;
-		}
-
-		/*
-		 * GRO coalescing not required
-		 */
-		stats->fail_start_coalesce++;
-		return NETFN_SK_OFFLOAD_RX_GRO_SKIP;
-	}
-
-	WARN_ON(!gro_en);
-
-	if (unlikely(is_udp) && unlikely(gro_state->udp.next_seq != iperf_get_seq(skb))) {
-		stats->fail_coalesce++;
-		return NETFN_SK_OFFLOAD_RX_GRO_SKIP;
-	}
-
-	/*
-	 * If GRO more is 0, it indicates no more segments for coalescing.
-	 */
-	if (likely(!gro_more)) {
-		return NETFN_SK_OFFLOAD_RX_GRO_FLUSH;
-	}
-
-	/*
-	 * Continue with GRO coalescing
-	 */
-	return NETFN_SK_OFFLOAD_RX_GRO_QUEUE;
-}
-#endif
-
 /*
  * __rx_except
  *      Exception the packets to Linux
  */
-static void __rx_except(struct netfn_sk_offload_ctx *ctx, struct sk_buff_head *head)
+void __rx_except(struct netfn_sk_offload_ctx *ctx, struct sk_buff_head *head)
 {
 	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
 	struct net_device *dev = NULL;
@@ -259,7 +206,7 @@ static void __rx_except(struct netfn_sk_offload_ctx *ctx, struct sk_buff_head *h
  * __rx_get_dst
  *	Fetch the dst from socket
  */
-static struct dst_entry *__rx_get_dst(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
+struct dst_entry *__rx_get_dst(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb)
 {
 	struct dst_entry *dst;
 	struct sock *sk = NULL;
@@ -459,7 +406,7 @@ static void __rx_udp_completion(void *info)
 	 */
 	skb_shinfo(skb)->gso_type |= SKB_GSO_UDP_L4;
 	skb_shinfo(skb)->gso_size = gro_state->udp.len - sizeof(*udph);
-	skb_shinfo(skb)->gso_segs = skb_queue_len(&gro_state->frag_q) + 1;
+	skb_shinfo(skb)->gso_segs = gro_state->head_cache.gso_segs;
 
 	/*
 	 * Correct udp payload len
@@ -524,6 +471,7 @@ static void __rx_gro_queue(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb
 	 */
 	gro_state->head_cache.len += skb->len;
 	gro_state->head_cache.truesize +=  skb->truesize;
+	gro_state->head_cache.gso_segs++;
 
 	__skb_queue_tail(&gro_state->frag_q, skb);
 	stats->coalesce++;
@@ -548,7 +496,7 @@ static void __rx_udp_gro_flush(struct netfn_sk_offload_ctx *ctx)
 	 */
 	skb_shinfo(gro_state->head_cache.skb)->gso_type |= SKB_GSO_UDP_L4;
 	skb_shinfo(gro_state->head_cache.skb)->gso_size = gro_state->udp.len - sizeof(*udph);
-	skb_shinfo(gro_state->head_cache.skb)->gso_segs = skb_queue_len(&gro_state->frag_q) + 1;
+	skb_shinfo(gro_state->head_cache.skb)->gso_segs = gro_state->head_cache.gso_segs;
 
 	udph->len = htons(gro_state->head_cache.len);
 	__rx_gro_flush(ctx);
@@ -567,13 +515,9 @@ static void __rx_gro_state_init(struct netfn_sk_offload_ctx *ctx, struct sk_buff
 	stats = this_cpu_ptr(ctx->stats);
 
 	/*
-	 * Skip NAPI completion notification for HW GRO packets.
-	 * HW GRO handles packet coalescing in hardware, so we don't need
-	 * to notify NAPI completion for each individual packet in the chain.
-	 * NAPI notification will be handled when the complete GRO chain is flushed.
+	 * Notify NAPI completion for SW GRO packets.
 	 */
-	if (unlikely(!ctx->hw_gro_en))
-		dev_napi_notify_completion(&ctx->napi_info);
+	dev_napi_notify_completion(&ctx->napi_info);
 
 	/*
 	 * Reset GRO field
@@ -589,98 +533,23 @@ static void __rx_gro_state_init(struct netfn_sk_offload_ctx *ctx, struct sk_buff
 	gro_state->head_cache.len = skb->len;
 	gro_state->head_cache.truesize = skb->truesize;
 	gro_state->head_cache.skb = skb;
+	gro_state->head_cache.gso_segs = 1;
 
 	stats->start_coalesce++;
 }
 
-#ifdef NETFN_SK_OFFLOAD_HW_GRO
-/*
- * __rx_tcp_hw_process()
- * 	Process TCP packets
- */
-static void __rx_tcp_hw_process(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, struct ppe_vp_cb_mdata_info *info)
-{
-	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
-	struct tcphdr *tcph = tcp_hdr(skb);
-	int gro_action;
-	uint32_t hlen = tcph->doff * 4;
-	__be32 flags;
-
-	gro_action = __rx_hw_check(ctx, info, skb, false);
-	switch (gro_action) {
-	case NETFN_SK_OFFLOAD_RX_GRO_START:
-		flags = tcp_flag_word(tcph);
-
-		gro_state->tcp.flag_word = flags;
-
-		WARN_ON(!__is_cache_empty(gro_state));
-		__rx_gro_state_init(ctx, skb);
-		break;
-
-	case NETFN_SK_OFFLOAD_RX_GRO_QUEUE:
-		/*
-		 * We are going to coalesce data, Pull UDP header as well.
-		 */
-		__skb_pull(skb, hlen);
-		__rx_gro_queue(ctx, skb);
-		break;
-
-	case NETFN_SK_OFFLOAD_RX_GRO_FLUSH:
-		/*
-		 * We are going to coalesce data, Pull UDP header as well.
-		 */
-		__skb_pull(skb, hlen);
-
-		/*
-                 * We are going to coalesce data, Pull TCP header as well.
-                 */
-		if (info->hw_gro_flags & PPE_VP_RX_HW_GRO_TCP_PSH)
-			gro_state->tcp.flag_word |= TCP_FLAG_PSH;
-
-		if (info->hw_gro_flags & PPE_VP_RX_HW_GRO_TCP_FIN)
-			gro_state->tcp.flag_word |= TCP_FLAG_FIN;
-
-		__rx_gro_queue(ctx, skb);
-                tcph = tcp_hdr(gro_state->head_cache.skb);
-                tcp_flag_word(tcph) |= gro_state->tcp.flag_word;
-
-		__rx_gro_flush(ctx);
-		break;
-
-	case NETFN_SK_OFFLOAD_RX_GRO_SKIP:
-		/*
-		 * If we have active GRO chain, flush it
-		 */
-		if (!__is_cache_empty(gro_state))  {
-                	tcph = tcp_hdr(gro_state->head_cache.skb);
-                	tcp_flag_word(tcph) |= gro_state->tcp.flag_word;
-			__rx_gro_flush(ctx);
-		}
-
-		__rx_deliver(ctx, skb);
-		break;
-	}
-}
-#endif
-
 /*
  * __rx_tcp
- *	Perform GRO on TCP packets
+ *	Perform SW GRO on TCP packets
  */
-static void __rx_tcp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, struct ppe_vp_cb_mdata_info *info)
+static void __rx_tcp(struct netfn_sk_offload_ctx *ctx, struct ppe_vp_cb_info *info)
 {
 	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
+	struct sk_buff *skb = info->skb;
 	struct tcphdr *tcph = tcp_hdr(skb);
 	int gro_action;
 	uint32_t hlen;
 	__be32 flags;
-
-#ifdef NETFN_SK_OFFLOAD_HW_GRO
-	if (ctx->hw_gro_en) {
-		__rx_tcp_hw_process(ctx, skb, info);
-		return;
-	}
-#endif
 
 	hlen = tcph->doff * 4;
 	flags = tcp_flag_word(tcph);
@@ -770,24 +639,17 @@ static void __rx_tcp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, stru
 
 /*
  * __rx_udp
- *      Perform GRO on UDP packets
+ *      Perform SW GRO on UDP packets
  */
-static void __rx_udp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, struct ppe_vp_cb_mdata_info *info)
+static void __rx_udp(struct netfn_sk_offload_ctx *ctx, struct ppe_vp_cb_info *info)
 {
 	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
+	struct sk_buff *skb = info->skb;
 	struct udphdr *udph;
 	int gro_action;
 
 	udph = udp_hdr(skb);
-
-#ifdef NETFN_SK_OFFLOAD_HW_GRO
-	if (unlikely(ctx->hw_gro_en))
-		gro_action = __rx_hw_check(ctx, info, skb, true);
-	else
-		gro_action = __rx_gro_udp_check(ctx, skb);
-#else
-		gro_action = __rx_gro_udp_check(ctx, skb);
-#endif
+	gro_action = __rx_gro_udp_check(ctx, skb);
 
 	switch (gro_action) {
 	case NETFN_SK_OFFLOAD_RX_GRO_START:
@@ -854,9 +716,6 @@ static void __rx_udp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, stru
  */
 bool netfn_sk_offload_rx(struct ppe_vp_cb_info *info, void *cb_data)
 {
-#ifdef NETFN_SK_OFFLOAD_HW_GRO
-	bool hw_gro_en = !!(info->mdata_info.hw_gro_flags & PPE_VP_RX_HW_GRO_EN);
-#endif
 	struct netfn_sk_offload *so = &g_sk_offload;
 	struct netfn_sk_offload_ctx *ctx = NULL;
 	struct netfn_sk_offload_stats_ctx *stats;
@@ -897,29 +756,18 @@ bool netfn_sk_offload_rx(struct ppe_vp_cb_info *info, void *cb_data)
 	stats->rx_bytes += skb->len;
 
 	/*
-	 * Pull Ethernet + IP header, as packet will be delivered to TCP stack.
-	 * For HW GRO, only Head packet will have headers.
+	 * Pull IP header as packet will be delivered to TCP stack.
 	 */
 	skb_reset_network_header(skb);
 	__skb_pull(skb, ctx->iphdr_sz);
 	skb_reset_transport_header(skb);
-
-#ifdef NETFN_SK_OFFLOAD_HW_GRO
-	if (likely(hw_gro_en)) {
-		stats->hw_gro_rx_pkts++;
-		so_stats->hw_gro_rx_pkts++;
-		stats->hw_gro_rx_bytes += skb->len;
-		so_stats->hw_gro_rx_bytes += skb->len;
-		ctx->hw_gro_en = true;
-	}
-#endif
 
 	if (!ctx->gro_rcv) {
 		rcu_read_unlock_bh();
 		goto drop;
 	}
 
-	ctx->gro_rcv(ctx, skb, &info->mdata_info);
+	ctx->gro_rcv(ctx, info);
 	rcu_read_unlock_bh();
 
 	return true;
@@ -937,6 +785,9 @@ drop:
 void netfn_sk_offload_rx_init(struct netfn_sk_offload_ctx *ctx)
 {
 	void *napi_notify, *gro_rcv;
+#ifdef NETFN_SK_OFFLOAD_HW_GRO
+	void *gro_rcv_pages;
+#endif
 	struct sock *sk = ctx->sk;
 
 	ctx->iphdr_sz = (sk->sk_family == AF_INET) ? sizeof(struct iphdr) : sizeof(struct ipv6hdr);
@@ -945,10 +796,16 @@ void netfn_sk_offload_rx_init(struct netfn_sk_offload_ctx *ctx)
 	switch (sk->sk_protocol) {
 	case IPPROTO_TCP:
 		gro_rcv = __rx_tcp;
+#ifdef NETFN_SK_OFFLOAD_HW_GRO
+		gro_rcv_pages = __rx_page_tcp;
+#endif
 		napi_notify = __rx_tcp_completion;
 		break;
 	case IPPROTO_UDP:
 		gro_rcv = __rx_udp;
+#ifdef NETFN_SK_OFFLOAD_HW_GRO
+		gro_rcv_pages = __rx_page_udp;
+#endif
 		napi_notify = __rx_udp_completion;
 		break;
 	default:
@@ -957,6 +814,9 @@ void netfn_sk_offload_rx_init(struct netfn_sk_offload_ctx *ctx)
 	}
 
 	ctx->gro_rcv = gro_rcv;
+#ifdef NETFN_SK_OFFLOAD_HW_GRO
+	ctx->gro_rcv_pages = gro_rcv_pages;
+#endif
 
 	/*
 	 * Initialise the NAPI completion callback

@@ -11,6 +11,22 @@
  */
 
 /*
+ * NETFN_MAX_SKB_FRAGS - Maximum xdp_frame entries for page pool GRO
+ */
+#define NETFN_MAX_SKB_FRAGS  (MAX_SKB_FRAGS + 1)
+
+/*
+ * netfn_sk_offload_rx_xdp
+ *	XDP buff-based page pool GRO state.
+ */
+struct netfn_sk_offload_rx_xdp {
+	struct xdp_buff vec[NETFN_MAX_SKB_FRAGS];
+				/* XDP buffer entries for GRO coalescing */
+	uint8_t nr_xdp;		/* Total number of xdp buf */
+	uint8_t nr_scatters;	/* Total scatters across nr_xdp */
+};
+
+/*
  * netfn_sk_offload_rx_action
  *	GRO coalesce check actions
  */
@@ -35,16 +51,23 @@ struct iperf_hdr {
 
 /*
  * netfn_sk_offload_rx_state
- *  GRO state per connection
+ *  GRO state per connection
  */
 struct netfn_sk_offload_rx_state {
+	/*
+	 * TODO: Change to union of netfn_sk_offload_rx_pages & netfn_sk_offload_rx_skb.
+	 */
 	struct {
-                struct sk_buff *skb;           /* First packet in the GRO list*/
-                uint32_t len;                   /* Total packet length */
-                uint32_t truesize;              /* Total truesize of all SKBs */
-        } head_cache;
+		struct sk_buff *skb;		/* First packet in the GRO list */
+		uint32_t len;			/* Total packet length */
+		uint32_t truesize;		/* Total truesize of all SKBs */
+		uint8_t gso_segs;		/* Total number of segments */
+	} head_cache;
 
-	struct sk_buff_head frag_q;		/* Fragment queue for rest of the chain */
+	union {
+		struct sk_buff_head frag_q;		/* GRO using SKB frag list */
+		struct netfn_sk_offload_rx_xdp xdp_q;		/* GRO using page pool */
+	};
 
 	union {
 		struct {
@@ -72,3 +95,12 @@ void netfn_sk_offload_rx_init(struct netfn_sk_offload_ctx *ctx);
  */
 bool netfn_sk_offload_rx(struct ppe_vp_cb_info *info, void *cb_data);
 void __rx_gro_purge(struct netfn_sk_offload_ctx *ctx);
+void __rx_except(struct netfn_sk_offload_ctx *ctx, struct sk_buff_head *head);
+struct dst_entry *__rx_get_dst(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb);
+
+#ifdef NETFN_SK_OFFLOAD_HW_GRO
+/* Declarations for XDP page pool GRO path */
+bool netfn_sk_offload_rx_page(struct ppe_vp_xdp_cb_info *info, void *cb_data);
+void __rx_page_tcp(struct netfn_sk_offload_ctx *ctx, struct ppe_vp_xdp_cb_info *info);
+void __rx_page_udp(struct netfn_sk_offload_ctx *ctx, struct ppe_vp_xdp_cb_info *info);
+#endif
