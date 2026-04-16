@@ -300,11 +300,14 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 	 */
 	tuple = &cfg->tuple;
 	if (v4) {
+		bool is_vlan = ((v4->in_vlan_tag[0] & 0xFFF) != 0xFFF) ? true : false;
+		bool is_pppoe = v4->flow_pppoe_if_exist;
+
 		/*
 		 * Check for NULL top_ndev as its used to get VLAN TPID
 		 */
-		if (!v4->top_ndev) {
-			netfn_capwapmgr_warn("tunnel %d: top_outdev is NULL\n", tunnel_id);
+		if ((is_vlan || is_pppoe) && !v4->top_ndev) {
+			netfn_capwapmgr_warn("tunnel %d: top_outdev needs to be set for vlan or pppoe setup\n", tunnel_id);
 			return NETFN_CAPWAPMGR_ERROR_MAX;
 		}
 
@@ -316,12 +319,12 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		cfg->flow.flow_mtu = v4->from_mtu;
 		memcpy(cfg->flow.flow_dest_mac, v4->src_mac, ETH_ALEN);
 		memcpy(cfg->flow.flow_src_mac, v4->dest_mac, ETH_ALEN);
-		cfg->flow.top_outdev = v4->top_ndev;
+		cfg->flow.top_outdev = v4->top_ndev ? v4->top_ndev : cfg->flow.out_dev;
 
 		/*
 		 * Convert vlan rule.
 		 */
-		if ((v4->in_vlan_tag[0] & 0xFFF) != 0xFFF) {
+		if (is_vlan) {
 			__be16 tpid = vlan_dev_vlan_proto(cfg->flow.top_outdev);
 
 			cfg->ext_cfg.ext_valid_flags |= NETFN_CAPWAPMGR_EXT_VALID_VLAN;
@@ -334,7 +337,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		/*
 		 * Conver PPPoE rule.
 		 */
-		if (v4->flow_pppoe_if_exist) {
+		if (is_pppoe) {
 			/*
 			 * Copy over the PPPOE rules and set PPPOE_VALID flag.
 			 */
@@ -357,11 +360,14 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		tuple->tuples.tuple_5.l4_dest_ident = htons((uint16_t)v4->src_port);
 		tuple->tuples.tuple_5.protocol = (uint8_t)v4->protocol;
 	} else {
+		bool is_vlan = ((v6->in_vlan_tag[0] & 0xFFF) != 0xFFF) ? true : false;
+		bool is_pppoe = v6->flow_pppoe_if_exist;
+
 		/*
 		 * Check for NULL top_ndev as its used to get VLAN TPID
 		 */
-		if (!v6->top_ndev) {
-			netfn_capwapmgr_warn("tunnel %d: top_outdev is NULL\n", tunnel_id);
+		if ((is_vlan || is_pppoe) && !v6->top_ndev) {
+			netfn_capwapmgr_warn("tunnel %d: top_outdev needs to be set for vlan or pppoe setup\n", tunnel_id);
 			return NETFN_CAPWAPMGR_ERROR_MAX;
 		}
 
@@ -372,9 +378,9 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		cfg->flow.flow_mtu = v6->from_mtu;
 		memcpy(cfg->flow.flow_dest_mac, v6->src_mac, ETH_ALEN);
 		memcpy(cfg->flow.flow_src_mac, v6->dest_mac, ETH_ALEN);
-		cfg->flow.top_outdev = v6->top_ndev;
+		cfg->flow.top_outdev = v6->top_ndev ? v6->top_ndev : cfg->flow.out_dev;
 
-		if ((v6->in_vlan_tag[0] & 0xFFF) != 0xFFF) {
+		if (is_vlan) {
 			__be16 tpid = vlan_dev_vlan_proto(cfg->flow.top_outdev);
 
 			cfg->ext_cfg.ext_valid_flags |= NETFN_CAPWAPMGR_EXT_VALID_VLAN;
@@ -387,7 +393,7 @@ netfn_capwapmgr_ret_t netfn_capwapmgr_legacy_rule2tun_cfg(struct nss_ipv4_create
 		/*
 		 * Conver PPPoE rule.
 		 */
-		if (v6->flow_pppoe_if_exist) {
+		if (is_pppoe) {
 			/*
 			 * Copy over the PPPOE rules and set PPPOE_VALID flag.
 			 */
