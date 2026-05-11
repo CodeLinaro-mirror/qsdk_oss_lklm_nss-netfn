@@ -164,12 +164,12 @@ static enum netfn_sk_offload_rx_action __rx_gro_tcp_check(struct netfn_sk_offloa
  * netfn_sk_offload_hw_coalesce_check
  *	Coalesce check for HW offload
  */
-int __rx_hw_check(struct netfn_sk_offload_ctx *ctx, struct ppe_vp_cb_mdata_info_gro *info, struct sk_buff *skb, bool is_udp)
+static int __rx_hw_check(struct netfn_sk_offload_ctx *ctx, struct ppe_vp_cb_mdata_info *info, struct sk_buff *skb, bool is_udp)
 {
 	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
 	struct netfn_sk_offload_stats_ctx *stats;
-	bool gro_en = info->hw_gro_en;
-	bool gro_more = info->hw_gro_more;
+	bool gro_en = !!(info->hw_gro_flags & PPE_VP_RX_HW_GRO_EN);
+	bool gro_more = !!(info->hw_gro_flags & PPE_VP_RX_HW_GRO_MORE);
 
 	stats = this_cpu_ptr(ctx->stats);
 
@@ -180,7 +180,7 @@ int __rx_hw_check(struct netfn_sk_offload_ctx *ctx, struct ppe_vp_cb_mdata_info_
 		/*
 		 * If HW indicates gro is enabled then START gro coalescing
 		 */
-		if (likely((gro_en) && (gro_more))) {
+		if (likely(gro_en) && likely(gro_more)) {
 			return NETFN_SK_OFFLOAD_RX_GRO_START;
 		}
 
@@ -447,7 +447,6 @@ static void __rx_udp_completion(void *info)
 	 * We maye have flushed the head before
 	 * NAPI completion
 	 */
-	gro_state = &ctx->gro_state;
 	if (__is_cache_empty(gro_state)) {
 		return;
 	}
@@ -599,7 +598,7 @@ static void __rx_gro_state_init(struct netfn_sk_offload_ctx *ctx, struct sk_buff
  * __rx_tcp_hw_process()
  * 	Process TCP packets
  */
-static void __rx_tcp_hw_process(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, struct ppe_vp_cb_mdata_info_gro *info)
+static void __rx_tcp_hw_process(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, struct ppe_vp_cb_mdata_info *info)
 {
 	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
 	struct tcphdr *tcph = tcp_hdr(skb);
@@ -635,13 +634,11 @@ static void __rx_tcp_hw_process(struct netfn_sk_offload_ctx *ctx, struct sk_buff
 		/*
                  * We are going to coalesce data, Pull TCP header as well.
                  */
-		if (info->hw_gro_psh) {
+		if (info->hw_gro_flags & PPE_VP_RX_HW_GRO_TCP_PSH)
 			gro_state->tcp.flag_word |= TCP_FLAG_PSH;
-		}
 
-		if (info->hw_gro_fin) {
+		if (info->hw_gro_flags & PPE_VP_RX_HW_GRO_TCP_FIN)
 			gro_state->tcp.flag_word |= TCP_FLAG_FIN;
-		}
 
 		__rx_gro_queue(ctx, skb);
                 tcph = tcp_hdr(gro_state->head_cache.skb);
@@ -670,7 +667,7 @@ static void __rx_tcp_hw_process(struct netfn_sk_offload_ctx *ctx, struct sk_buff
  * __rx_tcp
  *	Perform GRO on TCP packets
  */
-static void __rx_tcp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, struct ppe_vp_cb_mdata_info_gro *info)
+static void __rx_tcp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, struct ppe_vp_cb_mdata_info *info)
 {
 	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
 	struct tcphdr *tcph = tcp_hdr(skb);
@@ -775,7 +772,7 @@ static void __rx_tcp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, stru
  * __rx_udp
  *      Perform GRO on UDP packets
  */
-static void __rx_udp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, struct ppe_vp_cb_mdata_info_gro *info)
+static void __rx_udp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, struct ppe_vp_cb_mdata_info *info)
 {
 	struct netfn_sk_offload_rx_state *gro_state = &ctx->gro_state;
 	struct udphdr *udph;
@@ -830,17 +827,7 @@ static void __rx_udp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, stru
 		__skb_pull(skb, sizeof(*udph));
 		gro_state->udp.next_seq = iperf_get_seq(skb) + 1;
 		__rx_gro_queue(ctx, skb);
-
-		/*
-		 * If we have active GRO chain, flush it.
-		 */
-		if (!__is_cache_empty(gro_state))  {
-			/*
-			 * Update head SKB and flush SKB
-			 */
-			__rx_udp_gro_flush(ctx);
-		}
-
+		__rx_udp_gro_flush(ctx);
 		break;
 
 	case NETFN_SK_OFFLOAD_RX_GRO_SKIP:
@@ -868,7 +855,7 @@ static void __rx_udp(struct netfn_sk_offload_ctx *ctx, struct sk_buff *skb, stru
 bool netfn_sk_offload_rx(struct ppe_vp_cb_info *info, void *cb_data)
 {
 #ifdef NETFN_SK_OFFLOAD_HW_GRO
-	bool hw_gro_en = info->mdata_info.minfo.gro_info.hw_gro_en;
+	bool hw_gro_en = !!(info->mdata_info.hw_gro_flags & PPE_VP_RX_HW_GRO_EN);
 #endif
 	struct netfn_sk_offload *so = &g_sk_offload;
 	struct netfn_sk_offload_ctx *ctx = NULL;
@@ -932,7 +919,7 @@ bool netfn_sk_offload_rx(struct ppe_vp_cb_info *info, void *cb_data)
 		goto drop;
 	}
 
-	ctx->gro_rcv(ctx, skb, &info->mdata_info.minfo.gro_info);
+	ctx->gro_rcv(ctx, skb, &info->mdata_info);
 	rcu_read_unlock_bh();
 
 	return true;
