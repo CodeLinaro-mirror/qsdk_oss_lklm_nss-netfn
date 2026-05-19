@@ -19,6 +19,7 @@
 #include <linux/in6.h>
 #include <linux/debugfs.h>
 #include <linux/if_arp.h>
+#include <linux/if_bridge.h>
 #include <linux/if_pppox.h>
 #include <linux/if_vlan.h>
 #include <linux/tcp.h>
@@ -209,6 +210,24 @@ release:
 }
 
 /*
+ * netfn_sk_offload_ppe_get_bridge()
+ * 	Parse and get physical port for bridge device
+ */
+static struct net_device *netfn_sk_offload_ppe_get_bridge(struct net_device *out_dev, uint8_t *dest_mac)
+{
+	struct net_device *port_dev;
+
+	port_dev = br_port_dev_get(out_dev, dest_mac, NULL, 0);
+	if (!port_dev) {
+		pr_warn("%px: bridge FDB lookup failed for MAC %pM on %s\n",
+				out_dev, dest_mac, out_dev->name);
+		return NULL;
+	}
+
+	return port_dev;
+}
+
+/*
  * netfn_sk_offload_rule_create()
  *      Netfn Sock Offload Rule Creation
  */
@@ -220,6 +239,8 @@ netfn_flowmgr_ret_t netfn_sk_offload_rule_create(struct netfn_sk_offload_ctx *ct
 	struct netfn_sk_offload *so = &g_sk_offload;
 	struct netfn_flowmgr_create_rule reply = {0};
 	struct netfn_flowmgr_create_rule orig = {0};
+	struct net_device *br_port = NULL;
+	struct net_device *top_outdev;
 	struct net_device *out_dev;
 	struct inet_sock *inet;
 	struct dst_entry *dst;
@@ -259,6 +280,7 @@ netfn_flowmgr_ret_t netfn_sk_offload_rule_create(struct netfn_sk_offload_ctx *ct
 	}
 
 	out_dev = dst->dev;
+	top_outdev = dst->dev;
 	orig.tuple.tuple_type = NETFN_TUPLE_5TUPLE;
 	orig_tuple->l4_src_ident = inet->inet_sport;;
 	orig_tuple->l4_dest_ident = inet->inet_dport;
@@ -310,21 +332,49 @@ netfn_flowmgr_ret_t netfn_sk_offload_rule_create(struct netfn_sk_offload_ctx *ct
 	}
 
 	/*
-	 * Fill original device info
+	 * We have either reached physical WAN or Bridged device. Fill Original MTU & SMAC.
+	 *  For WAN case: MTU and SMAC should be physical dev
+	 *  For LAN case: MTU and SMAC should be bridged dev
 	 */
-	orig_info->out_dev = out_dev;
-	orig_info->top_outdev = dst->dev;
-	orig_info->in_dev = orig_info->top_indev = vp_dev;
 	orig_info->flow_mtu = READ_ONCE(out_dev->mtu);
-
-	ctx->dev = out_dev;
-
 	memcpy(orig_info->flow_src_mac, out_dev->dev_addr, ETH_ALEN);
 
 	if (!netfn_sk_offload_ppe_get_macaddr(dst, &orig_tuple->dest_ip, orig_info->flow_dest_mac)) {
 		pr_err("%px: Failed to get neigbour mac address, dst:%px\n", sk, dst);
 		goto release;
 	}
+
+	/*
+	 * If egress device is a bridge, resolve it the physical port.
+	 */
+	if (out_dev->priv_flags & IFF_EBRIDGE) {
+		br_port = netfn_sk_offload_ppe_get_bridge(out_dev, orig_info->flow_dest_mac);
+		if (!br_port) {
+			pr_warn("%px: Failed to resolve bridge port, dst_dev:%px\n", sk, dst->dev);
+			goto release;
+		}
+
+		/*
+		 * TODO: Fill VLAN info if uplink offload is enabled in future.
+		 */
+		out_dev = br_port;
+		if (is_vlan_dev(out_dev)) {
+			/*
+			 * Bridge FDB may return a VLAN interface (eth0.100) as ports.
+			 * PPE operates on physical ports, unwrap to get the physical dev.
+			 */
+			out_dev = vlan_dev_real_dev(out_dev);
+		}
+	}
+
+	/*
+	 * Fill original egress device info
+	 */
+	orig_info->out_dev = out_dev;
+	orig_info->top_outdev = top_outdev;
+	orig_info->in_dev = orig_info->top_indev = vp_dev;
+
+	ctx->dev = out_dev;
 
 	/*
 	 * Reply is exact reverse of original.
@@ -344,7 +394,7 @@ netfn_flowmgr_ret_t netfn_sk_offload_rule_create(struct netfn_sk_offload_ctx *ct
 	 * Fill device.
 	 */
 	reply_info->in_dev = out_dev;
-	reply_info->top_indev  = dst->dev;
+	reply_info->top_indev  = top_outdev;
 	reply_info->out_dev = reply_info->top_outdev = vp_dev;
 	reply_info->flow_mtu = orig_info->flow_mtu;
 
@@ -367,6 +417,11 @@ netfn_flowmgr_ret_t netfn_sk_offload_rule_create(struct netfn_sk_offload_ctx *ct
 	}
 
 release:
+	/*
+	 * HW is programmed, dropping all the references
+	 */
+	if (br_port)
+		dev_put(br_port);
 	dst_release(dst);
 	return status;
 }
