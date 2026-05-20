@@ -194,6 +194,7 @@ static int netfn_sk_offload_stats_ctx_print(struct seq_file *m, struct netfn_sk_
 
 	t = &ctx->tuple.tuples.tuple_5;
 
+	memset(stats, 0, sizeof(*stats));
         netfn_sk_offload_stats_ctx_get(ctx, stats);
 
         seq_printf(m, "\n:Connection_%d Sock Offload stats start:\n", ctx->db_idx);
