@@ -12,7 +12,9 @@ qca-nss-netfn-sk-offload-objs += netfn_sk_offload_rx_pages.o
 endif
 
 ifeq ($(SoC),$(filter $(SoC),ipq52xx))
+ifndef PPE_SFU_PROFILE
 ccflags-y += -DNETFN_SK_OFFLOAD_VEIP_SUPPORT
+endif
 endif
 
 ccflags-y += -DNSS_NETFN_BUILD_ID=\"'Build_ID - $(shell date +'%m/%d/%y, %H:%M:%S') SoC=$(SoC)'\"
