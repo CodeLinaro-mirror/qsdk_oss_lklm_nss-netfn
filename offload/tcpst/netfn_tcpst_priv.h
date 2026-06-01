@@ -22,6 +22,7 @@
 #include <linux/in.h>
 #include <linux/in6.h>
 #include <linux/uio.h>
+#include <linux/if.h>
 
 #include <net/sock.h>
 #include <net/protocol.h>
@@ -86,6 +87,8 @@ struct netfn_tcpst_gro_state {
 struct netfn_tcpst_conn {
 	struct netfn_tcpst_ctx *ctx;		/* Pointer to context */
 	struct net_device *eth_dev;		/* Ethernet device for transmission */
+	struct net_device *dst_dev;		/* Destination device for packet RX */
+	int dst_dev_ifindex;			/* Cached destination device ifindex */
 	struct socket *sock;			/* Socket used for this flow */
 	struct hrtimer hrtimer;			/* Speedtest control timer */
 	struct work_struct work;		/* Work */

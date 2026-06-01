@@ -24,6 +24,7 @@
 #include <linux/in6.h>
 #include <linux/debugfs.h>
 #include <linux/if_arp.h>
+#include <linux/sockptr.h>
 #include <net/inet_sock.h>
 #include <net/protocol.h>
 #include <net/gro.h>
@@ -229,7 +230,8 @@ static void netfn_tcpst_conn_deinit_all(struct netfn_tcpst_ctx *ctx)
 		}
 
 		hrtimer_cancel(&conn->hrtimer);
-		netfn_tcpst_ppe_decel(conn->sock->sk, conn->eth_dev);
+		netfn_tcpst_ppe_decel(conn->sock->sk, conn->eth_dev,
+				&conn->dst_dev, &conn->dst_dev_ifindex);
 		kernel_sock_shutdown(conn->sock, SHUT_RDWR);
 		sock_release(conn->sock);
 		vfree(conn->buf);
@@ -245,6 +247,7 @@ static enum netfn_tcpst_err netfn_tcpst_conn_init(struct netfn_tcpst_ctx *ctx, s
 	struct sockaddr_in6 local_in6 = {0}, remote_in6 = {0};
 	struct sockaddr_in local_in = {0}, remote_in = {0};
 	struct netfn_tcpst_server *remote = &cfg->remote;
+	struct netfn_tcpst_server *local = &cfg->local;
 	struct netfn_tcpst_conn *conn = &ctx->conn[cpu];
 	struct netfn_tcpst_stats *stats = &conn->stats;
 	struct sockaddr *local_sa, *remote_sa;
@@ -252,6 +255,7 @@ static enum netfn_tcpst_err netfn_tcpst_conn_init(struct netfn_tcpst_ctx *ctx, s
 	struct socket *sock;
 	int status = 0;
 	int addrlen;
+	int len = 0;
 
 	/*
 	 * Allocate memory for dummy buffer used for tx/rx
@@ -291,7 +295,7 @@ static enum netfn_tcpst_err netfn_tcpst_conn_init(struct netfn_tcpst_ctx *ctx, s
 
 	if (remote->ip_version == IPVERSION) {
 		local_in.sin_family = AF_INET;
-		local_in.sin_addr.s_addr = htonl(INADDR_ANY);
+		local_in.sin_addr.s_addr = local->ip.v4.s_addr;
 		local_in.sin_port = 0;
 		local_sa = (struct sockaddr *)&local_in;
 		addrlen = sizeof(local_in);
@@ -302,7 +306,7 @@ static enum netfn_tcpst_err netfn_tcpst_conn_init(struct netfn_tcpst_ctx *ctx, s
 		remote_sa = (struct sockaddr *)&remote_in;
 	} else {
 		local_in6.sin6_family = AF_INET6;
-		local_in6.sin6_addr = in6addr_any;
+		local_in6.sin6_addr = local->ip.v6;
 		local_in6.sin6_port = 0;
 		local_sa = (struct sockaddr *)&local_in6;
 		addrlen = sizeof(local_in6);
@@ -320,6 +324,27 @@ static enum netfn_tcpst_err netfn_tcpst_conn_init(struct netfn_tcpst_ctx *ctx, s
 	if (status) {
 		pr_err("%px: Failed to create socket(%d)\n", conn, status);
 		return NETFN_TCPST_ERR_SOCK;
+	}
+
+	/*
+	* Check if there is an interface binding requested
+	*/
+	len = strnlen(cfg->if_name, sizeof(cfg->if_name));
+	if (len == sizeof(cfg->if_name)) {
+		pr_err("%px: Invalid String received length(%d)\n", conn, len);
+		err = NETFN_TCPST_ERR_PARAM;
+		goto free_sock;
+	}
+
+	if (len) {
+		sockptr_t kptr  = KERNEL_SOCKPTR(cfg->if_name);
+
+		status = sock_setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, kptr, len + 1);
+		if (status) {
+			pr_err("%px: Failed to bind to interface %s, error: %d\n", conn, cfg->if_name, status);
+			err = NETFN_TCPST_ERR_BIND;
+			goto free_sock;
+		}
 	}
 
 	status = kernel_bind(sock, local_sa, addrlen);
@@ -349,7 +374,8 @@ static enum netfn_tcpst_err netfn_tcpst_conn_init(struct netfn_tcpst_ctx *ctx, s
 	 */
 	stats->tcp_open.response_time = ktime_get_real_ns();
 
-	conn->eth_dev = netfn_tcpst_ppe_accel(sock->sk, ctx->vp_dev);
+	conn->eth_dev = netfn_tcpst_ppe_accel(sock->sk, ctx->vp_dev,
+			&conn->dst_dev, &conn->dst_dev_ifindex);
 	if (!conn->eth_dev) {
 		pr_err("%px: Failed to accelerate Rule", conn);
 		status = NETFN_TCPST_ERR_FLOW;

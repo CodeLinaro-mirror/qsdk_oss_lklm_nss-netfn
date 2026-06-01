@@ -155,6 +155,8 @@ struct netfn_tcpst_raw {
  */
 struct netfn_tcpst_cfg {
 	struct netfn_tcpst_server remote;	/* Remote server to test with */
+	struct netfn_tcpst_server local;        /* Local address to bind to */
+	char if_name[IFNAMSIZ];  /* Interface to bind to */
 	enum netfn_tcpst_test test;		/* Test type */
 	union {
 		struct netfn_tcpst_http http;	/* HTTP test params */
