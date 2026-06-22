@@ -257,7 +257,7 @@ struct net_device *netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_
 	orig_info->in_dev = orig_info->top_indev = vp_dev;
 	orig_info->flow_mtu = READ_ONCE(out_dev->mtu);
 
-	memcpy(orig_info->flow_src_mac, out_dev->dev_addr, ETH_ALEN);
+	memcpy(orig_info->flow_src_mac, dst->dev->dev_addr, ETH_ALEN);
 
 	if (!netfn_tcpst_ppe_get_macaddr(dst, &orig_tuple->dest_ip, orig_info->flow_dest_mac)) {
 		pr_err("%px: Failed to get neigbour mac address\n", dst);
@@ -360,5 +360,5 @@ void netfn_tcpst_ppe_decel(struct sock *sk, struct net_device *out_dev)
 	/*
 	 * Ref: netfn_tcpst_ppe_accel()
 	 */
-	dev_hold(out_dev);
+	dev_put(out_dev);
 }
