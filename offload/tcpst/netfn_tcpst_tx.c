@@ -205,7 +205,7 @@ void netfn_tcpst_tx_data(struct work_struct *work)
 	timeout = test_bit(NETFN_TCPST_TIMER_COMP_BIT, &conn->timer_state);
 	abort = (netfn_tcpst_state_get(ctx) == NETFN_TCPST_STATE_ABORTED);
 	resched = (!timeout && !eom && !abort);
-	if (likely(resched) && likely(schedule_work_on(smp_processor_id(), work))) {
+	if (likely(resched) && likely(queue_work_on(smp_processor_id(), ctx->wq, work))) {
 		return;
 	}
 
@@ -320,5 +320,5 @@ void netfn_tcpst_tx_work(struct work_struct *work)
 	/*
 	 * Schedule the work again
 	 */
-	schedule_work_on(smp_processor_id(), work);
+	queue_work_on(smp_processor_id(), ctx->wq, work);
 }
