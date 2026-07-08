@@ -31,6 +31,7 @@
 #include <ppe_vp_public.h>
 #include <ppe_drv.h>
 #include <netfn_dtls.h>
+#include <nss_dp_api_if.h>
 
 #include "netfn_capwap.h"
 #include "netfn_capwap_priv.h"
@@ -42,9 +43,6 @@
 #define NETFN_CAPWAP_MAX_STRLEN 25
 #define NETFN_CAPWAP_TUN_STATS_MAX (sizeof(struct netfn_capwap_pkt_stats) / sizeof(uint64_t))
 
-static ulong vp_qnum = NETFN_VP_RING0_QNUM;		/* PPE VP queue number */
-module_param(vp_qnum, ulong, S_IRUSR);
-MODULE_PARM_DESC(vp_qnum, "PPE VP queue number for capwap");
 
 static void netfn_capwap_tun_enc(struct netfn_capwap_tun *nct, struct sk_buff *skb);
 static void netfn_capwap_tun_rx_deliver(struct netfn_capwap_tun *nct, struct sk_buff_head *q_head);
@@ -553,6 +551,7 @@ bool netfn_capwap_tun_vp_list_rx(struct net_device *dev, struct sk_buff_head *q_
  */
 static struct net_device *netfn_capwap_tun_vp_attach(struct net_device *dev)
 {
+	uint32_t queue_base, num_queues;
 	struct ppe_vp_ai vpai = {0};
 	struct net_device *vp_dev;
 
@@ -565,8 +564,19 @@ static struct net_device *netfn_capwap_tun_vp_attach(struct net_device *dev)
 	vpai.dst_cb_data = netdev_priv(dev);
 	vpai.src_cb = netfn_capwap_tun_vp_err;
 	vpai.src_cb_data = netdev_priv(dev);
-	vpai.queue_num = vp_qnum;
 	vpai.flags |= PPE_VP_FLAG_REDIR_ENABLE;
+
+	/*
+	 * Fetch the PPE queue base for the CAPWAP VP-feature ring from EDMA.
+	 * This is SoC-specific and populated at EDMA init time.
+	 */
+	if (edma_cfg_get_vp_queues(EDMA_VP_FEAT_TYPE_CAPWAP, &queue_base, &num_queues)) {
+		pr_warn("%p: EDMA VP-feature ring for CAPWAP not configured on this SoC\n", dev);
+		return NULL;
+	}
+
+	pr_debug("%px: CAPWAP VP-feature ring: queue_base(%u) num_queues(%u)\n", dev, queue_base, num_queues);
+	vpai.queue_num = queue_base;
 
 	vp_dev = ppe_vp_alloc_dev(dev, &vpai);
 	if (!vp_dev) {
