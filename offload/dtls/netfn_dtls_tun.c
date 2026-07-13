@@ -31,11 +31,8 @@
 
 #include <ppe_vp_public.h>
 #include <ppe_drv.h>
+#include <nss_dp_api_if.h>
 #include "netfn_dtls_priv.h"
-
-static int vp_qnum = NETFN_VP_RING0_QNUM;
-module_param(vp_qnum, int, 0644);
-MODULE_PARM_DESC(vp_qnum, "DTLS VP queue number");
 
 /*
  * netfn_dtls_tun_reset_stats()
@@ -368,6 +365,7 @@ static bool netfn_dtls_tun_vp_rcv_list(struct net_device *dev, struct sk_buff_he
  */
 static struct net_device *netfn_dtls_tun_alloc_vp(struct net_device *dev)
 {
+	uint32_t queue_base, num_queues;
 	struct ppe_vp_ai vpai = {0};
 	struct net_device *vp_dev;
 
@@ -380,8 +378,20 @@ static struct net_device *netfn_dtls_tun_alloc_vp(struct net_device *dev)
 	vpai.dst_cb_data = netdev_priv(dev);
 	vpai.src_cb = netfn_dtls_tun_vp_err;
 	vpai.src_cb_data = netdev_priv(dev);
-	vpai.queue_num = vp_qnum;
 	vpai.flags |= PPE_VP_FLAG_REDIR_ENABLE;
+
+	/*
+	 * Fetch the PPE queue base for the DTLS VP-feature ring from EDMA.
+	 * DTLS non-inline VP traffic uses the same VP-feature ring as CAPWAP.
+	 * This is SoC-specific and populated at EDMA init time.
+	 */
+	if (edma_cfg_get_vp_queues(EDMA_VP_FEAT_TYPE_DTLS, &queue_base, &num_queues)) {
+		pr_warn("%p: EDMA VP-feature ring for DTLS not configured on this SoC\n", dev);
+		return NULL;
+	}
+
+	pr_debug("%px: DTLS VP-feature ring: queue_base(%u) num_queues(%u)\n", dev, queue_base, num_queues);
+	vpai.queue_num = queue_base;
 
 	vp_dev = ppe_vp_alloc_dev(dev, &vpai);
 	if (!vp_dev) {
@@ -839,8 +849,6 @@ struct net_device *netfn_dtls_tun_alloc(ssize_t pvt_sz)
 	status = register_netdev(dev);
 	if (status < 0) {
 		pr_err("%px: Failed to register netdevce, error(%d)\n", dev, status);
-		rtnl_unlock();
-
 		return NULL;
 	}
 
