@@ -203,14 +203,23 @@ static inline void netfn_tcpst_rx_conn(struct netfn_tcpst_conn *conn, struct sk_
 	memset(gro_state, 0, sizeof(*gro_state));
 
 	/*
+	 * Offloaded packets come back with skb->dev = 'tcpst'.
+	 * Restore cached device and incoming ifindex directly.
+	 */
+	skb->dev = conn->dst_dev;
+	skb->skb_iif = conn->dst_dev_ifindex;
+
+	/*
 	 * Hand over to linux
 	 */
 	if (skb->protocol == htons(ETH_P_IP)) {
+		IPCB(skb)->iif = skb->skb_iif;
 		proto4 = rcu_dereference(inet_protos[IPPROTO_TCP]);
 		proto4->handler(skb);
 		return;
 	}
 
+	IP6CB(skb)->iif = skb->skb_iif;
 	proto6 = rcu_dereference(inet6_protos[IPPROTO_TCP]);
 	proto6->handler(skb);
 }

@@ -176,7 +176,8 @@ release:
 /*
  * netfn_tcpst_ppe_accel()
  */
-struct net_device *netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_dev)
+struct net_device *netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_dev,
+		struct net_device **dst_dev, int *dst_dev_ifindex)
 {
 	struct netfn_flowmgr_flow_info *orig_info, *reply_info;
 	struct netfn_tuple_5tuple *orig_tuple, *reply_tuple;
@@ -302,6 +303,14 @@ struct net_device *netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_
 	dev_hold(out_dev);
 	ret = out_dev;
 
+	/*
+	 * Hold dst->dev reference for later skb->dev fixup in rx path.
+	 * Deref: netfn_tcpst_conn_deinit_all()
+	 */
+	dev_hold(dst->dev);
+	*dst_dev = dst->dev;
+	*dst_dev_ifindex = dst->dev->ifindex;
+
 release:
 	dst_release(dst);
 	return ret;
@@ -310,7 +319,8 @@ release:
 /*
  * netfn_tcpst_ppe_decel()
  */
-void netfn_tcpst_ppe_decel(struct sock *sk, struct net_device *out_dev)
+void netfn_tcpst_ppe_decel(struct sock *sk, struct net_device *out_dev,
+		struct net_device **dst_dev, int *dst_dev_ifindex)
 {
 	struct netfn_tuple_5tuple *reply_tuple, *orig_tuple;
 	struct netfn_flowmgr_destroy_rule reply = {0};
@@ -361,4 +371,8 @@ void netfn_tcpst_ppe_decel(struct sock *sk, struct net_device *out_dev)
 	 * Ref: netfn_tcpst_ppe_accel()
 	 */
 	dev_put(out_dev);
+
+	dev_put(*dst_dev);
+	*dst_dev = NULL;
+	*dst_dev_ifindex = 0;
 }
