@@ -6,5 +6,4 @@ ccflags-y += -Wall -Werror
 obj-m := offload/
 obj-m += mgr/
 obj-m += netfn_auto/
-
 obj ?= .
