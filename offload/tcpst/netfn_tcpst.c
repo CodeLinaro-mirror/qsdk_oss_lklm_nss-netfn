@@ -735,13 +735,16 @@ void __exit netfn_tcpst_exit_module(void)
 	struct netfn_tcpst *tcpst = &g_tcpst;
 	struct netfn_tcpst_ctx *ctx;
 
-	ctx = rcu_dereference_protected(tcpst->ctx, 1);
+	netfn_tcpst_nl_unregister();
+
+	mutex_lock(&tcpst->lock);
+	ctx = rcu_dereference_protected(tcpst->ctx, lockdep_is_held(&tcpst->lock));
+	mutex_unlock(&tcpst->lock);
+
 	if (ctx) {
 		pr_warn("%px: Module unloaded while test is running\n", ctx);
 		netfn_tcpst_stop(NULL, NULL);
 	}
-
-	netfn_tcpst_nl_unregister();
 
 	/*
 	 * Remove debug entry
