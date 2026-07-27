@@ -397,15 +397,15 @@ static bool netfn_tcpst_rx_gro_add(struct netfn_tcpst_conn *conn, struct napi_st
 
 /*
  * netfn_tcpst_http_get_resp()
- *	Parse and verify the response
+ * 	Parse and verify the response
  */
 static enum netfn_tcpst_err netfn_tcpst_http_get_resp(struct netfn_tcpst_conn *conn)
 {
 	struct msghdr msg = {0};
 	char *buf = conn->buf;
 	struct kvec iov;
+	int hdr_len;
 	int rx_bytes;
-	char *data;
 
 	/*
 	 * Prepare receive message
@@ -428,28 +428,19 @@ static enum netfn_tcpst_err netfn_tcpst_http_get_resp(struct netfn_tcpst_conn *c
 	/*
 	 * Check if response has "200 OK" in response
 	 */
-	if (!strnstr(buf, "200 OK", strlen(buf))) {
+	hdr_len = strlen(buf);
+	if (!strnstr(buf, "200 OK", hdr_len)) {
 		pr_warn("%px: Invalid response\n", conn);
 		return NETFN_TCPST_ERR_CONNECT;
 	}
 
-	data = strnstr(buf, "Content-Length: ", strlen(buf));
-	if (!data) {
-		pr_warn("%px: Can't find Content-length string\n", conn);
-		return NETFN_TCPST_ERR_CONNECT;
-	}
-
-	data += sizeof("Content-Length: ") - 1;
-	if (kstrtoull(data, 10, &conn->http.file_sz)) {
-		pr_warn("%px: Failed to parse Content-Length value\n", conn);
-		return NETFN_TCPST_ERR_CONNECT;
-	}
-
 	/*
-	 * We only count the data bytes, so we subtract strlen(conn->buf)
+	 * We only count the data bytes, so we subtract hdr_len
 	 * from total bytes received
 	 */
-	conn->ext_stats.test_rx_bytes += (rx_bytes - strlen(conn->buf));
+	if (rx_bytes > hdr_len)
+		conn->ext_stats.test_rx_bytes += (rx_bytes - hdr_len);
+
 	conn->ext_stats.test_rx_pkts += !!rx_bytes;
 	return NETFN_TCPST_ERR_NONE;
 }
@@ -763,7 +754,6 @@ void netfn_tcpst_rx_work(struct work_struct *work)
 	struct netfn_tcpst_conn *conn = container_of(work, struct netfn_tcpst_conn, work);
 	struct netfn_tcpst_stats *stats = &conn->stats;
 	struct netfn_tcpst_ctx *ctx = conn->ctx;
-	enum netfn_tcpst_err err;
 
 	/*
 	 * Capture the rom and bom time for raw mode.
@@ -775,7 +765,7 @@ void netfn_tcpst_rx_work(struct work_struct *work)
 	 * If in HTTP test mode then perform HTTP GET
 	 */
 	if (netfn_tcpst_is_http(ctx) && !netfn_tcpst_http_get(conn)) {
-		pr_warn("%px: Error(%d) in connecting to HTTP server\n", work, err);
+		pr_warn("%px: Error in connecting to HTTP server\n", work);
 		netfn_tcpst_state_set(ctx, NETFN_TCPST_STATE_ABORTED, netfn_tcpst_state_get(ctx));
 		atomic_inc(&ctx->comp_conn);
 		return;
