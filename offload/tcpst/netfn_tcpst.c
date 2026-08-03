@@ -595,7 +595,7 @@ enum netfn_tcpst_state netfn_tcpst_start(struct netfn_tcpst_cfg *cfg)
 		break;
 
 	default:
-		pr_warn("%px: Unhandled Test type (%u)", ctx, cfg->test);
+		pr_warn("%px: Unhandled Test type (%u)", cfg, cfg->test);
 		return NETFN_TCPST_STATE_NOT_RUNNING;
 	}
 

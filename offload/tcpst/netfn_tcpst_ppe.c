@@ -26,6 +26,7 @@
 #include <linux/if_pppox.h>
 #include <linux/if_vlan.h>
 #include <linux/if_arp.h>
+#include <linux/if_bridge.h>
 #include <net/inet_sock.h>
 #include <netfn_flowmgr.h>
 #include <ppe_drv.h>
@@ -54,7 +55,7 @@ static bool netfn_tcpst_ppe_get_macaddr(struct dst_entry *dst, void *daddr, uint
 	read_unlock_bh(&neigh->lock);
 	neigh_release(neigh);
 
-	if ((neigh->nud_state & NUD_VALID) == 0) {
+	if ((nud_state & NUD_VALID) == 0) {
 		pr_err("%px: neighbour state is invalid\n", dst);
 		return false;
 	}
@@ -117,14 +118,14 @@ static struct net_device *netfn_tcpst_ppe_get_pppoe(struct net_device *dev, stru
 
 	if (ppp_is_multilink(dev)) {
 		pr_warn("%px: channel is multilink PPP\n", dev);
-		return false;
+		return NULL;
 	}
 
 	ppp_ch_count = ppp_hold_channels(dev, channel, 1);
 	pr_debug("%px: PPP hold channel ret %d\n", dev, ppp_ch_count);
 	if (ppp_ch_count != 1) {
 		pr_warn("%px: hold channel for netdevice failed\n", dev);
-		return false;
+		return NULL;
 	}
 
 	px_proto = ppp_channel_get_protocol(channel[0]);
@@ -174,6 +175,23 @@ release:
 }
 
 /*
+ * netfn_tcpst_ppe_get_bridge()
+ * 	Parse and get physical port for bridge device
+ */
+static struct net_device *netfn_tcpst_ppe_get_bridge(struct net_device *out_dev, uint8_t *dest_mac)
+{
+	struct net_device *port_dev;
+
+	port_dev = br_port_dev_get(out_dev, dest_mac, NULL, 0);
+	if (!port_dev) {
+		pr_warn("%px: bridge FDB lookup failed for MAC %pM on %s\n", out_dev, dest_mac, out_dev->name);
+		return NULL;
+	}
+
+	return port_dev;
+}
+
+/*
  * netfn_tcpst_ppe_accel()
  */
 struct net_device *netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_dev,
@@ -183,9 +201,10 @@ struct net_device *netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_
 	struct netfn_tuple_5tuple *orig_tuple, *reply_tuple;
 	struct netfn_flowmgr_create_rule reply = {0};
 	struct netfn_flowmgr_create_rule orig = {0};
+	struct net_device *out_dev, *top_outdev;
+	struct net_device *br_port = NULL;
 	struct net_device *ret = NULL;
 	netfn_flowmgr_ret_t status;
-	struct net_device *out_dev;
 	struct inet_sock *inet;
 	struct dst_entry *dst;
 
@@ -218,6 +237,7 @@ struct net_device *netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_
 	}
 
 	out_dev = dst->dev;
+	top_outdev = dst->dev;
 	orig.tuple.tuple_type = NETFN_TUPLE_5TUPLE;
 	orig_tuple->l4_src_ident = inet->inet_sport;;
 	orig_tuple->l4_dest_ident = inet->inet_dport;
@@ -237,6 +257,12 @@ struct net_device *netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_
 	}
 
 	/*
+	 * PPP devices have no MAC of their own, so pick the SMAC only after
+	 * PPPoE is unwrapped, using the VLAN/physical device
+	 */
+	memcpy(orig_info->flow_src_mac, out_dev->dev_addr, ETH_ALEN);
+
+	/*
 	 * If VLAN is present, fill VLAN specific information in create rule
 	 */
 	if (is_vlan_dev(out_dev)) {
@@ -251,19 +277,60 @@ struct net_device *netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_
 	}
 
 	/*
-	 * Fill original device info
+	 * We have either reached physical WAN or Bridged device. Fill Original MTU
+	 * 	For WAN case: MTU should be physical dev
+	 * 	For LAN case: MTU should be bridged dev
 	 */
-	orig_info->out_dev = out_dev;
-	orig_info->top_outdev = dst->dev;
-	orig_info->in_dev = orig_info->top_indev = vp_dev;
 	orig_info->flow_mtu = READ_ONCE(out_dev->mtu);
-
-	memcpy(orig_info->flow_src_mac, dst->dev->dev_addr, ETH_ALEN);
 
 	if (!netfn_tcpst_ppe_get_macaddr(dst, &orig_tuple->dest_ip, orig_info->flow_dest_mac)) {
 		pr_err("%px: Failed to get neigbour mac address\n", dst);
 		goto release;
 	}
+
+	/*
+	 * If egress device is a bridge, resolve it to physical port
+	 */
+	if (netif_is_any_bridge_master(out_dev)) {
+		if (netif_is_ovs_master(out_dev)) {
+			pr_err("%px: OVS Bridge(%s) is not supported", sk, out_dev->name);
+			goto release;
+		}
+
+		br_port = netfn_tcpst_ppe_get_bridge(out_dev, orig_info->flow_dest_mac);
+		if (!br_port) {
+			pr_err("%px: Failed to resolve bridge port, dest_dev %px\n", sk, dst->dev);
+			goto release;
+		}
+
+		/*
+		 * Limitation: dest_mac port mapping is resolved once here from the bridge
+		 * FDB lookup at accel time. If dest mac changes for the port, the flow keeps
+		 * forwarding to the stale port until it decel
+		 *
+		 * TODO: Hook to br_fdb_update notifiers
+		 */
+		out_dev = br_port;
+		if (is_vlan_dev(out_dev)) {
+			/*
+			 * Bridge FDB may return a VLAN interface (eth0.100) as ports.
+			 * PPE operates on physical ports, unwrap to get the physical dev.
+			 */
+			out_dev = vlan_dev_real_dev(out_dev);
+		}
+
+		if (out_dev->ieee80211_ptr) {
+			pr_err("%px: WLAN bridge port(%s) is not supported\n", sk, out_dev->name);
+			goto release;
+		}
+	}
+
+	/*
+	 * Fill original egress device info
+	 */
+	orig_info->out_dev = out_dev;
+	orig_info->top_outdev = top_outdev;
+	orig_info->in_dev = orig_info->top_indev = vp_dev;
 
 	/*
 	 * Reply is exact reverse of original.
@@ -283,7 +350,7 @@ struct net_device *netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_
 	 * Fill device.
 	 */
 	reply_info->in_dev = out_dev;
-	reply_info->top_indev  = dst->dev;
+	reply_info->top_indev  = top_outdev;
 	reply_info->out_dev = reply_info->top_outdev = vp_dev;
 	reply_info->flow_mtu = orig_info->flow_mtu;
 
@@ -312,6 +379,11 @@ struct net_device *netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_
 	*dst_dev_ifindex = dst->dev->ifindex;
 
 release:
+	/*
+	 * HW is programmed, dropping all the references
+	 */
+	if (br_port)
+		dev_put(br_port);
 	dst_release(dst);
 	return ret;
 }
