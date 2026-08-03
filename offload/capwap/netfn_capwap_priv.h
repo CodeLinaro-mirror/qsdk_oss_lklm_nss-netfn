@@ -20,8 +20,10 @@
 #define __NETFN_CAPWAP_PRIV_H
 
 #include <asm/bitops.h>
+#include <linux/jump_label.h>
 
 extern struct netfn_capwap global_nc;
+DECLARE_STATIC_KEY_FALSE(skip_bss_mac);
 
 #define NETFN_CAPWAP_TUN_STATS_STRLEN 20	/* Stats string length. */
 #define NETFN_CAPWAP_TUN_STATS_WIDTH 82		/* Stats string width. */
