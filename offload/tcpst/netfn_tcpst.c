@@ -149,6 +149,7 @@ static struct netfn_tcpst_result *netfn_tcpst_get_result(struct netfn_tcpst_ctx 
 		struct netfn_tcpst_conn *conn = &ctx->conn[cpu];
 		struct netfn_tcpst_stats *conn_stats;
 		uint64_t rtt;
+		uint8_t active_conn;
 
 		if (!READ_ONCE(conn->sock)) {
 			continue;
@@ -178,6 +179,9 @@ static struct netfn_tcpst_result *netfn_tcpst_get_result(struct netfn_tcpst_ctx 
 		stats->test_bytes.rcvd += conn_stats->test_bytes.rcvd;
 		stats->eth_bytes.sent += conn_stats->eth_bytes.sent;
 		stats->eth_bytes.rcvd += conn_stats->eth_bytes.rcvd;
+
+		active_conn = result->num_active_conn++;
+		result->conn_stats[active_conn] = *conn_stats;
 	}
 
 	/*
@@ -273,7 +277,7 @@ static enum netfn_tcpst_err netfn_tcpst_conn_init(struct netfn_tcpst_ctx *ctx, s
 	/*
 	 * Set buf memory to dummy data
 	 */
-	memset(conn->buf, 'c', sizeof(conn->buf));
+	memset(conn->buf, 'c', conn->buf_len);
 
 	/*
 	 * Initialize test specific parameters used in scheduled work.
