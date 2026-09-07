@@ -2,7 +2,7 @@
 
 ccflags-y := -I$(obj) -I$(obj)/.. -I$(obj)/../offload/exports/
 ccflags-y += -Wall -Werror
-ccflags-y += -DNETFN_AUTO_DEBUG_LEVEL=3
+subdir-ccflags-y += -DNETFN_AUTO_DEBUG_LEVEL=3
 
 obj-$(netfn_auto_flowmgr)+= flowmgr/
 obj-$(netfn_auto_capwapmgr)+= capwapmgr/
