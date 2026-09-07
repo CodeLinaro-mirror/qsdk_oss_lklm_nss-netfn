@@ -323,7 +323,8 @@ static enum netfn_tcpst_err netfn_tcpst_conn_init(struct netfn_tcpst_ctx *ctx, s
 	status = sock_create_kern(&init_net, local_sa->sa_family, SOCK_STREAM, IPPROTO_TCP, &sock);
 	if (status) {
 		pr_err("%px: Failed to create socket(%d)\n", conn, status);
-		return NETFN_TCPST_ERR_SOCK;
+		err = NETFN_TCPST_ERR_SOCK;
+		goto sock_failure;
 	}
 
 	/*
@@ -399,7 +400,10 @@ disconnect_sock:
 	kernel_sock_shutdown(sock, SHUT_RDWR);
 free_sock:
 	sock_release(sock);
-	return status;
+sock_failure:
+	vfree(conn->buf);
+	conn->buf = NULL;
+	return err;
 }
 
 /*
