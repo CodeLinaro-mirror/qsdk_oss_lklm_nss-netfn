@@ -69,8 +69,10 @@ static bool netfn_tcpst_http_put_resp(struct netfn_tcpst_conn *conn)
 {
 	struct msghdr msg = {0};
 	char *buf = conn->buf;
-	int len, valid = 0;
+	unsigned long status_code;
+	size_t resp_offset;
 	struct kvec iov;
+	int len;
 
 	/*
 	 * Prepare receive message
@@ -91,18 +93,32 @@ static bool netfn_tcpst_http_put_resp(struct netfn_tcpst_conn *conn)
 	pr_debug("%px: Response received(%s)\n", conn, buf);
 
 	/*
-	 * We only expect following responses:
-	 * 1. "201 Created" : If target resource creates a new representation successfully
-	 * 2. "200 OK" : If target resource updates the existing representation successfully
-	 * 3. "204 No content" : If target resource is udpated and returning no content in body
+	 * Any HTTP 2xx status code (200-299) is considered a successful response.
+	 * All other status codes are treated as failure.
 	 *
-	 * All other responses are considered as failure
+	 * Validate that the response starts with "HTTP/1.x " (9 bytes):
+	 *   "HTTP/1.1 200 OK\r\n"
+	 *    ^       ^--- strlen("HTTP/1.1") = 8, space at +8, status code at +9
+	 *    offset 0
+	 * Minimum valid response line is "HTTP/1.1 200" = 12 bytes.
 	 */
-	valid += !!(strnstr(buf, "201 Created", strlen(buf)));
-	valid += !!(strnstr(buf, "200 OK", strlen(buf)));
-	valid += !!(strnstr(buf, "204 No Content", strlen(buf)));
-	if (!valid) {
-		pr_warn("%px: Invalid response\n", conn);
+	if (len < 12 || strncmp(buf, "HTTP/", strlen("HTTP/"))) {
+		pr_warn("%px: Response is not valid HTTP response\n", conn);
+		return false;
+	}
+
+	/*
+	 * Parse the 3-digit status code at offset 9 in base 10.
+	 * "HTTP/1.1 " is exactly 9 bytes, placing the status code at buf+9.
+	 */
+	resp_offset = strlen("HTTP/1.1");
+	if (kstrtoul(buf + resp_offset, 10, &status_code)) {
+		pr_warn("%px: Failed to parse HTTP status code from response\n", conn);
+		return false;
+	}
+
+	if ((status_code < 200) || (status_code >= 300)) {
+		pr_warn("%px: Non-success HTTP status code received (%.*s)\n", conn, 3, buf + resp_offset + 1);
 		return false;
 	}
 
@@ -274,7 +290,6 @@ void netfn_tcpst_tx_work(struct work_struct *work)
 	struct netfn_tcpst_conn *conn = container_of(work, struct netfn_tcpst_conn, work);
 	struct netfn_tcpst_stats *stats = &conn->stats;
 	struct netfn_tcpst_ctx *ctx = conn->ctx;
-	enum netfn_tcpst_err err;
 
 	/*
 	 * Capture the rom and bom time for raw mode.
@@ -286,9 +301,7 @@ void netfn_tcpst_tx_work(struct work_struct *work)
 	 * If in HTTP test mode then perform HTTP PUT
 	 */
 	if (netfn_tcpst_is_http(ctx) && !netfn_tcpst_http_put(conn)) {
-		struct netfn_tcpst_ctx *ctx = conn->ctx;
-
-		pr_warn("%px: Error(%d) in connecting to HTTP server\n", conn, err);
+		pr_warn("%px: Error in connecting to HTTP server\n", conn);
 		netfn_tcpst_state_set(ctx, NETFN_TCPST_STATE_ABORTED, netfn_tcpst_state_get(ctx));
 		atomic_inc(&ctx->comp_conn);
 		return;
