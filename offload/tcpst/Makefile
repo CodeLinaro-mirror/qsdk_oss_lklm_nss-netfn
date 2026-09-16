@@ -2,6 +2,11 @@
 
 ccflags-y += -Wall -Werror
 ccflags-y += -DNSS_NETFN_BUILD_ID=\"'Build_ID - $(shell date +'%m/%d/%y, %H:%M:%S') SoC=$(SoC)'\"
+ifeq ($(SoC),$(filter $(SoC),ipq52xx))
+ifndef PPE_SFU_PROFILE
+ccflags-y += -DNETFN_TCPST_VEIP_SUPPORT
+endif
+endif
 
 NETFN_TCPST_MOD_NAME=qca-nss-netfn-tcpst
 obj-m += $(NETFN_TCPST_MOD_NAME).o
