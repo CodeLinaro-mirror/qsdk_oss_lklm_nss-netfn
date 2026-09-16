@@ -24,6 +24,8 @@
 #include <crypto/aes.h>
 #include <linux/ip.h>
 
+#include <ppe_vp_public.h>
+#include <ppe_drv_sc.h>
 #include "netfn_dtls_priv.h"
 
 /*
@@ -90,7 +92,7 @@ static ssize_t netfn_dtls_session_read(struct file *fp, char __user *ubuf, size_
 	ssize_t max_len = 0;
 	uint8_t ip_version;
 	ssize_t len = 0;
-	int i;
+	int i = 0;
 
 	t = &ses->tuple.tuples.tuple_5;
 	ip_version = ses->tuple.ip_version;
@@ -176,7 +178,7 @@ static void netfn_dtls_session_fill_tr(struct netfn_dtls_cfg *cfg, netfn_tuple_t
 	struct eip_tr_base *base = &tr_info->base;
 	uint32_t flags = cfg->flags;
 
-	base->svc = NETFN_DTLS_DEFAULT_SVC;
+	base->svc = g_dtls_drv.is_inline ? EIP_SVC_HYBRID_DTLS : EIP_SVC_DTLS;
 	strlcpy(base->alg_name, cfg->base.algo_name, CRYPTO_MAX_ALG_NAME);
 	base->cipher.key_data = cfg->base.cipher.key_data;
 	base->cipher.key_len = cfg->base.cipher.key_len;
@@ -233,6 +235,23 @@ static void netfn_dtls_session_fill_tr(struct netfn_dtls_cfg *cfg, netfn_tuple_t
 }
 
 /*
+ * netfn_dtls_set_ppe_mdata()
+ *	Set PPE mdata
+ */
+static void netfn_dtls_set_ppe_mdata(struct eip_tr_info *tr_info, struct net_device *vp_dev)
+{
+	struct eip_ppe_mdata *mdata = &tr_info->dtls.ppe_mdata;
+
+	memset(mdata, 0, sizeof(*mdata));
+
+	mdata->ppe_src_port = EIP_PPE_MDATA_SRC_PORT_VP_TYPE;
+	mdata->ppe_src_port |= ppe_vp_get_port_num_by_netdev(vp_dev);
+	mdata->service_code = PPE_DRV_SC_DTLS_EIP2PPE;
+	mdata->fake_mac = true;
+	mdata->fake_l2_prot = true;
+}
+
+/*
  * netfn_dtls_session_get_overhead()
  *	Get Header overhead.
  */
@@ -254,6 +273,68 @@ uint16_t netfn_dtls_session_get_overhead(struct netfn_dtls_session *ses)
 	overhead += (algo.blk_len + algo.iv_len + algo.hmac_len);
 
 	return overhead;
+}
+
+/*
+ * netfn_dtls_session_fill_tuple()
+ *	Fill tuple information
+ */
+static void netfn_dtls_session_fill_tuple(struct netfn_dtls_session *ses, struct eip_flow_tuple *flow_tuple)
+{
+	struct netfn_tuple_5tuple *tuple = &ses->tuple.tuples.tuple_5;
+
+	flow_tuple->ip_ver = ses->tuple.ip_version;
+	if (flow_tuple->ip_ver == 4) {
+		flow_tuple->src_ip[0] = tuple->src_ip.ip4.s_addr;
+		flow_tuple->dst_ip[0] = tuple->dest_ip.ip4.s_addr;
+	} else {
+		memcpy(flow_tuple->src_ip, tuple->src_ip.ip6.s6_addr, sizeof(flow_tuple->src_ip));
+		memcpy(flow_tuple->dst_ip, tuple->dest_ip.ip6.s6_addr, sizeof(flow_tuple->dst_ip));
+	}
+
+	flow_tuple->src_port = ntohs(tuple->l4_src_ident);
+	flow_tuple->dst_port = ntohs(tuple->l4_dest_ident);
+	flow_tuple->ip_proto = tuple->protocol;
+	flow_tuple->epoch = ntohs(ses->epoch);
+}
+
+/*
+ * netfn_dtls_session_flow_add()
+ *	Adds a new flow for the session
+ */
+static int netfn_dtls_session_flow_add(struct netfn_dtls_session *ses)
+{
+	struct eip_flow_info flow_info = {0};
+
+	netfn_dtls_session_fill_tuple(ses, &flow_info.tuple);
+	flow_info.tr = ses->tr;
+
+	/*
+	 * Add flow to EIP
+	 */
+	if (eip_flow_add(ses->tun->eip_tun, &flow_info)) {
+		pr_err("%px: Unable to add flow to EIP\n", ses);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+/*
+ * netfn_dtls_session_flow_del()
+ *	Delete flow for the session
+ */
+static void netfn_dtls_session_flow_del(struct netfn_dtls_session *ses)
+{
+	struct eip_flow_info flow_info = {0};
+
+	netfn_dtls_session_fill_tuple(ses, &flow_info.tuple);
+	flow_info.tr = ses->tr;
+
+	/*
+	 * Delete the outer Decapsulation flow
+	 */
+	eip_flow_del(ses->tun->eip_tun, &flow_info);
 }
 
 /*
@@ -341,10 +422,26 @@ struct netfn_dtls_session *netfn_dtls_session_alloc(struct netfn_dtls_cfg *cfg, 
 		snprintf(name, sizeof(name), "dec%u", ntohs(cfg->epoch));
 	}
 
+	/*
+	 * Fill ppe_mdata for inline channel
+	 */
+	if (drv->is_inline) {
+		netfn_dtls_set_ppe_mdata(&tr_info, tun->vp_dev);
+	}
+
 	ses->tr = eip_tr_alloc(drv->ctx, &tr_info);
 	if (!ses->tr) {
 		pr_err("%px: Failed to allocate HW record\n", dev);
 		goto fail_tr;
+	}
+
+	/*
+	 * Add a new outer Decap flow rule in EIP for inline decap sessions only.
+	 * Encap sessions use the LA ring with TR specified in the descriptor; no flow lookup needed.
+	 */
+	if (drv->is_inline && !encap && netfn_dtls_session_flow_add(ses)) {
+		pr_err("%px: Failed to add flow for hybrid inline\n", dev);
+		goto fail_flow;
 	}
 
 	/*
@@ -354,8 +451,11 @@ struct netfn_dtls_session *netfn_dtls_session_alloc(struct netfn_dtls_cfg *cfg, 
 
 	return ses;
 
+fail_flow:
+	eip_tr_free(ses->tr);
 fail_tr:
 	dev_put(dev);
+	ses->tun = NULL;
 	free_percpu(ses->stats_pcpu);
 fail_pcpu:
 	kfree(ses);
@@ -368,6 +468,15 @@ fail_pcpu:
  */
 void netfn_dtls_session_free(struct netfn_dtls_session *ses)
 {
+	struct netfn_dtls_drv *drv = &g_dtls_drv;
+
+	/*
+	 * Delete the outer Decapsulation flow for inline decap sessions only.
+	 */
+	if (drv->is_inline && !(ses->flags & NETFN_DTLS_FLAG_ENC)) {
+		netfn_dtls_session_flow_del(ses);
+	}
+
 	/*
 	 * Release the TR. This also ensure no new packet being sent by driver.
 	 */

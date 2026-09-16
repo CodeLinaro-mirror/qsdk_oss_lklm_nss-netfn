@@ -73,6 +73,7 @@ struct netfn_dtls_tun {
 	struct mutex lock;		/* Common lock for list manipulation */
 	struct netfn_dtls_tun_stats __percpu *stats_pcpu;	/* Device statistics */
 	struct dentry *dentry;		/* Driver debugfs dentry */
+	struct eip_tun *eip_tun;	/* EIP tun associated with the dtls dev */
 
 	uint8_t user_pvt[];		/* Memory allocated for caller use */
 };

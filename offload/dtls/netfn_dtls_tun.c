@@ -32,7 +32,28 @@
 #include <ppe_vp_public.h>
 #include <ppe_drv.h>
 #include <nss_dp_api_if.h>
+#include <ppe_drv_eip.h>
 #include "netfn_dtls_priv.h"
+
+/*
+ * netfn_dtls_tun_vp_stats_cb()
+ *	Update the netdevice stats
+ */
+static bool netfn_dtls_tun_vp_stats_cb(struct net_device *ndev, ppe_vp_hw_stats_t *stats)
+{
+	struct netfn_dtls_tun *tun = netdev_priv(ndev);
+	struct netfn_dtls_tun_stats *tun_stats;
+
+	/*
+	 * Callback may run with preemption enabled, so disable it explicitly.
+	 */
+	tun_stats = get_cpu_ptr(tun->stats_pcpu);
+	tun_stats->tx_pkts += stats->rx_pkt_cnt;
+	tun_stats->tx_bytes += stats->rx_byte_cnt;
+	put_cpu_ptr(tun->stats_pcpu);
+
+	return true;
+}
 
 /*
  * netfn_dtls_tun_reset_stats()
@@ -250,6 +271,7 @@ static bool netfn_dtls_tun_vp_err(struct ppe_vp_cb_info *info, void *cb_data)
 	tun_stats = this_cpu_ptr(tun->stats_pcpu);
 	tun_stats->tx_fail++;
 	tun_stats->tx_vp_exp++;
+
 	consume_skb(info->skb);
 	return true;
 }
@@ -365,9 +387,13 @@ static bool netfn_dtls_tun_vp_rcv_list(struct net_device *dev, struct sk_buff_he
  */
 static struct net_device *netfn_dtls_tun_alloc_vp(struct net_device *dev)
 {
+	ppe_drv_eip_service_t eip_svc = PPE_DRV_EIP_SERVICE_IDTLS;
+	struct netfn_dtls_drv *drv = &g_dtls_drv;
 	uint32_t queue_base, num_queues;
+	struct ppe_drv_iface *iface;
 	struct ppe_vp_ai vpai = {0};
 	struct net_device *vp_dev;
+	ppe_drv_ret_t status;
 
 	/*
 	 * Allocate new VP
@@ -378,24 +404,52 @@ static struct net_device *netfn_dtls_tun_alloc_vp(struct net_device *dev)
 	vpai.dst_cb_data = netdev_priv(dev);
 	vpai.src_cb = netfn_dtls_tun_vp_err;
 	vpai.src_cb_data = netdev_priv(dev);
-	vpai.flags |= PPE_VP_FLAG_REDIR_ENABLE;
+	vpai.stats_cb = netfn_dtls_tun_vp_stats_cb;
+	vpai.queue_num = 0;
+	vpai.flags = 0;
 
-	/*
-	 * Fetch the PPE queue base for the DTLS VP-feature ring from EDMA.
-	 * DTLS non-inline VP traffic uses the same VP-feature ring as CAPWAP.
-	 * This is SoC-specific and populated at EDMA init time.
-	 */
-	if (edma_cfg_get_vp_queues(EDMA_VP_FEAT_TYPE_DTLS, &queue_base, &num_queues)) {
-		pr_warn("%p: EDMA VP-feature ring for DTLS not configured on this SoC\n", dev);
-		return NULL;
+	if (!drv->is_inline) {
+		eip_svc = PPE_DRV_EIP_SERVICE_NONINLINE;
+		vpai.flags |= PPE_VP_FLAG_REDIR_ENABLE;
+
+		/*
+		 * Fetch the PPE queue base for the DTLS VP-feature ring from EDMA.
+		 * DTLS non-inline VP traffic uses the same VP-feature ring as CAPWAP.
+		 * This is SoC-specific and populated at EDMA init time.
+		 */
+		if (edma_cfg_get_vp_queues(EDMA_VP_FEAT_TYPE_DTLS, &queue_base, &num_queues)) {
+			pr_warn("%p: EDMA VP-feature ring for DTLS not configured on this SoC\n", dev);
+			return NULL;
+		}
+
+		pr_debug("%px: DTLS VP-feature ring: queue_base(%u) num_queues(%u)\n", dev, queue_base, num_queues);
+		vpai.queue_num = queue_base;
 	}
-
-	pr_debug("%px: DTLS VP-feature ring: queue_base(%u) num_queues(%u)\n", dev, queue_base, num_queues);
-	vpai.queue_num = queue_base;
 
 	vp_dev = ppe_vp_alloc_dev(dev, &vpai);
 	if (!vp_dev) {
 		pr_debug("%px: Failed to allocate VP, status(%d).\n", dev, vpai.status);
+		return NULL;
+	}
+
+	iface = ppe_drv_iface_get_by_dev(dev);
+	if (!iface) {
+		ppe_vp_free_dev(vp_dev);
+		pr_debug("%px: Failed to find iface, status(%d).\n", dev, vpai.status);
+		return NULL;
+	}
+
+	/*
+	 * Configure EIP service on the iface and disable PPE MTU check on the VP.
+	 * VP MTU is set to the inner (plaintext) MTU, but encrypted packets flowing
+	 * through the VP are larger by the DTLS/UDP/IP overhead. MTU is already
+	 * enforced by the Linux tunnel device — disabling it here avoids PPE
+	 * incorrectly dropping valid encrypted packets on the VP.
+	 */
+	status = ppe_drv_iface_eip_set(iface, eip_svc, PPE_DRV_EIP_FEATURE_MTU_DISABLE);
+	if (status != PPE_DRV_RET_SUCCESS) {
+		ppe_vp_free_dev(vp_dev);
+		pr_debug("%px: Failed to set feature on iface, status(%d).\n", dev, status);
 		return NULL;
 	}
 
@@ -410,6 +464,22 @@ static void netfn_dtls_tun_destructor(struct net_device *dev)
 {
 	struct netfn_dtls_drv *drv = &g_dtls_drv;
 	struct netfn_dtls_tun *tun = netdev_priv(dev);
+
+	/*
+	 * Conditionally free EIP tun as this may be called during partial cleanup on dev setup failure.
+	 */
+	if (tun->eip_tun) {
+		eip_tun_free(tun->eip_tun);
+		tun->eip_tun = NULL;
+	}
+
+	/*
+	 * Conditionally free the VP as this may be called during partial cleanup on dev setup failure.
+	 */
+	if (tun->vp_dev) {
+		ppe_vp_free_dev(tun->vp_dev);
+		tun->vp_dev = NULL;
+	}
 
 	/*
 	 * Conditionally free the resources as this may be called
@@ -782,7 +852,7 @@ void netfn_dtls_tun_free(struct net_device *dev)
 	 * Issue VP deallocation. So, No more packets are being sent by VP.
 	 */
 	ppe_vp_free_dev(tun->vp_dev);
-	tun->vp_dev = NULL;
+	WRITE_ONCE(tun->vp_dev, NULL);
 
 	/*
 	 * Bring down the device and unregister from linux.
@@ -828,8 +898,7 @@ struct net_device *netfn_dtls_tun_alloc(ssize_t pvt_sz)
 	tun->stats_pcpu = alloc_percpu_gfp(struct netfn_dtls_tun_stats, GFP_KERNEL | __GFP_ZERO);
 	if (!tun->stats_pcpu) {
 		pr_err("%px: Failed to allocate stats memory for encap\n", dev);
-		dev->priv_destructor(dev);
-		return NULL;
+		goto fail;
 	}
 
 	/*
@@ -838,13 +907,25 @@ struct net_device *netfn_dtls_tun_alloc(ssize_t pvt_sz)
 	tun->vp_dev = netfn_dtls_tun_alloc_vp(dev);
 	if (!tun->vp_dev) {
 		pr_err("%px: Failed to allocate VP\n", dev);
-		dev->priv_destructor(dev);
-		return NULL;
+		goto fail;
+	}
+
+	/*
+	 * Allocate a parallel tunnel context in EIP.
+	 * Must happen before the device is registered/opened, so the
+	 * tunnel is fully usable before it becomes reachable from the
+	 * network stack.
+	 */
+	tun->eip_tun = eip_tun_alloc(drv->ctx);
+	if (!tun->eip_tun) {
+		pr_err("%px: Unable to allocate tunnel object\n", dev);
+		goto fail;
 	}
 
 	/*
 	 * Register netdevice with kernel.
-	 * kernels invoke the destructor upon failure
+	 * Kernel invokes the destructor on failure here, so we must not
+	 * call it again ourselves.
 	 */
 	status = register_netdev(dev);
 	if (status < 0) {
@@ -861,20 +942,26 @@ struct net_device *netfn_dtls_tun_alloc(ssize_t pvt_sz)
 	rtnl_unlock();
 	if (status < 0) {
 		pr_err("%px: Failed to Open netdevce, error(%d)\n", dev, status);
-		unregister_netdev(dev);
-		return NULL;
+		goto fail_unregister;
 	}
 
 	tun->dentry = debugfs_create_dir(dev->name, drv->dentry);
 	if (!tun->dentry) {
 		pr_err("%px: Failed to create debugfs\n", dev);
-		unregister_netdev(dev);
-		return NULL;
+		goto fail_unregister;
 	}
 
 	debugfs_create_file("stats", S_IRUGO, tun->dentry, tun, &netfn_dtls_tun_file_ops);
 
 	return dev;
+
+fail_unregister:
+	unregister_netdev(dev);
+	return NULL;
+
+fail:
+	dev->priv_destructor(dev);
+	return NULL;
 }
 EXPORT_SYMBOL(netfn_dtls_tun_alloc);
 
