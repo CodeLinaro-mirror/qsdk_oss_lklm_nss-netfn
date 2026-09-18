@@ -440,7 +440,10 @@ static enum netfn_tcpst_err netfn_tcpst_http_get_resp(struct netfn_tcpst_conn *c
 	}
 
 	data += sizeof("Content-Length: ") - 1;
-	conn->http.file_sz = simple_strtol(data, NULL, 10);
+	if (kstrtoull(data, 10, &conn->http.file_sz)) {
+		pr_warn("%px: Failed to parse Content-Length value\n", conn);
+		return NETFN_TCPST_ERR_CONNECT;
+	}
 
 	/*
 	 * We only count the data bytes, so we subtract strlen(conn->buf)

@@ -136,7 +136,7 @@ struct netfn_tcpst_server {
  *	HTTP based speed test
  */
 struct netfn_tcpst_http {
-	size_t file_sz;				/* File size to be sent in bytes */
+	uint64_t file_sz;				/* File size to be sent in bytes */
 	uint32_t hdr_len;			/* HTTP header length */
 	char hdr[NETFN_TCPST_HTTP_HDR_MAX];	/* HTTP header as a string */
 };
@@ -146,7 +146,7 @@ struct netfn_tcpst_http {
  *	Raw TCP based speed test
  */
 struct netfn_tcpst_raw {
-	size_t max_bytes;			/* Maximum bytes to be transferred */
+	uint64_t max_bytes;			/* Maximum bytes to be transferred */
 };
 
 /*
