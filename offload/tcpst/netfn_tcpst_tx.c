@@ -317,7 +317,7 @@ void netfn_tcpst_tx_work(struct work_struct *work)
 	 */
 	if (conn->duration) {
 		conn->hrtimer.function = netfn_tcpst_tx_timeout;
-		hrtimer_start(&conn->hrtimer, ktime_set(conn->offset, 0), HRTIMER_MODE_REL);
+		hrtimer_start(&conn->hrtimer, ktime_set(conn->offset, 0), HRTIMER_MODE_REL_SOFT);
 	} else {
 		/*
 		 * File based mode, update initial ethernet stats
