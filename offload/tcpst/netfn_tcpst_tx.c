@@ -225,7 +225,8 @@ void netfn_tcpst_tx_data(struct work_struct *work)
 		return;
 	}
 
-	pr_debug("%px: Not scheduling eom(%d) timeout(%d) abort(%d)\n", conn, eom, timeout, abort);
+	pr_debug("%px: Not scheduling eom(%d) timeout(%d) abort(%d) len(%d) test_bytes_left(%llu)\n",
+			conn, eom, timeout, abort, len, conn->test_bytes);
 	state = netfn_tcpst_state_get(ctx);
 
 	/*
