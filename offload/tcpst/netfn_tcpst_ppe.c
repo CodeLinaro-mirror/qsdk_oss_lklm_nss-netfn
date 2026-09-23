@@ -30,6 +30,9 @@
 #include <net/inet_sock.h>
 #include <netfn_flowmgr.h>
 #include <ppe_drv.h>
+#ifdef NETFN_TCPST_VEIP_SUPPORT
+#include <ppe_drv_veip.h>
+#endif
 
 /*
  * netfn_tcpst_ppe_get_macaddr()
@@ -207,6 +210,7 @@ struct net_device *netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_
 	netfn_flowmgr_ret_t status;
 	struct inet_sock *inet;
 	struct dst_entry *dst;
+	bool is_veip = false;
 
 	orig_tuple = &orig.tuple.tuples.tuple_5;
 	reply_tuple = &reply.tuple.tuples.tuple_5;
@@ -257,15 +261,18 @@ struct net_device *netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_
 	}
 
 	/*
-	 * PPP devices have no MAC of their own, so pick the SMAC only after
-	 * PPPoE is unwrapped, using the VLAN/physical device
+	 * For PON WAN egress (VEIP), PPE expects conn_rule.tx_if to be
+	 * the VEIP VLAN interface itself.
 	 */
-	memcpy(orig_info->flow_src_mac, out_dev->dev_addr, ETH_ALEN);
+#ifdef NETFN_TCPST_VEIP_SUPPORT
+	is_veip = ppe_drv_veip_is_enabled(out_dev);
+#endif
 
 	/*
 	 * If VLAN is present, fill VLAN specific information in create rule
+	 * VEIP interfaces bypass this step.
 	 */
-	if (is_vlan_dev(out_dev)) {
+	if (is_vlan_dev(out_dev) && !is_veip) {
 		orig.rule_info.rule_valid_flags |= NETFN_FLOWMGR_VALID_RULE_FLAG_VLAN;
 		reply.rule_info.rule_valid_flags |= NETFN_FLOWMGR_VALID_RULE_FLAG_VLAN;
 
@@ -308,6 +315,12 @@ struct net_device *netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_
 		 * FDB lookup at accel time. If dest mac changes for the port, the flow keeps
 		 * forwarding to the stale port until it decel
 		 *
+		 * NOTE: VEIP handling is not required here.
+		 * In WAN case PON stack intercepts the veip interface to strip the dummy tag(4093)
+		 * and add real VLAN tag.
+		 * In bridge case real VLAN is created directly and enslaved to the bridge,
+		 * bypassing the VEIP check.
+		 *
 		 * TODO: Hook to br_fdb_update notifiers
 		 */
 		out_dev = br_port;
@@ -324,6 +337,11 @@ struct net_device *netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_
 			goto release;
 		}
 	}
+
+	/*
+	 * Fill the source MAC address from out_dev
+	 */
+	memcpy(orig_info->flow_src_mac, out_dev->dev_addr, ETH_ALEN);
 
 	/*
 	 * Fill original egress device info
@@ -357,9 +375,26 @@ struct net_device *netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_
 	orig.flow_flags |= NETFN_FLOWMGR_FLOW_FLAG_VP_FLOW;
 	reply.flow_flags |= NETFN_FLOWMGR_FLOW_FLAG_VP_FLOW;
 
+	/*
+	 * In VEIP scenarios, the egress device resolved is a VLAN interface (e.g: eth2.4093)
+	 * However, ethernet stats must be fetched from  underlying physical interface (eth2)
+	 * If the out_dev is veip vlan device, extract and return the physical netdev
+	 */
+	if (is_veip && is_vlan_dev(out_dev)) {
+		ret = vlan_dev_next_dev(out_dev);
+		if (!ret) {
+			pr_err("%px: Failed to get physical netdev for the veip interface %s\n",
+					sk, out_dev->name);
+			goto release;
+		}
+	} else {
+		ret = out_dev;
+	}
+
 	status = netfn_flowmgr_rule_accel(&orig, &reply, NETFN_FLOWMGR_ACCEL_MODE_PPE);
 	if (NETFN_FLOWMGR_GET_NETFN_ERROR_CODE(status) != NETFN_FLOWMGR_RET_SUCCESS) {
 		pr_err("%px: Failed to create flow rule status(%x)\n", sk, status);
+		ret = NULL;
 		goto release;
 	}
 
@@ -367,8 +402,7 @@ struct net_device *netfn_tcpst_ppe_accel(struct sock *sk, struct net_device *vp_
 	 * Hold device reference as we are returning it to caller.
 	 * Deref: netfn_tcpst_ppe_decel()
 	 */
-	dev_hold(out_dev);
-	ret = out_dev;
+	dev_hold(ret);
 
 	/*
 	 * Hold dst->dev reference for later skb->dev fixup in rx path.
