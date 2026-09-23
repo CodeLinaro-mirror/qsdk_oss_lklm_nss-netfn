@@ -16,6 +16,7 @@
 #include <linux/etherdevice.h>
 #include <linux/inet.h>
 #include <linux/cpumask.h>
+#include <linux/log2.h>
 #include <asm/cacheflush.h>
 #include <net/protocol.h>
 #include <net/checksum.h>
@@ -28,6 +29,24 @@
  * Global static context for the module.
  */
 static struct netfn_dev_attach_priv nda_g;
+
+/*
+ * fifo_len
+ *	Tx steer fifo length, consumed only at module init; not tunable after load.
+ */
+#define NETFN_DEV_ATTACH_FIFO_LEN_MAX	65536U
+
+static unsigned int fifo_len = 8192;
+module_param(fifo_len, uint, S_IRUSR);
+MODULE_PARM_DESC(fifo_len, "Tx packet steering fifo length");
+
+/*
+ * tx_napi_budget
+ *	Tx steer NAPI poll budget, consumed only at module init; not tunable after load.
+ */
+static unsigned short tx_napi_budget = 64;
+module_param(tx_napi_budget, ushort, S_IRUSR);
+MODULE_PARM_DESC(tx_napi_budget, "Tx packet steering NAPI poll budget");
 
 /*
  * Forward declarations
@@ -154,13 +173,6 @@ static struct ctl_table netfn_dev_table[] = {
 	{
 		.procname               = "to_dev_cpu",
 		.data                   = &nda_g.to_dev_cpu,
-		.maxlen                 = sizeof(uint32_t),
-		.mode                   = 0644,
-		.proc_handler           = proc_douintvec,
-	},
-	{
-		.procname               = "tx_napi_budget",
-		.data                   = &nda_g.tx_napi_budget,
 		.maxlen                 = sizeof(uint32_t),
 		.mode                   = 0644,
 		.proc_handler           = proc_douintvec,
@@ -373,8 +385,12 @@ static void __steer(struct netfn_dev_attach_priv *nda, struct sk_buff *skb)
 	if (nda->fast_xmit) {
 		skb->fast_xmit = 1;
 		skb->fast_recycled = 1;
+		skb->mark = 0xaa800000;
 		dmac_clean_range_no_dsb((void *)skb->data, (void *)(skb->data + skb->len));
-		dev_fast_xmit(skb, skb->dev, netif_skb_features(skb));
+		if (unlikely(!dev_fast_xmit(skb, skb->dev, netif_skb_features(skb)))) {
+			pr_warn_ratelimited("%p: dev_fast_xmit failed on dev(%s), falling back to dev_queue_xmit\n", nda, skb->dev->name);
+			dev_queue_xmit(skb);
+		}
 		return;
 	}
 
@@ -585,8 +601,12 @@ static void __ps_cb(struct netfn_pkt_steer *tx_steer, struct sk_buff_head *q_hea
 		if (nda->fast_xmit) {
 			skb->fast_xmit = 1;
 			skb->fast_recycled = 1;
+			skb->mark = 0xaa800000;
 			dmac_clean_range_no_dsb((void *)skb->data, (void *)(skb->data + skb->len));
-			dev_fast_xmit(skb, skb->dev, netif_skb_features(skb));
+			if (unlikely(!dev_fast_xmit(skb, skb->dev, netif_skb_features(skb)))) {
+				pr_warn_ratelimited("%p: dev_fast_xmit failed on dev(%s), falling back to dev_queue_xmit\n", nda, skb->dev->name);
+				dev_queue_xmit(skb);
+			}
 			continue;
 		}
 
@@ -608,12 +628,12 @@ static int __add_steer(struct netfn_dev_attach_priv *nda)
 	}
 
 	info.cb = __ps_cb;
-	info.budget = 64;
+	info.budget = tx_napi_budget;
 	info.weight = 1;
 	info.dev = &nda->napi_dev;
 	info.sender_mask = tx_cpus;
 	info.receiver_mask = rx_cpus;
-	info.fifo_len = 8192;
+	info.fifo_len = fifo_len;
 	netfn_pkt_steer_init(&nda->tx_steer, &info);
 
 	if (!netfn_pkt_steer_enable(&nda->tx_steer)) {
@@ -918,6 +938,17 @@ static void netfn_dev_attach_setup(struct net_device *dev)
 static int __init netfn_dev_attach_init(void)
 {
 	int ret;
+
+	if (!tx_napi_budget) {
+		pr_warn("Invalid zero Tx NAPI budget\n");
+		return -EINVAL;
+	}
+
+	if (fifo_len < 2 || fifo_len > NETFN_DEV_ATTACH_FIFO_LEN_MAX || !is_power_of_2(fifo_len)) {
+		pr_warn("Invalid Tx FIFO length(%u), expected a power of two in range 2..%u\n",
+			fifo_len, NETFN_DEV_ATTACH_FIFO_LEN_MAX);
+		return -EINVAL;
+	}
 
 	memset(&nda_g, 0, sizeof(nda_g));
 	init_dummy_netdev(&nda_g.napi_dev);

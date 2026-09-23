@@ -58,7 +58,6 @@ struct netfn_dev_attach_priv {
 	char capwap_dev_name[IFNAMSIZ];
 	char wan_dev_name[IFNAMSIZ];
 	uint32_t to_dev_cpu;
-	uint32_t tx_napi_budget;
 	uint32_t id;
 	int attach;
 	int debug;			/* Number of packets to dump */
