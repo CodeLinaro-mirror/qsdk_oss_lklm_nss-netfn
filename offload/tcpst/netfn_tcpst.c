@@ -232,6 +232,7 @@ static void netfn_tcpst_conn_deinit_all(struct netfn_tcpst_ctx *ctx)
 		hrtimer_cancel(&conn->hrtimer);
 		netfn_tcpst_ppe_decel(conn->sock->sk, conn->eth_dev,
 				&conn->dst_dev, &conn->dst_dev_ifindex);
+		sock_no_linger(conn->sock->sk);
 		kernel_sock_shutdown(conn->sock, SHUT_RDWR);
 		sock_release(conn->sock);
 		vfree(conn->buf);
