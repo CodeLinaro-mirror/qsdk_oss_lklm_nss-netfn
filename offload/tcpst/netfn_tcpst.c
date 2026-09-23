@@ -392,7 +392,7 @@ static enum netfn_tcpst_err netfn_tcpst_conn_init(struct netfn_tcpst_ctx *ctx, s
 	/*
 	 * Connection uses timer for statistics offset and test duration control.
 	 */
-	hrtimer_init(&conn->hrtimer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
+	hrtimer_init(&conn->hrtimer, CLOCK_MONOTONIC, HRTIMER_MODE_REL_SOFT);
 
 	return NETFN_TCPST_ERR_NONE;
 
