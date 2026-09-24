@@ -132,6 +132,29 @@ static void netfn_tcpst_rx_except(struct netfn_tcpst_conn *conn, struct sk_buff 
 }
 
 /*
+ * netfn_tcpst_rx_except_single()
+ * 	Exception packets to Linux during test stop
+ */
+static bool netfn_tcpst_rx_except_single(struct sk_buff *skb, __be16 protocol)
+{
+	struct net_device *dev;
+
+	dev = dev_get_by_index(&init_net, skb->skb_iif);
+	if (!dev) {
+		pr_warn_ratelimited("%px: net dev not found for SKB iif=%d\n", skb, skb->skb_iif);
+		return false;
+	}
+
+	/*
+	 * skb->data points to IP header.
+	 */
+	skb->protocol = protocol;
+	netif_receive_skb(skb);
+	dev_put(dev);
+	return true;
+}
+
+/*
  * netfn_tcpst_rx_conn()
  *	Flush the packets to linux TCP stack
  */
@@ -528,19 +551,30 @@ unlock:
 bool netfn_tcpst_rx_vp4(struct ppe_vp_cb_info *info, void *cb_data)
 {
 	bool (*gro_rcv)(struct netfn_tcpst_conn *conn, struct napi_struct *napi, struct sk_buff *skb);
-	struct netfn_tcpst_ctx *ctx = (struct netfn_tcpst_ctx *)cb_data;
 	struct netfn_tcpst_gro_state *gro_state;
 	struct netfn_tcpst_stats_ext *ext_stats;
+	struct netfn_tcpst *tcpst = &g_tcpst;
 	struct sk_buff *skb = info->skb;
 	struct netfn_tcpst_conn *conn;
+	struct netfn_tcpst_ctx *ctx;
+
+	rcu_read_lock_bh();
+	ctx = rcu_dereference_bh(tcpst->ctx);
+	if (!ctx) {
+		if (!netfn_tcpst_rx_except_single(skb, ETH_P_IP)) {
+			pr_debug_ratelimited("%px: Unable to except packet to linux\n", skb);
+			goto drop;
+		}
+
+		goto done;
+	}
 
 	/*
 	 * Test is not running
 	 */
 	if (netfn_tcpst_state_get(ctx) != NETFN_TCPST_STATE_INPROGRESS) {
-		dev_kfree_skb(skb);
 		pr_debug_ratelimited("%px: Test is not running\n", ctx);
-		return true;
+		goto drop;
 	}
 
 	conn = &ctx->conn[smp_processor_id()];
@@ -550,9 +584,8 @@ bool netfn_tcpst_rx_vp4(struct ppe_vp_cb_info *info, void *cb_data)
 	 * if not then consume skb and return
 	 */
 	if (!READ_ONCE(conn->sock)) {
-		dev_kfree_skb(skb);
 		pr_warn("%px: Connection already destroyed\n", ctx);
-		return true;
+		goto drop;
 	}
 
 	gro_state = &conn->gro_state;
@@ -574,11 +607,16 @@ bool netfn_tcpst_rx_vp4(struct ppe_vp_cb_info *info, void *cb_data)
 
 	gro_rcv = gro_state->head ? netfn_tcpst_rx_gro_add : netfn_tcpst_rx_gro_start;
 	if (!gro_rcv(conn, info->napi, skb)) {
-		rcu_read_lock_bh();
 		netfn_tcpst_rx_conn(conn, skb);
-		rcu_read_unlock_bh();
 	}
 
+done:
+	rcu_read_unlock_bh();
+	return true;
+
+drop:
+	rcu_read_unlock_bh();
+	dev_kfree_skb(skb);
 	return true;
 }
 
@@ -589,19 +627,30 @@ bool netfn_tcpst_rx_vp4(struct ppe_vp_cb_info *info, void *cb_data)
 bool netfn_tcpst_rx_vp6(struct ppe_vp_cb_info *info, void *cb_data)
 {
 	bool (*gro_rcv)(struct netfn_tcpst_conn *conn, struct napi_struct *napi, struct sk_buff *skb);
-	struct netfn_tcpst_ctx *ctx = (struct netfn_tcpst_ctx *)cb_data;
 	struct netfn_tcpst_gro_state *gro_state;
 	struct netfn_tcpst_stats_ext *ext_stats;
+	struct netfn_tcpst *tcpst = &g_tcpst;
 	struct sk_buff *skb = info->skb;
 	struct netfn_tcpst_conn *conn;
+	struct netfn_tcpst_ctx *ctx;
+
+	rcu_read_lock_bh();
+	ctx = rcu_dereference_bh(tcpst->ctx);
+	if (!ctx) {
+		if (!netfn_tcpst_rx_except_single(skb, ETH_P_IPV6)) {
+			pr_debug_ratelimited("%px: Unable to except packet to linux\n", skb);
+			goto drop;
+		}
+
+		goto done;
+	}
 
 	/*
 	 * Test is not running
 	 */
 	if (netfn_tcpst_state_get(ctx) != NETFN_TCPST_STATE_INPROGRESS) {
-		dev_kfree_skb(skb);
 		pr_debug_ratelimited("%px: Test is not running\n", ctx);
-		return true;
+		goto drop;
 	}
 
 	conn = &ctx->conn[smp_processor_id()];
@@ -611,9 +660,8 @@ bool netfn_tcpst_rx_vp6(struct ppe_vp_cb_info *info, void *cb_data)
 	 * if not then consume skb and return
 	 */
 	if (!READ_ONCE(conn->sock)) {
-		dev_kfree_skb(skb);
 		pr_warn("%px: Socket already destroyed\n", ctx);
-		return true;
+		goto drop;
 	}
 
 	gro_state = &conn->gro_state;
@@ -635,11 +683,16 @@ bool netfn_tcpst_rx_vp6(struct ppe_vp_cb_info *info, void *cb_data)
 
 	gro_rcv = gro_state->head ? netfn_tcpst_rx_gro_add : netfn_tcpst_rx_gro_start;
 	if (!gro_rcv(conn, info->napi, skb)) {
-		rcu_read_lock_bh();
 		netfn_tcpst_rx_conn(conn, skb);
-		rcu_read_unlock_bh();
 	}
 
+done:
+	rcu_read_unlock_bh();
+	return true;
+
+drop:
+	rcu_read_unlock_bh();
+	dev_kfree_skb(skb);
 	return true;
 }
 

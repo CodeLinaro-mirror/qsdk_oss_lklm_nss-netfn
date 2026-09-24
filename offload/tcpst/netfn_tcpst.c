@@ -658,12 +658,10 @@ enum netfn_tcpst_state netfn_tcpst_stop(netfn_tcpst_comp_t cb, void *app_data)
 	ctx = rcu_dereference_protected(tcpst->ctx, 1);
 	if (!ctx) {
 		pr_info("%px: Test is not running\n", tcpst);
-
 		mutex_unlock(&tcpst->lock);
 		return NETFN_TCPST_STATE_NOT_RUNNING;
 	}
 
-	ctx->vp_dev->flags &= ~IFF_UP;
 	RCU_INIT_POINTER(tcpst->ctx, NULL);
 	mutex_unlock(&tcpst->lock);
 	synchronize_net();
