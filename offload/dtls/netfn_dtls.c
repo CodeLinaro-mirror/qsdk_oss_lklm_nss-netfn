@@ -101,6 +101,17 @@ int __init netfn_dtls_init_module(void)
 		goto ctx_fail;
 	}
 
+	if (drv->is_inline) {
+		err = eip_redir_ring_alloc(drv->ctx);
+		if (err < 0) {
+			pr_err("%px: Failed to allocate DTLS redirect ring, error(%d)\n", drv, err);
+			goto ring_fail;
+		}
+
+		drv->redir_ring = err;
+		pr_info("%px: Allocated DTLS redirect ring(%d)\n", drv, drv->redir_ring);
+	}
+
 	/*
 	 * TODO: PPE specific initialization?.
 	 */
@@ -110,6 +121,9 @@ int __init netfn_dtls_init_module(void)
 
 	return 0;
 
+ring_fail:
+	eip_ctx_free(drv->ctx);
+	drv->ctx = NULL;
 ctx_fail:
 	kmem_cache_destroy(drv->session_cache);
 	return err;
@@ -133,6 +147,10 @@ void __exit netfn_dtls_exit_module(void)
 	 * Drv reference is usally taken by device allocation.
 	 */
 	wait_for_completion(&drv->completion);
+
+	if (drv->is_inline) {
+		eip_redir_ring_free(drv->ctx, drv->redir_ring);
+	}
 
 	eip_ctx_free(drv->ctx);
 	drv->ctx = NULL;

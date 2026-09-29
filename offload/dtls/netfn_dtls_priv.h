@@ -42,6 +42,7 @@ struct netfn_dtls_drv {
 	struct kmem_cache *session_cache;	/* Kmem cache for session memory */
 	struct eip_ctx *ctx;		/* DMA context to use for transformation request */
 	struct dentry *dentry;		/* Driver debugfs dentry */
+	int redir_ring;			/* Hybrid redirect ring for DTLS decapsulation */
 	bool is_inline;			/* Check if inline is supported */
 };
 

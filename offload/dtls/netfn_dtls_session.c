@@ -196,6 +196,7 @@ static void netfn_dtls_session_fill_tr(struct netfn_dtls_cfg *cfg, netfn_tuple_t
 	dtls->ip_ttl = cfg->hop_limit;
 	dtls->ip_df = (flags & NETFN_DTLS_FLAG_CP_DF) ? 0 : cfg->df;
 	dtls->ip_dscp = (flags & NETFN_DTLS_FLAG_CP_TOS) ? 0 : cfg->tos;
+	dtls->redir_ring = g_dtls_drv.redir_ring;
 
 	switch (cfg->replay_win) {
 	case 0:
