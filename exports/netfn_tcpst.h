@@ -20,7 +20,7 @@
 #define __NETFN_TCPST_H
 
 #define NETFN_TCPST_HTTP_HDR_MAX 256 		/* Max size of HTTP header */
-#define NETFN_TCPST_CONN_MAX NR_CPUS		/* Max number of connections supported */
+#define NETFN_MAX_CONN_STATS	5		/* Max per-connections statistics entry */
 #define NETFN_TCPST_BUF_LEN (128 * 1024)	/* Buffer length used for tx/rx */
 
 /*
@@ -104,6 +104,8 @@ struct netfn_tcpst_result {
 	enum netfn_tcpst_state state;		/* State of the test */
 	enum netfn_tcpst_err error;		/* Error status */
 	struct netfn_tcpst_stats stats;		/* Test stats */
+	struct netfn_tcpst_stats conn_stats[NETFN_MAX_CONN_STATS];	/* Per-connection stats */
+	uint8_t num_active_conn;		/* Number of active connections */
 };
 
 /*
@@ -183,6 +185,9 @@ struct netfn_tcpst_cfg {
 typedef void (*netfn_tcpst_comp_t) (void *app_data, struct netfn_tcpst_result *res);
 
 #ifdef __KERNEL__
+
+#define NETFN_TCPST_CONN_MAX NR_CPUS            /* Max number of connections supported */
+static_assert(NETFN_TCPST_CONN_MAX <= NETFN_MAX_CONN_STATS, "Increase NETFN_MAX_CONN_STATS");
 
 /*
  * netfn_tcpst_start()
