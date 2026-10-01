@@ -71,6 +71,7 @@ static bool netfn_tcpst_http_put_resp(struct netfn_tcpst_conn *conn)
 	char *buf = conn->buf;
 	unsigned long status_code;
 	size_t resp_offset;
+	char status_str[4];
 	struct kvec iov;
 	int len;
 
@@ -108,11 +109,15 @@ static bool netfn_tcpst_http_put_resp(struct netfn_tcpst_conn *conn)
 	}
 
 	/*
-	 * Parse the 3-digit status code at offset 9 in base 10.
 	 * "HTTP/1.1 " is exactly 9 bytes, placing the status code at buf+9.
+	 * kstrtoul() expects a standalone NUL-terminated string.
+	 * Copy the exact 3 digit status code string into tmp buffer and null
+	 * terminate it.
 	 */
-	resp_offset = strlen("HTTP/1.1");
-	if (kstrtoul(buf + resp_offset, 10, &status_code)) {
+	resp_offset = strlen("HTTP/1.1 ");
+	memcpy(status_str, buf + resp_offset, 3);
+	status_str[3] = '\0';
+	if (kstrtoul(status_str, 10, &status_code)) {
 		pr_warn("%px: Failed to parse HTTP status code from response\n", conn);
 		return false;
 	}
