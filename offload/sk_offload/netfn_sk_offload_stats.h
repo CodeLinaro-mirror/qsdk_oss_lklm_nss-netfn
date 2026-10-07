@@ -26,6 +26,7 @@ struct netfn_sk_offload_stats {
 	uint64_t ctx_alloc_fail_stats;		/* Context alloc fail due to stats failure */
 	uint64_t ctx_alloc_fail_rule;		/* Context alloc fail due to Rule failure */
 	uint64_t ctx_alloc_fail_sanity;		/* Context alloc fail due to Sanity failure */
+	uint64_t ctx_alloc_fail_race;		/* Context alloc fail due to concurrent socket */
 	uint64_t ctx_dealloc;			/* Context dealloc success */
 	uint64_t rx_pkts;			/* Rx pkts received */
 	uint64_t rx_bytes;			/* Rx bytes received */
