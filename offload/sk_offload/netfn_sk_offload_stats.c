@@ -28,6 +28,7 @@ static const char *netfn_sk_offload_stats_str[] __attribute__((unused)) = {
 	"Ctx Alloc fail Stats",		/* Context alloc fail due to stats failure */
 	"Ctx Alloc fail Rule",		/* Context alloc fail due to Rule failure */
 	"Ctx Alloc fail Sanity",	/* Context alloc fail due to Sanity failure */
+	"Ctx Alloc fail Race",		/* Context alloc fail due to concurrent socket */
 	"Ctx Dealloc Success",		/* Context dealloc success */
 	"Rx Packets",			/* Rx pkts received */
 	"Rx Bytes",			/* Rx bytes received */
