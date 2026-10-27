@@ -67,17 +67,18 @@ static bool netfn_sk_offload_ppe_get_macaddr(struct dst_entry *dst, void *daddr,
 	}
 
 	read_lock_bh(&neigh->lock);
+
+	/*
+	 * Only copy the MAC address for valid neighbour
+	 */
 	nud_state = neigh->nud_state;
-	ether_addr_copy(mac_addr, neigh->ha);
+	if (nud_state & NUD_VALID)
+		ether_addr_copy(mac_addr, neigh->ha);
+
 	read_unlock_bh(&neigh->lock);
 	neigh_release(neigh);
 
-	if ((neigh->nud_state & NUD_VALID) == 0) {
-		pr_err("%px: neighbour state is invalid\n", dst);
-		return false;
-	}
-
-	return true;
+	return nud_state & NUD_VALID;
 }
 
 /*
