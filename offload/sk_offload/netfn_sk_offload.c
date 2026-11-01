@@ -67,17 +67,18 @@ static bool netfn_sk_offload_ppe_get_macaddr(struct dst_entry *dst, void *daddr,
 	}
 
 	read_lock_bh(&neigh->lock);
+
+	/*
+	 * Only copy the MAC address for valid neighbour
+	 */
 	nud_state = neigh->nud_state;
-	ether_addr_copy(mac_addr, neigh->ha);
+	if (nud_state & NUD_VALID)
+		ether_addr_copy(mac_addr, neigh->ha);
+
 	read_unlock_bh(&neigh->lock);
 	neigh_release(neigh);
 
-	if ((neigh->nud_state & NUD_VALID) == 0) {
-		pr_err("%px: neighbour state is invalid\n", dst);
-		return false;
-	}
-
-	return true;
+	return nud_state & NUD_VALID;
 }
 
 /*
@@ -474,7 +475,11 @@ static void netfn_sk_offload_disable(struct sock *sk)
 
 	stats = this_cpu_ptr(so->stats);
 
-	ctx = xchg(&sk->sk_user_data, NULL);
+	ctx = xchg(&sk->sk_offload_ctx, NULL);
+	if (!ctx) {
+		pr_warn("%px: Socket is not offloaded, nothing to disable\n", sk);
+		return;
+	}
 
 	netfn_sk_offload_rule_destroy(ctx);
 	netfn_sk_offload_db_del(ctx);
@@ -565,7 +570,13 @@ static bool netfn_sk_offload_enable(struct sock *sk)
 		goto fail3;
 	}
 
-	sk->sk_user_data =  ctx;
+	if (cmpxchg(&sk->sk_offload_ctx, NULL, ctx) != NULL) {
+		pr_err("%px: Socket already offloaded concurrently, ctx:%px\n", sk, ctx);
+		stats->ctx_alloc_fail_race++;
+		netfn_sk_offload_db_del(ctx);
+		goto fail3;
+	}
+
 	stats->ctx_alloc++;
 	atomic_inc(&so->num_conns);
 
@@ -634,18 +645,18 @@ static bool netfn_sk_offload_valid(struct sock *sk)
 	}
 
 	/*
-	 * User might wrongly call setsock opt twice. If sk_user_data is set,
+	 * User might wrongly call setsock opt twice. If sk_offload_ctx is set,
 	 * we might have already offloaded the socket.
 	 */
-	if (sk->offload && sk->sk_user_data) {
+	if (sk->offload && sk->sk_offload_ctx) {
 		pr_err("%px: Failed to offload, socket is already offloaded\n", sk);
 		return false;
 	}
 
 	/*
-	 * sk->sk_user_data is not set meaning we have not offloaded this socket.
+	 * sk->sk_offload_ctx is not set meaning we have not offloaded this socket.
 	 */
-	if (!sk->offload && !sk->sk_user_data) {
+	if (!sk->offload && !sk->sk_offload_ctx) {
 		pr_err("%px: Failed to disable offload, socket was not been offloaded\n", sk);
 		return false;
 	}
